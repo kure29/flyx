@@ -102,6 +102,25 @@ func TestRemoteSourceContract(t *testing.T) {
 	if got := mustQueryString(t, r, `SELECT listen FROM node_inbound WHERE id = ?`, hk); got != "203.0.113.9" {
 		t.Fatalf("moved node must keep its id and get the new address, got %q", got)
 	}
+	// A renamed node keeps the user's name across refreshes, even when the
+	// provider renames it; untouched nodes follow the provider's name.
+	us := mustQueryInt64(t, r, `SELECT id FROM node_inbound WHERE name = '美国 01' AND source_id = ?`, srcID)
+	if out := kernelContractPost(t, router, admin, "/api/v1/inbound/external/update",
+		`{"id":`+jsonInt64(hk)+`,"name":"我的香港","host":"203.0.113.9","port":8388}`); out.Code != 0 {
+		t.Fatalf("rename: %+v", out)
+	}
+	for _, hkName := range []string{"香港 01", "香港 IPLC"} {
+		serve(ssLink("203.0.113.9", "8388", hkName), ssLink("203.0.113.3", "443", "美国 02"))
+		if out := kernelContractPost(t, router, admin, "/api/v1/subscription/source/refresh", `{"id":`+jsonInt64(srcID)+`}`); out.Code != 0 {
+			t.Fatalf("refresh after rename: %+v", out)
+		}
+		if got := mustQueryString(t, r, `SELECT name FROM node_inbound WHERE id = ?`, hk); got != "我的香港" {
+			t.Fatalf("refresh reverted the rename to %q", got)
+		}
+		if got := mustQueryString(t, r, `SELECT name FROM node_inbound WHERE id = ?`, us); got != "美国 02" {
+			t.Fatalf("untouched node must follow the provider, got %q", got)
+		}
+	}
 	subs := kernelContractPost(t, router, admin, "/api/v1/subscription/list", `{}`).Data.(map[string]interface{})["items"].([]interface{})
 	for _, it := range subs {
 		if v := it.(map[string]interface{}); v["name"] == "合并" && valueAsInt(v["nodeCount"]) != 2 {

@@ -290,6 +290,10 @@ func (h *Handler) inboundExternalUpdate(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	// Remember the source's name before a rename so refreshes keep the new one.
+	if row.SourceID != 0 && row.ImportedName == "" {
+		row.ImportedName = row.Name
+	}
 	row.Name = name
 	row.ShareHost = host
 	row.Remark = strings.TrimSpace(req.Remark)

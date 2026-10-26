@@ -526,6 +526,7 @@ type InboundBackup struct {
 	Inx                 int    `json:"inx"`
 	CreatedTime         int64  `json:"createdTime"`
 	SourceID            int64  `json:"sourceId,omitempty"`
+	ImportedName        string `json:"importedName,omitempty"`
 	OutboundID          int64  `json:"outboundId,omitempty"`
 	SplitRules          string `json:"splitRules,omitempty"`
 }

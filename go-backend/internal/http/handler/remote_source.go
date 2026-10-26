@@ -75,7 +75,16 @@ func (r remoteSyncResult) summary() string {
 }
 
 func sameImported(row *model.NodeInbound, node kernel.ImportedNode, extra string) bool {
-	return row.Name == truncateRunes(node.Name, 100) && row.Listen == node.Host && row.Port == node.Port && row.Extra == extra
+	return importedName(row) == truncateRunes(node.Name, 100) && row.Listen == node.Host && row.Port == node.Port && row.Extra == extra
+}
+
+// importedName is the node's name in its source; rows refreshed before
+// ImportedName existed still carry it as their name.
+func importedName(row *model.NodeInbound) string {
+	if row.ImportedName != "" {
+		return row.ImportedName
+	}
+	return row.Name
 }
 
 // syncRemoteSource fetches the source (a file source takes the uploaded
@@ -131,7 +140,7 @@ func (h *Handler) syncRemoteSource(ctx context.Context, src *model.RemoteSource,
 			continue
 		}
 		mine = append(mine, row)
-		byName[row.Name] = append(byName[row.Name], row)
+		byName[importedName(row)] = append(byName[importedName(row)], row)
 		byAddr[externalKey(row.Listen, row.Port)] = append(byAddr[externalKey(row.Listen, row.Port)], row)
 	}
 	used := map[int64]bool{}
@@ -151,7 +160,7 @@ func (h *Handler) syncRemoteSource(ctx context.Context, src *model.RemoteSource,
 			res.Errors = append(res.Errors, fmt.Sprintf("%s：%v", node.Name, err))
 			continue
 		}
-		fresh.SourceID = src.ID
+		fresh.SourceID, fresh.ImportedName = src.ID, fresh.Name
 		row := take(byName[fresh.Name])
 		if row == nil {
 			row = take(byAddr[externalKey(node.Host, node.Port)])
@@ -168,7 +177,12 @@ func (h *Handler) syncRemoteSource(ctx context.Context, src *model.RemoteSource,
 			continue
 		}
 		moved := row.Listen != fresh.Listen || row.Port != fresh.Port
-		row.Name, row.Protocol, row.Listen, row.Port = fresh.Name, fresh.Protocol, fresh.Listen, fresh.Port
+		// A name the user changed is kept; otherwise it follows the source.
+		if row.Name == importedName(row) {
+			row.Name = fresh.Name
+		}
+		row.ImportedName = fresh.Name
+		row.Protocol, row.Listen, row.Port = fresh.Protocol, fresh.Listen, fresh.Port
 		row.ShareHost, row.Extra, row.UpdatedTime = fresh.ShareHost, fresh.Extra, now
 		if err := h.repo.SaveNodeInbound(row); err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s：%v", node.Name, err))

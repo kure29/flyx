@@ -37,7 +37,7 @@ func (r *Repository) exportInbounds() (*model.InboundsBackup, error) {
 			RelayOnly: i.RelayOnly, AcceptProxyProtocol: i.AcceptProxyProtocol,
 			RelayWhitelist: i.RelayWhitelist, WhitelistExtra: i.WhitelistExtra, Enabled: i.Enabled,
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
-			CreatedTime: i.CreatedTime, SourceID: i.SourceID, OutboundID: i.OutboundID, SplitRules: i.SplitRules, OutboundIPStrategy: i.OutboundIPStrategy,
+			CreatedTime: i.CreatedTime, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID, SplitRules: i.SplitRules, OutboundIPStrategy: i.OutboundIPStrategy,
 		})
 	}
 
@@ -189,7 +189,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 			RelayOnly: i.RelayOnly, AcceptProxyProtocol: i.AcceptProxyProtocol,
 			RelayWhitelist: i.RelayWhitelist, WhitelistExtra: i.WhitelistExtra, Enabled: i.Enabled,
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
-			CreatedTime: i.CreatedTime, UpdatedTime: now, SourceID: i.SourceID, OutboundID: i.OutboundID,
+			CreatedTime: i.CreatedTime, UpdatedTime: now, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID,
 			SplitRules: i.SplitRules, OutboundIPStrategy: strategy,
 		}
 		if err := tx.Clauses(clause.OnConflict{
@@ -198,7 +198,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 				"kernel_id", "node_id", "name", "protocol", "listen", "port", "transport", "security",
 				"settings", "extra", "share_host", "share_address_mode", "remark", "relay_only", "accept_proxy_protocol",
 				"relay_whitelist", "whitelist_extra", "enabled", "upload_bytes", "download_bytes",
-				"inx", "updated_time", "source_id", "outbound_id", "split_rules", "outbound_ip_strategy",
+				"inx", "updated_time", "source_id", "imported_name", "outbound_id", "split_rules", "outbound_ip_strategy",
 			}),
 		}).Create(&item).Error; err != nil {
 			return 0, err
