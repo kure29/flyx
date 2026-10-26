@@ -1787,6 +1787,12 @@ export default function ConfigPage() {
                 <dt className="text-default-500">最新版本</dt>
                 <dd>
                   {systemUpgradeInfo?.latestVersion || "未获取到可用版本"}
+                  {!systemUpgradeInfo?.latestVersion &&
+                    systemUpgradeInfo?.reason && (
+                      <p className="break-all text-xs text-default-500">
+                        {systemUpgradeInfo.reason}
+                      </p>
+                    )}
                 </dd>
                 <dt className="text-default-500">升级能力</dt>
                 <dd>

@@ -137,13 +137,19 @@ var (
 
 // fetchGitHubReleases returns the repository's 50 newest releases.
 func fetchGitHubReleases() ([]githubRelease, error) {
+	return cachedGitHubReleases(requestGitHubReleases)
+}
+
+// cachedGitHubReleases serves the shared release cache, refreshing it with
+// request when it is stale and falling back to the stale copy on failure.
+func cachedGitHubReleases(request func() ([]githubRelease, error)) ([]githubRelease, error) {
 	releaseCacheMu.Lock()
 	defer releaseCacheMu.Unlock()
 
 	if releaseCache != nil && time.Since(releaseCacheAt) < releaseCacheTTL {
 		return releaseCache, nil
 	}
-	releases, err := requestGitHubReleases()
+	releases, err := request()
 	if err != nil {
 		if releaseCache != nil {
 			return releaseCache, nil
@@ -171,6 +177,10 @@ func requestGitHubReleases() ([]githubRelease, error) {
 	}
 	defer resp.Body.Close()
 
+	return decodeGitHubReleases(resp)
+}
+
+func decodeGitHubReleases(resp *http.Response) ([]githubRelease, error) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		if resp.StatusCode == http.StatusTooManyRequests || strings.Contains(strings.ToLower(string(body)), "rate limit") {

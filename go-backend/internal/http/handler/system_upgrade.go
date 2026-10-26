@@ -397,40 +397,35 @@ func (h *Handler) buildSystemUpgradeDownloadURL(version, filename string) string
 	return base
 }
 
-func (h *Handler) fetchSystemUpgradeReleases(perPage int) ([]githubRelease, error) {
-	if perPage <= 0 {
-		perPage = 20
+// fetchSystemUpgradeReleases lists releases through the panel's GitHub
+// proxy when one is set, sharing the cache of node upgrades.
+func (h *Handler) fetchSystemUpgradeReleases() ([]githubRelease, error) {
+	enabled, proxyURL := h.getGithubProxyConfig()
+	if !enabled || isPanelGithubMirror(proxyURL) {
+		return fetchGitHubReleases()
 	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/repos/%s/releases?per_page=%d", strings.TrimRight(systemUpgradeAPIBaseURL, "/"), githubRepo, perPage)
-	if enabled, proxyURL := h.getGithubProxyConfig(); enabled && !isPanelGithubMirror(proxyURL) {
-		url = fmt.Sprintf("%s/%s", proxyURL, url)
-	}
-
-	resp, err := systemUpgradeHTTPGet(client, url)
-	if err != nil {
-		return nil, fmt.Errorf("请求GitHub API失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("GitHub API返回 %d: %s", resp.StatusCode, string(body))
-	}
-
-	var releases []githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("解析GitHub API响应失败: %v", err)
-	}
-
-	return releases, nil
+	return cachedGitHubReleases(func() ([]githubRelease, error) {
+		client := &http.Client{Timeout: 15 * time.Second}
+		url := fmt.Sprintf("%s/%s/repos/%s/releases?per_page=50", proxyURL, strings.TrimRight(systemUpgradeAPIBaseURL, "/"), githubRepo)
+		resp, err := systemUpgradeHTTPGet(client, url)
+		if err != nil {
+			return nil, fmt.Errorf("请求GitHub API失败: %v", err)
+		}
+		defer resp.Body.Close()
+		return decodeGitHubReleases(resp)
+	})
 }
 
 func (h *Handler) resolveSystemUpgradeLatestReleaseByChannel(channel string) (string, error) {
 	normalizedChannel := normalizeReleaseChannel(channel)
-	releases, err := h.fetchSystemUpgradeReleases(50)
+	releases, err := h.fetchSystemUpgradeReleases()
 	if err != nil {
+		// The github.com redirect is not rate limited like the API.
+		if normalizedChannel == releaseChannelStable {
+			if tag, redirectErr := latestStableFromRedirect(); redirectErr == nil {
+				return tag, nil
+			}
+		}
 		return "", err
 	}
 
@@ -611,7 +606,7 @@ func (h *Handler) systemCheckUpdates(w http.ResponseWriter, r *http.Request) {
 	exec := newSystemUpgradeExecutor()
 	capability := exec.capability(r.Context())
 
-	githubReleases, err := h.fetchSystemUpgradeReleases(50)
+	githubReleases, err := h.fetchSystemUpgradeReleases()
 	if err != nil {
 		response.WriteJSON(w, response.Err(-2, fmt.Sprintf("获取版本列表失败: %v", err)))
 		return

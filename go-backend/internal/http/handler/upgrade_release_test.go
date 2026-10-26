@@ -89,3 +89,28 @@ func TestLatestStableFallsBackToRedirect(t *testing.T) {
 		t.Fatalf("dev error: %v", err)
 	}
 }
+
+// The panel's own version check shares the cache and falls back to the
+// redirect, so a rate-limited API no longer hides the latest version.
+func TestPanelVersionCheckSurvivesRateLimit(t *testing.T) {
+	var limited atomic.Bool
+	var calls atomic.Int32
+	fakeGitHub(t, &limited, &calls)
+	h, _, _ := setupNotifyHandler(t)
+
+	if tag, err := h.resolveSystemUpgradeLatestReleaseByChannel(releaseChannelStable); err != nil || tag != "3.3.5" {
+		t.Fatalf("stable: %q %v", tag, err)
+	}
+	if _, err := fetchGitHubReleases(); err != nil || calls.Load() != 1 {
+		t.Fatalf("cache not shared with node upgrades: %d calls, %v", calls.Load(), err)
+	}
+
+	limited.Store(true)
+	resetReleaseCache()
+	if tag, err := h.resolveSystemUpgradeLatestReleaseByChannel(releaseChannelStable); err != nil || tag != "3.3.6" {
+		t.Fatalf("redirect fallback: %q %v", tag, err)
+	}
+	if _, err := h.fetchSystemUpgradeReleases(); err == nil || !strings.Contains(err.Error(), "GITHUB_TOKEN") {
+		t.Fatalf("rate limit error: %v", err)
+	}
+}
