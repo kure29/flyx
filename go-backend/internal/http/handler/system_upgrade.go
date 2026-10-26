@@ -398,7 +398,9 @@ func (h *Handler) buildSystemUpgradeDownloadURL(version, filename string) string
 }
 
 // fetchSystemUpgradeReleases lists releases through the panel's GitHub
-// proxy when one is set, sharing the cache of node upgrades.
+// proxy when one is set, sharing the cache of node upgrades. A shared proxy
+// often has its API quota used up, so a failure retries directly with the
+// panel's own quota (and GITHUB_TOKEN).
 func (h *Handler) fetchSystemUpgradeReleases() ([]githubRelease, error) {
 	enabled, proxyURL := h.getGithubProxyConfig()
 	if !enabled || isPanelGithubMirror(proxyURL) {
@@ -408,11 +410,19 @@ func (h *Handler) fetchSystemUpgradeReleases() ([]githubRelease, error) {
 		client := &http.Client{Timeout: 15 * time.Second}
 		url := fmt.Sprintf("%s/%s/repos/%s/releases?per_page=50", proxyURL, strings.TrimRight(systemUpgradeAPIBaseURL, "/"), githubRepo)
 		resp, err := systemUpgradeHTTPGet(client, url)
-		if err != nil {
-			return nil, fmt.Errorf("请求GitHub API失败: %v", err)
+		if err == nil {
+			releases, decodeErr := decodeGitHubReleases(resp)
+			resp.Body.Close()
+			if decodeErr == nil {
+				return releases, nil
+			}
+			err = decodeErr
 		}
-		defer resp.Body.Close()
-		return decodeGitHubReleases(resp)
+		releases, directErr := requestGitHubReleases()
+		if directErr != nil {
+			return nil, fmt.Errorf("通过加速代理：%v；直连：%w", err, directErr)
+		}
+		return releases, nil
 	})
 }
 

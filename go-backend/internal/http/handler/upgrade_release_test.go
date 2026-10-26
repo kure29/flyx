@@ -96,7 +96,16 @@ func TestPanelVersionCheckSurvivesRateLimit(t *testing.T) {
 	var limited atomic.Bool
 	var calls atomic.Int32
 	fakeGitHub(t, &limited, &calls)
-	h, _, _ := setupNotifyHandler(t)
+	h, r, _ := setupNotifyHandler(t)
+	// The default shared GitHub proxy has used up its API quota.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	t.Cleanup(proxy.Close)
+	if err := r.UpsertConfig("github_proxy_url", proxy.URL, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
 
 	if tag, err := h.resolveSystemUpgradeLatestReleaseByChannel(releaseChannelStable); err != nil || tag != "3.3.5" {
 		t.Fatalf("stable: %q %v", tag, err)
