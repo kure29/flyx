@@ -137,9 +137,11 @@ func startTuneJob(mode string, maxGB float64) (tuneStatus, error) {
 	if !tuningOperation.TryLock() {
 		return tuneStatus{}, fmt.Errorf("已有调优任务正在运行")
 	}
-	if err := recoverTuneTransaction(); err != nil {
+	// Restoring replays the original queues itself, so a stuck transaction
+	// must not block it; it is cleared once the restore succeeds.
+	if err := recoverTuneTransaction(); err != nil && mode != "restore" {
 		tuningOperation.Unlock()
-		return tuneStatus{}, fmt.Errorf("先前任务的队列尚未恢复：%w", err)
+		return tuneStatus{}, fmt.Errorf("先前任务的队列尚未恢复，请先恢复原配置：%w", err)
 	}
 	if mode == "deep" {
 		d := loadTuneDetection()
@@ -220,13 +222,14 @@ type tuneLogWriter struct {
 func (w *tuneLogWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// The full output goes to the job log; keep only a short tail for errors.
 	w.buffer.Write(p)
-	// iperf output can be verbose; retain a bounded tail in the persisted job.
-	if w.buffer.Len() > 32768 {
-		b := append([]byte(nil), w.buffer.Bytes()[w.buffer.Len()-16384:]...)
+	if w.buffer.Len() > 2048 {
+		b := append([]byte(nil), w.buffer.Bytes()[w.buffer.Len()-1024:]...)
 		w.buffer.Reset()
 		w.buffer.Write(b)
 	}
+	// iperf output can be verbose; retain a bounded tail in the persisted job.
 	tuningTasks.Lock()
 	if tuningTasks.job != nil {
 		tuningTasks.job.Logs += string(p)
@@ -236,6 +239,21 @@ func (w *tuneLogWriter) Write(p []byte) (int, error) {
 	}
 	tuningTasks.Unlock()
 	return len(p), nil
+}
+
+// tail returns the last lines of output, short enough for a status message.
+func (w *tuneLogWriter) tail() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	lines := strings.Split(strings.TrimSpace(w.buffer.String()), "\n")
+	if len(lines) > 3 {
+		lines = lines[len(lines)-3:]
+	}
+	out := strings.Join(lines, "\n")
+	if r := []rune(out); len(r) > 300 {
+		out = "…" + string(r[len(r)-300:])
+	}
+	return out
 }
 
 func runTuneCommand(ctx context.Context, name string, args ...string) (string, error) {
@@ -250,7 +268,7 @@ func runTuneCommand(ctx context.Context, name string, args ...string) (string, e
 		if ctx.Err() != nil {
 			return out.String(), ctx.Err()
 		}
-		return out.String(), fmt.Errorf("%s 执行失败: %v；%s", name, err, logs.buffer.String())
+		return out.String(), fmt.Errorf("%s 执行失败: %v；%s", name, err, logs.tail())
 	}
 	return out.String(), nil
 }
@@ -487,7 +505,6 @@ func executeTuneJob(ctx context.Context, mode string, maxGB float64) error {
 		candidate.BandwidthSource = "iperf3 四并发实测"
 		candidate.RTTSource = "按 tcpfit 使用 150 ms 路径估值（非测速对端 RTT）"
 		candidate.MeasuredAt = time.Now().UnixMilli()
-		candidate.EstimatedGB = estimateTuneTraffic(candidate.BandwidthMbps)
 		// Preserve an existing FLYX shaper when re-running basic tuning.
 		if old := loadTuneDetection(); old != nil {
 			if old.ShapeMbps > 0 && old.Interface != candidate.Interface {
@@ -495,7 +512,14 @@ func executeTuneJob(ctx context.Context, mode string, maxGB float64) error {
 			}
 			candidate.ShapeMbps = old.ShapeMbps
 			candidate.DeepSummary = old.DeepSummary
+			// The sample went through the shaper; keep the unshaped line rate so
+			// buffers and the next scan are not sized to the shaped rate.
+			if old.ShapeMbps > 0 && old.BandwidthMbps > candidate.BandwidthMbps {
+				candidate.BandwidthMbps = old.BandwidthMbps
+				candidate.BandwidthSource = "沿用整形前实测（当前测速受出向整形限制）"
+			}
 		}
+		candidate.EstimatedGB = estimateTuneTraffic(candidate.BandwidthMbps)
 		d = candidate
 		break
 	}

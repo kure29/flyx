@@ -18,7 +18,7 @@ func fakeTuneAutomation(t *testing.T) {
 	fakeProcSys(t, "reno cubic bbr")
 	oldExecute, oldPlatform, oldCommand := tuneAutoExecute, tunePlatform, tuneCommand
 	oldPrepare, oldPeers, oldMeasure := tunePrepare, tuneFindPeers, tuneMeasure
-	oldTraffic, oldUnit := tuneReadTraffic, tuneShapeUnitPath
+	oldTraffic, oldUnit, oldBaseline := tuneReadTraffic, tuneShapeUnitPath, tuneTrafficBaseline
 	tunePlatform = "linux"
 	tunePrepare = func(context.Context) error { return os.MkdirAll(tuneEngineDir(), 0o700) }
 	tuneFindPeers = func(context.Context) []tunePeer { return []tunePeer{{host: "127.0.0.1", port: 5201, family: "4"}} }
@@ -33,6 +33,7 @@ func fakeTuneAutomation(t *testing.T) {
 	}
 	tuneMeasure = func(context.Context, *tuneDetection, int) (*tuneSample, error) { return &tuneSample{Mbps: 200}, nil }
 	tuneReadTraffic = func(string) (uint64, error) { return 0, nil }
+	tuneTrafficBaseline = 0
 	unit := filepath.Join(filepath.Dir(tuneBackupPath), "flyx-tuning-qdisc.service")
 	tuneShapeUnitPath = func() string { return unit }
 	t.Setenv("FLUX_AGENT_CONTAINER", "1")
@@ -44,7 +45,7 @@ func fakeTuneAutomation(t *testing.T) {
 	t.Cleanup(func() {
 		tuneAutoExecute, tunePlatform, tuneCommand = oldExecute, oldPlatform, oldCommand
 		tunePrepare, tuneFindPeers, tuneMeasure = oldPrepare, oldPeers, oldMeasure
-		tuneReadTraffic, tuneShapeUnitPath = oldTraffic, oldUnit
+		tuneReadTraffic, tuneShapeUnitPath, tuneTrafficBaseline = oldTraffic, oldUnit, oldBaseline
 		tuningTasks.Lock()
 		tuningTasks.job = nil
 		tuningTasks.cancel = nil
@@ -198,20 +199,20 @@ func TestTuneSampleParsingUsesReceiverAndRejectsInvalidData(t *testing.T) {
 	}
 }
 
-func TestTuneQueueReplayPreservesOptionsAndMQ(t *testing.T) {
-	for _, queue := range []string{
-		"qdisc fq_codel 0: root refcnt 2 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn",
-		"qdisc mq 0: root\nqdisc fq_codel 0: parent :1 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms ecn",
+func TestTuneQueueReplayKeepsKindsAndMQ(t *testing.T) {
+	for queue, want := range map[string]string{
+		"qdisc fq_codel 0: root refcnt 2 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn": "'tc' 'qdisc' 'replace' 'dev' 'eth0' 'root' 'fq_codel'\n",
+		"qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p buckets 1024 quantum 3028b initial_quantum 15140b":          "'tc' 'qdisc' 'replace' 'dev' 'eth0' 'root' 'handle' '8001:' 'fq'\n",
+		"qdisc pfifo_fast 0: root refcnt 2 bands 3 priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1":                                    "'tc' 'qdisc' 'replace' 'dev' 'eth0' 'root' 'pfifo_fast'\n",
+		"qdisc mq 0: root\nqdisc fq_codel 0: parent :1 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms ecn":     "'tc' 'qdisc' 'replace' 'dev' 'eth0' 'parent' \"${mqmajor}:\"'1' 'fq_codel'\n",
 	} {
 		script, err := tuneQueueReplay("eth0", queue)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(script, "'target' '5ms'") || strings.Contains(script, "'refcnt'") {
-			t.Fatalf("options lost: %s", script)
-		}
-		if strings.Contains(queue, "qdisc mq") && !strings.Contains(script, "${mqmajor}") {
-			t.Fatalf("mq collapsed: %s", script)
+		// tc rejects display forms such as 10240p, 3028b and pfifo_fast options.
+		if !strings.HasSuffix(script, want) {
+			t.Fatalf("replay of %q:\n%s\nwant suffix %s", queue, script, want)
 		}
 	}
 	for _, kind := range []string{"htb", "cake", "hfsc"} {
@@ -478,5 +479,104 @@ func TestTuneCorruptBackupBlocksMutation(t *testing.T) {
 	}
 	if v, _ := readSysctl("net.ipv4.tcp_congestion_control"); v != "cubic" {
 		t.Fatal("changed the system without a recoverable snapshot")
+	}
+}
+
+func TestTuneDeepInconclusiveKeepsSummary(t *testing.T) {
+	fakeTuneAutomation(t)
+	d := fakeDeepResult(t)
+	base := tuneCommand
+	tuneCommand = func(ctx context.Context, name string, args ...string) (string, error) {
+		if name == "bash" && len(args) > 2 && args[2] == "sweep" {
+			return "FLYX_SWEEP_INCONCLUSIVE=1\n", errors.New("exit 3")
+		}
+		return base(ctx, name, args...)
+	}
+	if err := executeDeepTuning(context.Background(), d, 10); err == nil {
+		t.Fatal("uncertainty reported as success")
+	}
+	if got := loadTuneDetection(); got == nil || !strings.Contains(got.DeepSummary, "未能可靠判断") || got.ShapeMbps != 0 {
+		t.Fatalf("summary lost on rollback: %+v", got)
+	}
+}
+
+func TestTuneDeepBudgetExcludesBackgroundTraffic(t *testing.T) {
+	fakeTuneAutomation(t)
+	d := fakeDeepResult(t)
+	tuneTrafficBaseline = 200 * time.Millisecond
+	began := time.Now()
+	// 1 GB/s of forwarding traffic and no scan traffic at all.
+	tuneReadTraffic = func(string) (uint64, error) { return uint64(time.Since(began).Seconds() * (1 << 30)), nil }
+	base := tuneCommand
+	tuneCommand = func(ctx context.Context, name string, args ...string) (string, error) {
+		if name == "bash" && len(args) > 2 && args[2] == "sweep" {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(1500 * time.Millisecond):
+			}
+			return "FLYX_SWEEP_NO_KNEE=1\n", errors.New("exit 3")
+		}
+		return base(ctx, name, args...)
+	}
+	if err := executeDeepTuning(context.Background(), d, 0.5); err != nil {
+		t.Fatalf("forwarding traffic charged to the scan budget: %v", err)
+	}
+}
+
+func TestTuneRestoreClearsStuckTransaction(t *testing.T) {
+	fakeTuneAutomation(t)
+	_ = fakeDeepResult(t)
+	files, err := captureTuneShapeFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = saveTuneJSON(tuneStatePath("tuning-transaction.json"), files); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(tuneEngineDir(), "original-qdisc.sh"), []byte("#!/bin/sh\ntrue\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	base := tuneCommand
+	tuneCommand = func(ctx context.Context, name string, args ...string) (string, error) {
+		if name == "bash" && len(args) == 1 && strings.HasSuffix(args[0], "current-qdisc.sh") {
+			return "", errors.New("tc failed")
+		}
+		return base(ctx, name, args...)
+	}
+	if _, err = startTuneJob("deep", 10); err == nil || !strings.Contains(err.Error(), "恢复原配置") {
+		t.Fatalf("deep tuning over a stuck transaction: %v", err)
+	}
+	done := make(chan error, 1)
+	tuneAutoExecute = func(ctx context.Context, mode string, maxGB float64) error {
+		err := executeTuneJob(ctx, mode, maxGB)
+		done <- err
+		return err
+	}
+	if _, err = startTuneJob("restore", 0); err != nil {
+		t.Fatalf("restore blocked: %v", err)
+	}
+	if err = <-done; err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if _, err = os.Stat(tuneStatePath("tuning-transaction.json")); !os.IsNotExist(err) {
+		t.Fatal("stuck transaction kept after restore")
+	}
+}
+
+func TestTuneAutoKeepsUnshapedBandwidthUnderShaper(t *testing.T) {
+	fakeTuneAutomation(t)
+	d := fakeDeepResult(t)
+	d.BandwidthMbps, d.ShapeMbps = 1000, 800
+	if err := saveTuneJSON(tuneStatePath("tuning-result.json"), d); err != nil {
+		t.Fatal(err)
+	}
+	tuneMeasure = func(context.Context, *tuneDetection, int) (*tuneSample, error) { return &tuneSample{Mbps: 790}, nil }
+	if err := executeTuneJob(context.Background(), "auto", 0); err != nil {
+		t.Fatal(err)
+	}
+	got := loadTuneDetection()
+	if got == nil || got.BandwidthMbps != 1000 || got.ShapeMbps != 800 || got.EstimatedGB != estimateTuneTraffic(1000) {
+		t.Fatalf("shaped rate stored as line rate: %+v", got)
 	}
 }

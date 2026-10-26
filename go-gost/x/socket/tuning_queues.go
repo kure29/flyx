@@ -14,8 +14,10 @@ import (
 
 func tuneShellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
-// tc's display includes the full options for these simple queues. Refuse
-// external classful shapers and filters instead of destroying their topology.
+// tc's display forms ("limit 10240p", "quantum 3028b", pfifo_fast's priomap)
+// are not accepted back as options, so only the queue kinds and their
+// placement are replayed; the kernel supplies the defaults. Refuse external
+// classful shapers and filters instead of destroying their topology.
 func tuneQueueReplay(iface, out string) (string, error) {
 	var lines [][]string
 	root := ""
@@ -70,16 +72,6 @@ func tuneQueueReplay(iface, out string) (string, error) {
 			args = append(args, "handle", f[2])
 		}
 		args = append(args, f[1])
-		for i := 4; i < len(f); i++ {
-			if f[i] == "refcnt" {
-				i++
-				continue
-			}
-			if f[3] == "parent" && i == 4 {
-				continue
-			}
-			args = append(args, f[i])
-		}
 		quoted := make([]string, len(args))
 		for i, a := range args {
 			quoted[i] = tuneShellQuote(a)
@@ -158,6 +150,10 @@ func restoreTuneQueues(name string) error {
 
 var tuneReadTraffic = tuneTrafficBytes
 
+// tuneTrafficBaseline is how long the interface's own traffic is sampled
+// before a scan, so forwarding traffic is not charged to the scan budget.
+var tuneTrafficBaseline = 5 * time.Second
+
 func tuneTrafficBytes(iface string) (uint64, error) {
 	var total uint64
 	for _, name := range []string{"rx_bytes", "tx_bytes"} {
@@ -182,6 +178,8 @@ func executeDeepTuning(ctx context.Context, d *tuneDetection, maxGB float64) (er
 		return err
 	}
 	committed := false
+	// keepSummary saves d's summary again after the files are rolled back.
+	keepSummary := false
 	files, err := captureTuneShapeFiles()
 	if err != nil {
 		return err
@@ -200,6 +198,11 @@ func executeDeepTuning(ctx context.Context, d *tuneDetection, maxGB float64) (er
 				recovered = false
 				err = fmt.Errorf("%v；原队列恢复失败：%w", err, e)
 			}
+			if recovered && keepSummary {
+				if e := saveTuneJSON(tuneStatePath("tuning-result.json"), d); e != nil {
+					err = fmt.Errorf("%v；保存扫描结果失败：%w", err, e)
+				}
+			}
 		}
 		if recovered {
 			if e := os.Remove(tuneStatePath("tuning-transaction.json")); e != nil && !os.IsNotExist(e) {
@@ -207,10 +210,28 @@ func executeDeepTuning(ctx context.Context, d *tuneDetection, maxGB float64) (er
 			}
 		}
 	}()
+	tuneProgress("scanning", 32, "测量出口现有流量，避免把转发流量计入测速预算")
 	start, err := tuneReadTraffic(d.Interface)
 	if err != nil {
 		return err
 	}
+	var background float64 // bytes per second
+	if tuneTrafficBaseline > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(tuneTrafficBaseline):
+		}
+		n, e := tuneReadTraffic(d.Interface)
+		if e != nil {
+			return e
+		}
+		if n >= start {
+			background = float64(n-start) / tuneTrafficBaseline.Seconds()
+		}
+		start = n
+	}
+	began := time.Now()
 	scanCtx, cancel := context.WithCancelCause(ctx)
 	trafficDone := make(chan struct{})
 	defer func() { cancel(nil); <-trafficDone }()
@@ -228,7 +249,8 @@ func executeDeepTuning(ctx context.Context, d *tuneDetection, maxGB float64) (er
 					cancel(fmt.Errorf("无法计量测速流量，已停止深度优化"))
 					return
 				}
-				if n >= start && float64(n-start) > maxGB*1024*1024*1024 {
+				used := float64(n-start) - background*time.Since(began).Seconds()
+				if n >= start && used > maxGB*1024*1024*1024 {
 					cancel(fmt.Errorf("已达到本次 %.1f GB 流量预算，已停止扫描并恢复原队列", maxGB))
 					return
 				}
@@ -253,9 +275,7 @@ func executeDeepTuning(ctx context.Context, d *tuneDetection, maxGB float64) (er
 	knee, _ := strconv.Atoi(values["KNEE"])
 	if values["INCONCLUSIVE"] == "1" || values["OUT_OF_RANGE"] == "1" || values["CANCELLED"] == "1" || values["ABOVE_CAP"] != "" {
 		d.DeepSummary = "本次未能可靠判断限速器拐点，保留原整形配置"
-		if err = saveTuneJSON(tuneStatePath("tuning-result.json"), d); err != nil {
-			return err
-		}
+		keepSummary = true
 		return fmt.Errorf("%s；可稍后重试，详情见任务日志", d.DeepSummary)
 	}
 	if values["NO_KNEE"] == "1" {
@@ -345,11 +365,10 @@ func restoreTuneShapeFiles(saved []tuneShapeFile) error {
 			}
 		}
 	}
-	if !InContainer() {
-		if _, err := os.Stat(tuneShapeUnitPath()); err == nil {
-			_, err = tuneCommand(ctx, "systemctl", "daemon-reload")
-			return err
-		}
+	// Reload after removing a unit too, so systemd drops the stale definition.
+	if !InContainer() && commandExists("systemctl") {
+		_, err := tuneCommand(ctx, "systemctl", "daemon-reload")
+		return err
 	}
 	return nil
 }
@@ -397,6 +416,10 @@ func persistTuneShape(ctx context.Context, d *tuneDetection, rate int) error {
 	if err = writeFileAtomic(script, []byte(tuneShapeScript(d.Interface, rate)), 0o700); err != nil {
 		return err
 	}
+	// Replace the engine's test shaper so the verified queue is the persisted one.
+	if _, err = tuneCommand(ctx, "bash", script); err != nil {
+		return err
+	}
 	if InContainer() {
 		return nil
 	}
@@ -410,7 +433,7 @@ func persistTuneShape(ctx context.Context, d *tuneDetection, rate int) error {
 	if _, err = tuneCommand(ctx, "systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	_, err = tuneCommand(ctx, "systemctl", "enable", "--now", "flyx-tuning-qdisc.service")
+	_, err = tuneCommand(ctx, "systemctl", "enable", "flyx-tuning-qdisc.service")
 	return err
 }
 
@@ -461,6 +484,10 @@ func restoreAutomaticTuning(ctx context.Context) error {
 		}
 	}
 	if err = os.Remove(tuneStatePath("tuning-result.json")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	// The original queues are back, so an unfinished scan has nothing to undo.
+	if err = os.Remove(tuneStatePath("tuning-transaction.json")); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
