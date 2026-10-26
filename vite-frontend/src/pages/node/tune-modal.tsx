@@ -432,6 +432,10 @@ export function NodeTuneModal({
               恢复原配置
             </Button>
           )}
+          {/* Closing leaves a running job going; it shows again on reopen. */}
+          <Button variant="light" onPress={onClose}>
+            关闭
+          </Button>
           {running ? (
             <Button
               color="warning"
