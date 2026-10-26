@@ -95,7 +95,7 @@ func TestBackupRoundTripsNodeNotificationOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	backup, err := source.ExportAll()
-	if err != nil || len(backup.Nodes) != 1 || backup.Nodes[0].NotifyEvents != overrides {
+	if err != nil || len(backup.Nodes) != 1 || backup.Nodes[0].NotifyEvents == nil || *backup.Nodes[0].NotifyEvents != overrides {
 		t.Fatalf("exported nodes = %+v, %v", backup, err)
 	}
 	dest, err := Open(filepath.Join(t.TempDir(), "dest.db"))
@@ -115,6 +115,17 @@ func TestBackupRoundTripsNodeNotificationOverrides(t *testing.T) {
 		if err := dest.DB().Model(&model.Node{}).Where("id = ?", node.ID).Update("notify_events", "").Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Backups made before per-server notifications keep the saved overrides.
+	if err := dest.DB().Model(&model.Node{}).Where("id = ?", node.ID).Update("notify_events", overrides).Error; err != nil {
+		t.Fatal(err)
+	}
+	backup.Nodes[0].NotifyEvents = nil
+	if _, err := dest.Import(backup, []string{"nodes"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := dest.GetNodeByID(node.ID); err != nil || got == nil || got.NotifyEvents != overrides {
+		t.Fatalf("legacy import: node = %+v, %v", got, err)
 	}
 }
 

@@ -265,8 +265,8 @@ export function NodeFormModal({
                         key={event.key}
                         description={
                           event.key === "latency_bad"
-                            ? "关闭后不推送超时、延迟、丢包及恢复通知，仍保留检测和图表"
-                            : undefined
+                            ? `${event.description}；关闭后仍保留检测和图表`
+                            : event.description
                         }
                         label={event.label}
                         selectedKeys={[

@@ -69,7 +69,10 @@ type notifier struct {
 	expiryAlerted  map[int64]int64
 	// alerted holds keys of reminders already sent (traffic, expiry).
 	alerted map[string]bool
-	client  *http.Client
+	// muted holds incidents whose alert was not sent, so their recovery stays
+	// quiet too.
+	muted  map[string]bool
+	client *http.Client
 }
 
 func newNotifier() *notifier {
@@ -78,6 +81,7 @@ func newNotifier() *notifier {
 		offlineAlerted: make(map[int64]bool),
 		expiryAlerted:  make(map[int64]int64),
 		alerted:        make(map[string]bool),
+		muted:          make(map[string]bool),
 		client:         &http.Client{Timeout: notifySendTimeout},
 	}
 }
@@ -119,12 +123,11 @@ func (h *Handler) notifyConfigForNode(nodeID int64, event string) (notifySetting
 		}
 	}
 	if nodeID > 0 && isNodeNotifyEvent(event) {
-		node, err := h.repo.GetNodeByID(nodeID)
-		if err != nil || node == nil {
-			return settings, app, false
-		}
-		if enabled, exists := parseNodeNotifyEvents(node.NotifyEvents)[event]; exists {
-			selected = enabled
+		// A node that cannot be read keeps the global selection.
+		if node, err := h.repo.GetNodeByID(nodeID); err == nil && node != nil {
+			if enabled, exists := parseNodeNotifyEvents(node.NotifyEvents)[event]; exists {
+				selected = enabled
+			}
 		}
 	}
 	return settings, app, selected
@@ -135,20 +138,59 @@ func (h *Handler) notify(event, title, message string) {
 	h.notifyForNode(0, event, title, message)
 }
 
-func (h *Handler) notifyForNode(nodeID int64, event, title, message string) {
+// notifyForNode reports whether the event was enabled and sent.
+func (h *Handler) notifyForNode(nodeID int64, event, title, message string) bool {
 	if h == nil || h.repo == nil || h.notifier == nil {
-		return
+		return false
 	}
 	settings, app, ok := h.notifyConfigForNode(nodeID, event)
 	if !ok {
-		return
+		return false
 	}
+	h.sendNotify(settings, app, event, title, message)
+	return true
+}
+
+func (h *Handler) sendNotify(settings notifySettings, app, event, title, message string) {
 	msg := notifyMessage{Event: event, Title: title, Message: message, Time: time.Now().UnixMilli(), App: app}
 	go func() {
 		if err := h.notifier.send(context.Background(), settings, msg); err != nil {
 			log.Printf("notify %s failed: %v", event, err)
 		}
 	}()
+}
+
+// notifyIncident sends the alert of an incident and remembers when it was not
+// sent, so incidentAlerted skips the matching recovery.
+func (h *Handler) notifyIncident(nodeID int64, event string, keys []string, title, message string) {
+	sent := h.notifyForNode(nodeID, event, title, message)
+	if h == nil || h.notifier == nil {
+		return
+	}
+	n := h.notifier
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, key := range keys {
+		if sent {
+			delete(n.muted, event+"\x00"+key)
+		} else {
+			n.muted[event+"\x00"+key] = true
+		}
+	}
+}
+
+// incidentAlerted reports whether the alert of an incident was sent and
+// forgets it.
+func (h *Handler) incidentAlerted(event, key string) bool {
+	if h == nil || h.notifier == nil {
+		return true
+	}
+	n := h.notifier
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	muted := n.muted[event+"\x00"+key]
+	delete(n.muted, event+"\x00"+key)
+	return !muted
 }
 
 // send delivers to every configured channel and reports the failures.
@@ -260,15 +302,17 @@ func (h *Handler) notifyNodeOffline(nodeID int64) {
 		t.Stop()
 	}
 	n.offlineTimers[nodeID] = time.AfterFunc(nodeOfflineGrace, func() {
+		settings, app, enabled := h.notifyConfigForNode(nodeID, notifyEventNodeOffline)
 		n.mu.Lock()
 		delete(n.offlineTimers, nodeID)
-		if n.offlineAlerted[nodeID] || (h.wsServer != nil && h.wsServer.IsNodeOnline(nodeID)) {
+		// A muted outage is not marked alerted, so its recovery stays quiet.
+		if !enabled || n.offlineAlerted[nodeID] || (h.wsServer != nil && h.wsServer.IsNodeOnline(nodeID)) {
 			n.mu.Unlock()
 			return
 		}
 		n.offlineAlerted[nodeID] = true
 		n.mu.Unlock()
-		h.notifyForNode(nodeID, notifyEventNodeOffline, "服务器掉线", "服务器："+h.nodeLabel(nodeID))
+		h.sendNotify(settings, app, notifyEventNodeOffline, "服务器掉线", "服务器："+h.nodeLabel(nodeID))
 	})
 }
 
@@ -313,20 +357,25 @@ func (h *Handler) checkNodeExpiry(now time.Time) {
 		}
 		h.notifier.mu.Lock()
 		sent := h.notifier.expiryAlerted[node.ID] == node.ExpiryTime.Int64
-		if !sent {
-			h.notifier.expiryAlerted[node.ID] = node.ExpiryTime.Int64
-		}
 		h.notifier.mu.Unlock()
 		if sent {
 			continue
 		}
+		// A muted reminder is not marked sent, so it fires once enabled.
+		settings, app, enabled := h.notifyConfigForNode(node.ID, notifyEventNodeExpiry)
+		if !enabled {
+			continue
+		}
+		h.notifier.mu.Lock()
+		h.notifier.expiryAlerted[node.ID] = node.ExpiryTime.Int64
+		h.notifier.mu.Unlock()
 		title := "服务器即将到期"
 		detail := fmt.Sprintf("剩余约 %d 天", int(left.Hours()/24)+1)
 		if left <= 0 {
 			title = "服务器已到期"
 			detail = "已过期"
 		}
-		h.notifyForNode(node.ID, notifyEventNodeExpiry, title, fmt.Sprintf("服务器：%s\n到期：%s（%s）",
+		h.sendNotify(settings, app, notifyEventNodeExpiry, title, fmt.Sprintf("服务器：%s\n到期：%s（%s）",
 			node.Name, expiry.Format("2006-01-02"), detail))
 	}
 }

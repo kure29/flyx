@@ -189,3 +189,75 @@ func TestLatencyNotificationsCanBeMutedForOneServer(t *testing.T) {
 		t.Fatalf("unrelated event was muted: %+v", msgs)
 	}
 }
+
+func TestMutedIncidentsStayQuietOnRecovery(t *testing.T) {
+	old := nodeOfflineGrace
+	nodeOfflineGrace = 20 * time.Millisecond
+	t.Cleanup(func() { nodeOfflineGrace = old })
+	h, r, sent := setupNotifyHandler(t)
+	nodeID := mustCreateLatencyNode(t, r, "muted", 0, 0)
+	setOverrides := func(raw string) {
+		t.Helper()
+		if err := r.DB().Model(&model.Node{}).Where("id = ?", nodeID).Update("notify_events", raw).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// An outage that started muted must not end with a lone recovery.
+	setOverrides(`{"node_offline":false,"inbound_down":false}`)
+	h.notifyNodeOffline(nodeID)
+	time.Sleep(60 * time.Millisecond)
+	h.notifyIncident(nodeID, notifyEventInboundDown, []string{"1"}, "节点连不上", "muted")
+	setOverrides("")
+	h.notifyNodeOnline(nodeID)
+	if h.incidentAlerted(notifyEventInboundDown, "1") {
+		t.Fatal("muted inbound outage reported as alerted")
+	}
+	if msgs := sent(); len(msgs) != 0 {
+		t.Fatalf("muted incidents sent: %+v", msgs)
+	}
+
+	// Alerts that were sent still get their recovery.
+	h.notifyNodeOffline(nodeID)
+	time.Sleep(60 * time.Millisecond)
+	h.notifyIncident(nodeID, notifyEventInboundDown, []string{"1"}, "节点连不上", "sent")
+	if msgs := sent(); len(msgs) != 2 {
+		t.Fatalf("alerts = %+v", msgs)
+	}
+	h.notifyNodeOnline(nodeID)
+	if !h.incidentAlerted(notifyEventInboundDown, "1") {
+		t.Fatal("sent inbound outage not reported as alerted")
+	}
+	if msgs := sent(); len(msgs) != 3 || msgs[2].Title != "服务器恢复在线" {
+		t.Fatalf("messages = %+v", msgs)
+	}
+}
+
+func TestMutedExpiryReminderFiresOnceEnabled(t *testing.T) {
+	h, r, sent := setupNotifyHandler(t)
+	now := time.Now()
+	node := model.Node{Name: "expiring", Secret: "s", ServerIP: "198.51.100.2", NotifyEvents: `{"node_expiry":false}`}
+	node.ExpiryTime.Int64, node.ExpiryTime.Valid = now.Add(48*time.Hour).UnixMilli(), true
+	if err := r.DB().Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	h.checkNodeExpiry(now)
+	if msgs := sent(); len(msgs) != 0 {
+		t.Fatalf("muted reminder sent: %+v", msgs)
+	}
+	if err := r.DB().Model(&model.Node{}).Where("id = ?", node.ID).Update("notify_events", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	h.checkNodeExpiry(now)
+	h.checkNodeExpiry(now)
+	if msgs := sent(); len(msgs) != 1 || msgs[0].Event != notifyEventNodeExpiry {
+		t.Fatalf("reminder after enabling = %+v", msgs)
+	}
+}
+
+func TestNodeEventFollowsGlobalWhenNodeIsMissing(t *testing.T) {
+	h, _, _ := setupNotifyHandler(t)
+	if _, _, ok := h.notifyConfigForNode(404, notifyEventNodeOffline); !ok {
+		t.Fatal("missing node must keep the global selection")
+	}
+}

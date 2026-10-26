@@ -158,18 +158,33 @@ func (h *Handler) alertLatency(results map[int64]reachProbe, names map[int64]str
 			for i, p := range tr.bad {
 				lines[i] = describeLatencyPoint(p)
 			}
-			h.notifyForNode(nodeID, notifyEventLatencyBad, "延迟 / 丢包异常",
+			h.notifyIncident(nodeID, notifyEventLatencyBad, latencyIncidentKeys(nodeID, tr.bad), "延迟 / 丢包异常",
 				fmt.Sprintf("服务器：%s\n%s\n（连续 %d 次 %s）", name, strings.Join(lines, "\n"), latencyAlertStreak, limit))
 		}
-		if len(tr.recovered) > 0 {
-			lines := make([]string, len(tr.recovered))
-			for i, p := range tr.recovered {
-				lines[i] = describeLatencyPoint(p)
+		// Recoveries of points whose alert was muted stay quiet.
+		var lines []string
+		for _, p := range tr.recovered {
+			if h.incidentAlerted(notifyEventLatencyBad, latencyIncidentKey(nodeID, p)) {
+				lines = append(lines, describeLatencyPoint(p))
 			}
+		}
+		if len(lines) > 0 {
 			h.notifyForNode(nodeID, notifyEventLatencyBad, "延迟已恢复",
 				fmt.Sprintf("服务器：%s\n%s", name, strings.Join(lines, "\n")))
 		}
 	}
+}
+
+func latencyIncidentKey(nodeID int64, p latencyPoint) string {
+	return strconv.FormatInt(nodeID, 10) + "\x00" + p.Name
+}
+
+func latencyIncidentKeys(nodeID int64, points []latencyPoint) []string {
+	keys := make([]string, len(points))
+	for i, p := range points {
+		keys[i] = latencyIncidentKey(nodeID, p)
+	}
+	return keys
 }
 
 // routeChanges lists the points whose identified line changed between two

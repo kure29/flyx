@@ -458,6 +458,9 @@ func (h *Handler) nodeCheckStatus(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
+	for _, item := range items {
+		item["notifyEvents"] = parseNodeNotifyEvents(asString(item["notifyEvents"]))
+	}
 	response.WriteJSON(w, response.OK(items))
 }
 
