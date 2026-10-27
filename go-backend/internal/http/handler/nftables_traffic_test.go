@@ -52,7 +52,7 @@ func TestBuildNftCounterDeltasNormalGrowthProducesDirectionalBytes(t *testing.T)
 	}
 }
 
-func TestBuildNftCounterDeltasResetRefreshesBaselineWithoutDelta(t *testing.T) {
+func TestBuildNftCounterDeltasRegressionKeepsPreviousBaseline(t *testing.T) {
 	deltas, states := buildNftCounterDeltas(11, []runtimenft.CounterSample{
 		{ForwardID: 42, Protocol: "tcp", Direction: runtimenft.CounterDirectionToTarget, Bytes: 25, Packets: 2},
 	}, []model.NftCounterState{
@@ -62,8 +62,8 @@ func TestBuildNftCounterDeltasResetRefreshesBaselineWithoutDelta(t *testing.T) {
 	if len(deltas) != 0 {
 		t.Fatalf("expected reset to produce no deltas, got %#v", deltas)
 	}
-	if len(states) != 1 || states[0].Bytes != 25 || states[0].RuleHash != "hash-a" {
-		t.Fatalf("expected refreshed baseline state, got %#v", states)
+	if len(states) != 0 {
+		t.Fatalf("regressing snapshot advanced the baseline: %#v", states)
 	}
 }
 
@@ -208,21 +208,21 @@ func TestBuildNftFlowUploadBatchScalesFlowAndPreservesRawTunnelTraffic(t *testin
 		{ForwardID: 21, BytesIn: 7, BytesOut: 11},
 		{ForwardID: 20, BytesIn: 20, BytesOut: 10},
 	}, map[int64]repo.FlowUploadForwardMeta{
-		20: {ForwardID: 20, UserID: 2, UserTunnelID: 10, TunnelID: 1, TrafficRatio: 2, TunnelFlow: 3},
+		20: {ForwardID: 20, UserID: 2, UserTunnelID: 10, TunnelID: 1, TrafficRatio: 2, TunnelFlow: 2},
 		21: {ForwardID: 21, UserID: 2, UserTunnelID: 10, TunnelID: 1, TrafficRatio: 1.5, TunnelFlow: 2},
 	})
 
 	if len(batch.flowDeltas) != 2 {
 		t.Fatalf("expected two flow deltas, got %#v", batch.flowDeltas)
 	}
-	if batch.flowDeltas[0].ForwardID != 20 || batch.flowDeltas[0].InFlow != 600 || batch.flowDeltas[0].OutFlow != 720 {
+	if batch.flowDeltas[0].ForwardID != 20 || batch.flowDeltas[0].InFlow != 200 || batch.flowDeltas[0].OutFlow != 240 {
 		t.Fatalf("unexpected first flow delta: %#v", batch.flowDeltas[0])
 	}
-	if batch.flowDeltas[1].ForwardID != 21 || batch.flowDeltas[1].InFlow != 20 || batch.flowDeltas[1].OutFlow != 32 {
+	if batch.flowDeltas[1].ForwardID != 21 || batch.flowDeltas[1].InFlow != 10 || batch.flowDeltas[1].OutFlow != 16 {
 		t.Fatalf("unexpected second flow delta: %#v", batch.flowDeltas[1])
 	}
-	if batch.quotaUsage[2] != 1372 {
-		t.Fatalf("expected quota usage 1372, got %d", batch.quotaUsage[2])
+	if batch.quotaUsage[2] != 466 {
+		t.Fatalf("expected quota usage 466, got %d", batch.quotaUsage[2])
 	}
 	if len(batch.policyTargets) != 1 || batch.policyTargets[0].UserID != 2 || batch.policyTargets[0].UserTunnelID != 10 {
 		t.Fatalf("expected deduped policy target, got %#v", batch.policyTargets)
@@ -633,6 +633,9 @@ func setupNftablesCollectionFixture(t *testing.T) nftablesCollectionFixture {
 	h := fixture.handler
 	seedNftablesSSHConfig(t, h, fixture.nodeID)
 	tunnelID := seedTunnelForNftables(t, h, "nft-traffic-tunnel", fixture.nodeID)
+	if err := h.repo.DB().Exec("UPDATE tunnel SET flow = 2 WHERE id = ?", tunnelID).Error; err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UnixMilli()
 	if err := h.repo.DB().Exec(`
 		INSERT INTO user_tunnel(user_id, tunnel_id, speed_id, num, flow, in_flow, out_flow, flow_reset_time, exp_time, status)
@@ -677,4 +680,56 @@ func mustHandlerCount(t *testing.T, h *Handler, query string, args ...interface{
 		t.Fatalf("query %q failed: %v", query, err)
 	}
 	return value
+}
+
+func TestForwardCounterAccountingIsolatesMissingMetadata(t *testing.T) {
+	f := setupNftablesCollectionFixture(t)
+	h := f.handler
+	t.Cleanup(func() { _ = h.repo.Close() })
+	now := time.Now()
+	hashes := map[int64]string{f.forwardID: "realm:test", 999: "realm:test"}
+	sample := func(n uint64) []runtimenft.CounterSample {
+		return []runtimenft.CounterSample{
+			{ForwardID: f.forwardID, Protocol: "tcp", Direction: runtimenft.CounterDirectionToTarget, Bytes: n},
+			{ForwardID: 999, Protocol: "tcp", Direction: runtimenft.CounterDirectionToTarget, Bytes: n},
+		}
+	}
+	h.accountForwardCounterSamples(f.nodeID, sample(100), hashes, now)
+	h.accountForwardCounterSamples(f.nodeID, sample(150), hashes, now.Add(time.Minute))
+	h.accountForwardCounterSamples(f.nodeID, sample(200), hashes, now.Add(2*time.Minute))
+	for _, query := range []string{"SELECT in_flow FROM forward", "SELECT in_flow FROM user WHERE id=1", "SELECT in_flow FROM user_tunnel", "SELECT daily_used_bytes FROM user_quota WHERE user_id=1"} {
+		if got := mustHandlerCount(t, h, query); got != 100 {
+			t.Errorf("%s: got %d want 100", query, got)
+		}
+	}
+	states, err := h.repo.GetNftCounterStatesByNode(f.nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states) != 2 {
+		t.Fatalf("counter state count = %d", len(states))
+	}
+	for _, state := range states {
+		want := int64(200)
+		if state.ForwardID == 999 {
+			want = 100
+		}
+		if state.Bytes != want {
+			t.Errorf("forward=%d baseline=%d want=%d", state.ForwardID, state.Bytes, want)
+		}
+	}
+	// Repeating a successful sample must not debit the healthy forward again.
+	h.accountForwardCounterSamples(f.nodeID, sample(200), hashes, now.Add(3*time.Minute))
+	if got := mustHandlerCount(t, h, "SELECT in_flow FROM forward"); got != 100 {
+		t.Fatalf("healthy sample counted twice: %d", got)
+	}
+}
+
+func TestManagedNftGenerationCreditsFirstPostUpgradeSample(t *testing.T) {
+	old := []model.NftCounterState{{NodeID: 1, ForwardID: 2, Protocol: "tcp", Direction: runtimenft.CounterDirectionToTarget, RuleHash: "legacy-config-hash", Bytes: 900}}
+	samples := []runtimenft.CounterSample{{ForwardID: 2, Protocol: "tcp", Direction: runtimenft.CounterDirectionToTarget, Bytes: 50}}
+	deltas, states := buildNftCounterDeltas(1, samples, old, map[int64]string{2: "nft:new-table-generation"}, 1000)
+	if len(deltas) != 1 || deltas[0].BytesIn != 50 || len(states) != 1 {
+		t.Fatalf("deltas=%+v states=%+v", deltas, states)
+	}
 }

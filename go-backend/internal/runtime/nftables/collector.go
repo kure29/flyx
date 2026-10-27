@@ -7,6 +7,7 @@ import (
 )
 
 type CounterSample struct {
+	Epoch     string
 	ForwardID int64
 	Direction string
 	Protocol  string
@@ -16,7 +17,7 @@ type CounterSample struct {
 
 func ParseCounterComment(comment string) (CounterSample, bool) {
 	parts := strings.Split(comment, " ")
-	if len(parts) != 4 || parts[0] != "flvx" {
+	if (len(parts) < 4 || len(parts) > 5) || parts[0] != "flvx" {
 		return CounterSample{}, false
 	}
 	if !strings.HasPrefix(parts[1], "forward:") {
@@ -35,7 +36,12 @@ func ParseCounterComment(comment string) (CounterSample, bool) {
 	if protocol != "tcp" && protocol != "udp" {
 		return CounterSample{}, false
 	}
+	epoch := ""
+	if len(parts) >= 5 {
+		epoch = parts[4]
+	}
 	return CounterSample{
+		Epoch:     epoch,
 		ForwardID: forwardID,
 		Direction: direction,
 		Protocol:  protocol,

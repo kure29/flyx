@@ -166,3 +166,15 @@ func TestParseCounterSamplesMalformedRuleJSONReturnsError(t *testing.T) {
 		t.Fatal("expected malformed rule JSON error")
 	}
 }
+
+func TestCounterCommentCarriesSnapshotGeneration(t *testing.T) {
+	generation := "4eb56674-a962-4be3-a49d-2c2cbe97b958"
+	comment := counterComment(9223372036854775807, CounterDirectionFromTarget, "tcp") + " " + generation
+	if len(comment) > 128 {
+		t.Fatal("nftables comment exceeds kernel limit")
+	}
+	sample, ok := ParseCounterComment(comment)
+	if !ok || sample.Epoch != generation || sample.ForwardID != 9223372036854775807 {
+		t.Fatalf("sample=%+v", sample)
+	}
+}

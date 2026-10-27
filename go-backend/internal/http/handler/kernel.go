@@ -1645,6 +1645,12 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 	if err != nil || (len(kernels) == 0 && !evenIfNone) {
 		return
 	}
+	sequence, err := h.repo.NextCounterSnapshot(nodeID, "kernel")
+	if err != nil {
+		log.Printf("counter sequence failed: %v", err)
+		return
+	}
+
 	res, err := h.sendNodeCommandWithTimeout(nodeID, "KernelStatus", map[string]interface{}{}, kernelCommandTimeout, false, false)
 	if err != nil {
 		return // offline, or an agent without kernel support
@@ -1715,10 +1721,7 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 	if !status.NftAvailable {
 		return
 	}
-	if len(status.Users) > 0 {
-		h.applyUserCounters(nodeID, status.Epoch, status.Users, now)
-	}
-	if len(status.Counters) == 0 {
+	if len(status.Counters) == 0 && len(status.Users) == 0 {
 		return
 	}
 	samples := make([]repo.InboundCounterSample, 0, len(status.Counters))
@@ -1736,12 +1739,34 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 			Bytes:     c.Bytes,
 		})
 	}
-	if err := h.repo.ApplyInboundCounterSamples(samples, now); err != nil {
+	var batch flowUploadBatch
+	var quotas map[int64]*model.UserQuotaView
+	applied, err := h.repo.ApplyCounterSnapshot(nodeID, "kernel", sequence, status.Epoch, func(tx *repo.Repository) error {
+		users := make([]repo.SubscriptionCounterSample, 0, len(status.Users))
+		for _, c := range status.Users {
+			users = append(users, repo.SubscriptionCounterSample{SubscriptionID: c.ID, Direction: c.Dir, Bytes: c.Bytes})
+		}
+		if err := tx.ApplySubscriptionCounterSamples(nodeID, status.Epoch, users, now); err != nil {
+			return err
+		}
+		if err := tx.ApplyInboundCounterSamples(samples, now); err != nil {
+			return err
+		}
+		var err error
+		batch, quotas, err = (&Handler{repo: tx}).applyRealmCountersTx(nodeID, status.Epoch, realmCounters, time.UnixMilli(now))
+		return err
+	})
+	if err != nil {
 		log.Printf("kernel traffic apply failed node_id=%d err=%v", nodeID, err)
+		return
 	}
-	if len(realmCounters) > 0 {
-		h.applyRealmCounters(nodeID, status.Epoch, realmCounters, time.UnixMilli(now))
+	if applied {
+		h.enforceFlowUploadBatch(nodeID, batch, quotas)
+		if len(status.Users) > 0 {
+			h.syncSubscriptions(time.UnixMilli(now))
+		}
 	}
+
 }
 
 func (h *Handler) runKernelStatusLoop(ctx context.Context) {

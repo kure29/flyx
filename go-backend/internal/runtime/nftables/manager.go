@@ -3,6 +3,7 @@ package nftables
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
 )
 
 type Manager struct {
@@ -26,6 +27,9 @@ func (m *Manager) Test(ctx context.Context, cfg SSHConfig) error {
 func (m *Manager) Reconcile(ctx context.Context, cfg SSHConfig, plan NodePlan) (ApplyResult, error) {
 	if err := m.ensureInitialized(); err != nil {
 		return ApplyResult{}, err
+	}
+	if plan.Generation == "" {
+		plan.Generation = uuid.NewString()
 	}
 	result := ApplyResult{
 		NodeID: plan.NodeID,

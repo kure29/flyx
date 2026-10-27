@@ -19,7 +19,7 @@ func TestRealmForwardRenderAndTraffic(t *testing.T) {
 
 	nodeID := seedRelayTargetNode(t, r, "entry", "198.51.100.7")
 	tunnelID := seedTunnelForNftables(t, h, "realm-tunnel", nodeID)
-	if err := r.DB().Exec(`UPDATE tunnel SET engine = 'realm' WHERE id = ?`, tunnelID).Error; err != nil {
+	if err := r.DB().Exec(`UPDATE tunnel SET engine = 'realm', flow = 2 WHERE id = ?`, tunnelID).Error; err != nil {
 		t.Fatal(err)
 	}
 	forward := seedForwardForNftables(t, h, tunnelID, nodeID, "1.1.1.1:443,2.2.2.2:443")
@@ -74,13 +74,13 @@ func TestRealmForwardRenderAndTraffic(t *testing.T) {
 	if flow.InFlow != 200 || flow.OutFlow != 500 {
 		t.Fatalf("forward flow = %+v, want 200/500", flow)
 	}
-	// A new agent epoch restarts the counters without crediting them.
+	// A known new epoch credits its initial counter from zero.
 	h.applyRealmCounters(nodeID, "e2", []agentKernelCounter{counter("in", 50)}, now.Add(2*time.Minute))
 	if err := r.DB().Raw(`SELECT in_flow, out_flow FROM forward WHERE id = ?`, forward.ID).Scan(&flow).Error; err != nil {
 		t.Fatal(err)
 	}
-	if flow.InFlow != 200 {
-		t.Fatalf("epoch change credited traffic: %+v", flow)
+	if flow.InFlow != 250 {
+		t.Fatalf("epoch change lost new traffic: %+v", flow)
 	}
 }
 

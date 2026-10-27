@@ -10,6 +10,14 @@ import (
 )
 
 func RenderTable(plan NodePlan) string {
+	comment := func(id int64, direction, protocol string) string {
+		v := counterComment(id, direction, protocol)
+		if plan.Generation != "" {
+			v += " " + plan.Generation
+		}
+		return v
+	}
+
 	var b strings.Builder
 	b.WriteString("table inet flvx {\n")
 	b.WriteString("  chain prerouting {\n")
@@ -26,7 +34,7 @@ func RenderTable(plan NodePlan) string {
 				rule.InPort,
 				dnatFamily,
 				formatDNATTarget(rule.TargetHost, rule.TargetPort),
-				counterComment(rule.ForwardID, CounterDirectionDNAT, protocol),
+				comment(rule.ForwardID, CounterDirectionDNAT, protocol),
 			))
 		}
 	}
@@ -53,7 +61,7 @@ func RenderTable(plan NodePlan) string {
 				targetHost,
 				protocol,
 				rule.TargetPort,
-				counterComment(rule.ForwardID, CounterDirectionToTarget, protocol),
+				comment(rule.ForwardID, CounterDirectionToTarget, protocol),
 			))
 			b.WriteString(fmt.Sprintf("    meta l4proto %s ct original proto-dst %d %s saddr %s %s sport %d counter comment %q\n",
 				protocol,
@@ -62,7 +70,7 @@ func RenderTable(plan NodePlan) string {
 				targetHost,
 				protocol,
 				rule.TargetPort,
-				counterComment(rule.ForwardID, CounterDirectionFromTarget, protocol),
+				comment(rule.ForwardID, CounterDirectionFromTarget, protocol),
 			))
 		}
 	}

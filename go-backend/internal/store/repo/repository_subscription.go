@@ -337,7 +337,10 @@ func (r *Repository) ApplySubscriptionCounterSamples(nodeID int64, epoch string,
 			}
 			delta := s.Bytes
 			old, seen := prev[key{s.SubscriptionID, s.Direction}]
-			if seen && old.Epoch == epoch && s.Bytes >= old.Bytes {
+			if seen && old.Epoch == epoch {
+				if s.Bytes < old.Bytes {
+					continue
+				}
 				delta = s.Bytes - old.Bytes
 			}
 			if delta > 0 {
@@ -349,6 +352,7 @@ func (r *Repository) ApplySubscriptionCounterSamples(nodeID int64, epoch string,
 			}
 			row := model.SubscriptionCounter{NodeID: nodeID, SubscriptionID: s.SubscriptionID, Direction: s.Direction,
 				Epoch: epoch, Bytes: s.Bytes, UpdatedTime: now}
+			prev[key{s.SubscriptionID, s.Direction}] = row
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "node_id"}, {Name: "subscription_id"}, {Name: "direction"}},
 				DoUpdates: clause.AssignmentColumns([]string{"epoch", "bytes", "updated_time"}),

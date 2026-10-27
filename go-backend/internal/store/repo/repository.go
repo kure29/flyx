@@ -242,6 +242,8 @@ func autoMigrateAll(db *gorm.DB) error {
 		&model.NodeKernel{},
 		&model.NodeInbound{},
 		&model.NodeInboundCounter{},
+		&model.CounterStream{},
+		&model.CounterEpoch{},
 		&model.NodeInboundRelay{},
 		&model.SubUser{},
 		&model.Subscription{},

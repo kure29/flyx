@@ -28,8 +28,9 @@ type Rule struct {
 }
 
 type NodePlan struct {
-	NodeID int64
-	Rules  []Rule
+	Generation string
+	NodeID     int64
+	Rules      []Rule
 }
 
 type SSHConfig struct {

@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"go-backend/internal/store/repo"
 	"log"
 	"net"
 	"strconv"
@@ -275,6 +276,27 @@ func (h *Handler) switchTunnelEngine(tunnelID int64, fromRealm bool, oldEntryNod
 // applyRealmCounters credits realm forwards with the traffic the agent
 // counted on their ports, the same way nftables forwards are accounted.
 func (h *Handler) applyRealmCounters(nodeID int64, epoch string, counters []agentKernelCounter, now time.Time) {
+	sequence, err := h.repo.NextCounterSnapshot(nodeID, "kernel")
+	if err != nil {
+		return
+	}
+	var batch flowUploadBatch
+	var quotas map[int64]*model.UserQuotaView
+	applied, err := h.repo.ApplyCounterSnapshot(nodeID, "kernel", sequence, epoch, func(tx *repo.Repository) error {
+		var err error
+		batch, quotas, err = (&Handler{repo: tx}).applyRealmCountersTx(nodeID, epoch, counters, now)
+		return err
+	})
+	if err != nil {
+		log.Printf("realm accounting failed: %v", err)
+		return
+	}
+	if applied {
+		h.enforceFlowUploadBatch(nodeID, batch, quotas)
+	}
+}
+func (h *Handler) applyRealmCountersTx(nodeID int64, epoch string, counters []agentKernelCounter, now time.Time) (flowUploadBatch, map[int64]*model.UserQuotaView, error) {
+
 	samples := make([]runtimenft.CounterSample, 0, len(counters))
 	hashes := map[int64]string{}
 	for _, c := range counters {
@@ -293,7 +315,7 @@ func (h *Handler) applyRealmCounters(nodeID int64, epoch string, counters []agen
 		hashes[fid] = "realm:" + epoch
 	}
 	if len(samples) == 0 {
-		return
+		return flowUploadBatch{}, nil, nil
 	}
-	h.accountForwardCounterSamples(nodeID, samples, hashes, now)
+	return h.accountForwardCounterSamplesTx(nodeID, samples, hashes, now)
 }

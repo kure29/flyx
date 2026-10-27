@@ -319,7 +319,10 @@ func (r *Repository) ApplyInboundCounterSamples(samples []InboundCounterSample, 
 				continue
 			}
 			delta := s.Bytes
-			if old, ok := prev[key{s.InboundID, s.Protocol, s.Direction}]; ok && old.Epoch == s.Epoch && s.Bytes >= old.Bytes {
+			if old, ok := prev[key{s.InboundID, s.Protocol, s.Direction}]; ok && old.Epoch == s.Epoch {
+				if s.Bytes < old.Bytes {
+					continue
+				}
 				delta = s.Bytes - old.Bytes
 			}
 			if delta > 0 {
@@ -337,6 +340,7 @@ func (r *Repository) ApplyInboundCounterSamples(samples []InboundCounterSample, 
 				Bytes:       s.Bytes,
 				UpdatedTime: now,
 			}
+			prev[key{s.InboundID, s.Protocol, s.Direction}] = row
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "inbound_id"}, {Name: "protocol"}, {Name: "direction"}},
 				DoUpdates: clause.AssignmentColumns([]string{"epoch", "bytes", "updated_time"}),
