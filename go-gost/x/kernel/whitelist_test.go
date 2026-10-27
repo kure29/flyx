@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -158,5 +160,57 @@ func TestManagerWithoutWhitelistCanRunWithoutNft(t *testing.T) {
 	defer m.Shutdown()
 	if st, err := m.Apply(applyRequest(srv, `{}`, true)); err != nil || !st.Running {
 		t.Fatalf("counter-only failure blocked kernel: %+v %v", st, err)
+	}
+}
+
+func TestManagerWhitelistGeoDataRestartFailsClosed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as fake kernel")
+	}
+	for _, failOn := range []int{1, 2} {
+		name := "geo update"
+		if failOn == 2 {
+			name = "geo rollback"
+		}
+		t.Run(name, func(t *testing.T) {
+			stubNft(t)
+			// A bad geo file makes the fake kernel fail, exercising rollback.
+			binary := strings.Replace(fakeKernel, `if grep -q crash "$3";`, `if grep -q crash "$3" || grep -q crash "$(dirname "$0")/geosite.dat";`, 1)
+			srv, _ := serveKernel(t, zipWith(t, map[string]string{"xray": binary, "geosite.dat": "old"}))
+			m := NewManager(t.TempDir())
+			defer m.Shutdown()
+			req := applyRequest(srv, `{}`, true)
+			req.Ports[0].Allow = []string{"127.0.0.1/32"}
+			if st, err := m.Apply(req); err != nil || !st.Running {
+				t.Fatalf("initial apply: %+v %v", st, err)
+			}
+			calls := 0
+			nftAvailable = func() error {
+				calls++
+				if calls >= failOn {
+					return errors.New("nft unavailable")
+				}
+				return nil
+			}
+			content := "new"
+			if failOn == 2 {
+				content = "crash"
+			}
+			binDir := m.binDir(req.Type, req.Version)
+			if err := os.WriteFile(filepath.Join(binDir, "geosite.dat.new"), []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			m.swapGeoFiles(geoJob{kernelType: req.Type, binDir: binDir}, []string{"geosite.dat"})
+			st := m.state(req.Type, false)
+			if st.Running || !strings.Contains(st.Error, "白名单") {
+				t.Fatalf("geo update bypassed whitelist protection: %+v", st)
+			}
+			if failOn == 2 {
+				data, err := os.ReadFile(filepath.Join(binDir, "geosite.dat"))
+				if err != nil || string(data) != "old" {
+					t.Fatalf("geo rollback did not restore file: %q %v", data, err)
+				}
+			}
+		})
 	}
 }
