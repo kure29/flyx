@@ -228,6 +228,21 @@ func (r *Repository) ListRealmForwardsByNode(nodeID int64) ([]model.ForwardRecor
 	return forwardRecordsFromModels(forwards), nil
 }
 
+// ListRealmForwardPortsByUser includes paused forwards so deleting a user can
+// remove every realm endpoint from its nodes before discarding the bindings.
+func (r *Repository) ListRealmForwardPortsByUser(userID int64) ([]model.ForwardPort, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var ports []model.ForwardPort
+	err := r.db.Model(&model.ForwardPort{}).Select("forward_port.*").
+		Joins("JOIN forward ON forward.id = forward_port.forward_id").
+		Joins("JOIN tunnel ON tunnel.id = forward.tunnel_id").
+		Where("forward.user_id = ? AND tunnel.engine = ?", userID, "realm").
+		Order("forward_port.id ASC").Find(&ports).Error
+	return ports, err
+}
+
 func forwardRecordsFromModels(forwards []model.Forward) []model.ForwardRecord {
 	rows := make([]model.ForwardRecord, 0, len(forwards))
 	for _, f := range forwards {
