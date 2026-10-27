@@ -6,7 +6,7 @@ import type {
   NodeApiItem,
 } from "@/api/types";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronRight,
@@ -18,6 +18,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import {
   getInboundList,
   getInboundRelays,
@@ -256,33 +257,41 @@ export function AdminOverview() {
   );
   const [subs, setSubs] = useCachedState<SubscriptionItem[]>(PAGE, "subs", []);
 
-  const load = useCallback(async () => {
+  const loadPending = useRef(0);
+
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+
+    if (silent && loadPending.current > 0) return;
+    loadPending.current += 1;
     try {
       const [n, k, i, r, s] = await Promise.all([
-        getNodeList(),
-        getKernelList(),
-        getInboundList(),
-        getInboundRelays(0),
-        getSubscriptions(),
+        getNodeList().catch(() => null),
+        getKernelList().catch(() => null),
+        getInboundList().catch(() => null),
+        getInboundRelays(0).catch(() => null),
+        getSubscriptions().catch(() => null),
       ]);
 
-      if (n.code === 0) setNodes(n.data ?? []);
-      if (k.code === 0) setKernels(k.data ?? []);
-      if (i.code === 0) setInbounds(i.data ?? []);
-      if (r.code === 0) setRelays(r.data ?? []);
-      if (s.code === 0) setSubs(s.data?.items ?? []);
+      if (n?.code === 0) setNodes(n.data ?? []);
+      if (k?.code === 0) setKernels(k.data ?? []);
+      if (i?.code === 0) setInbounds(i.data ?? []);
+      if (r?.code === 0) setRelays(r.data ?? []);
+      if (s?.code === 0) setSubs(s.data?.items ?? []);
       markPageCached(PAGE);
     } finally {
+      loadPending.current -= 1;
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
-    const timer = window.setInterval(load, 30000);
-
-    return () => window.clearInterval(timer);
+    void load();
   }, [load]);
+  useVisiblePolling(
+    useCallback(() => load({ silent: true }), [load]),
+    30_000,
+  );
 
   if (loading) return <PageLoadingState message="正在加载..." />;
 

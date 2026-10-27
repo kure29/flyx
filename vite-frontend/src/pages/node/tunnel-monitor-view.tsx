@@ -43,6 +43,7 @@ import {
   getMonitorTunnelQualityHistory,
   getConfigByName,
 } from "@/api";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Card, CardBody, CardHeader } from "@/shadcn-bridge/heroui/card";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
@@ -734,6 +735,11 @@ const ForwardingChainTopology = React.memo(function ForwardingChainTopology({
 });
 
 export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
+  const loadTunnelsPending = useRef(0);
+  const loadQualityPending = useRef(0);
+  const loadQualityHistoryPending = useRef(0);
+  const loadTunnelMetricsPending = useRef(0);
+
   const [tunnels, setTunnels] = useState<MonitorTunnelApiItem[]>([]);
   const [tunnelsLoading, setTunnelsLoading] = useState(false);
   const [tunnelsError, setTunnelsError] = useState<string | null>(null);
@@ -748,7 +754,6 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
   >({});
   const initialHistoryFetched = useRef(false);
   const [qualityLoading, setQualityLoading] = useState(false);
-  const qualityTimerRef = useRef<number | null>(null);
   const [monitorTunnelQualityEnabled, setMonitorTunnelQualityEnabled] =
     useState(true);
   const [tunnelQualityIntervalSec, setTunnelQualityIntervalSec] = useState(
@@ -778,6 +783,8 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
 
   // --- Load tunnel list ---
   const loadTunnels = useCallback(async (options?: { silent?: boolean }) => {
+    if (options?.silent && loadTunnelsPending.current > 0) return;
+    loadTunnelsPending.current += 1;
     const silent = options?.silent ?? false;
 
     if (!silent) setTunnelsLoading(true);
@@ -807,6 +814,7 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
       }
     } finally {
       if (!silent) setTunnelsLoading(false);
+      loadTunnelsPending.current -= 1;
     }
   }, []);
 
@@ -833,13 +841,10 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
     void loadTunnelQualityConfig();
   }, [loadTunnelQualityConfig, loadTunnels]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void loadTunnels({ silent: true });
-    }, 60_000);
-
-    return () => window.clearInterval(timer);
-  }, [loadTunnels]);
+  useVisiblePolling(
+    useCallback(() => loadTunnels({ silent: true }), [loadTunnels]),
+    60_000,
+  );
 
   useEffect(() => {
     const handleMonitorTunnelQualityEnabledChanged = (event: Event) => {
@@ -930,6 +935,8 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
 
   // --- Load quality snapshots using the configured probe interval ---
   const loadQuality = useCallback(async (options?: { silent?: boolean }) => {
+    if (options?.silent && loadQualityPending.current > 0) return;
+    loadQualityPending.current += 1;
     const silent = options?.silent ?? false;
 
     if (!silent) setQualityLoading(true);
@@ -967,6 +974,7 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
       // Silently ignore quality load failures
     } finally {
       if (!silent) setQualityLoading(false);
+      loadQualityPending.current -= 1;
     }
   }, []);
 
@@ -978,31 +986,18 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
     void loadQuality();
   }, [loadQuality, monitorTunnelQualityEnabled]);
 
-  useEffect(() => {
-    if (!monitorTunnelQualityEnabled) {
-      if (qualityTimerRef.current) {
-        window.clearInterval(qualityTimerRef.current);
-        qualityTimerRef.current = null;
-      }
-
-      return;
-    }
-
-    qualityTimerRef.current = window.setInterval(() => {
-      void loadQuality({ silent: true });
-    }, tunnelQualityIntervalSec * 1000);
-
-    return () => {
-      if (qualityTimerRef.current) {
-        window.clearInterval(qualityTimerRef.current);
-        qualityTimerRef.current = null;
-      }
-    };
-  }, [loadQuality, monitorTunnelQualityEnabled, tunnelQualityIntervalSec]);
+  useVisiblePolling(
+    useCallback(async () => {
+      if (monitorTunnelQualityEnabled) await loadQuality({ silent: true });
+    }, [loadQuality, monitorTunnelQualityEnabled]),
+    tunnelQualityIntervalSec * 1000,
+  );
 
   // --- Load quality history for detail chart ---
   const loadQualityHistory = useCallback(
     async (tunnelId: number, options?: { silent?: boolean }) => {
+      if (options?.silent && loadQualityHistoryPending.current > 0) return;
+      loadQualityHistoryPending.current += 1;
       const silent = options?.silent ?? false;
 
       if (!silent) setQualityHistoryLoading(true);
@@ -1013,7 +1008,9 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
           tunnelId,
           start,
           end,
-        );
+        ).finally(() => {
+          loadQualityHistoryPending.current -= 1;
+        });
 
         if (response.code === 0 && Array.isArray(response.data)) {
           setQualityHistoryError(null);
@@ -1042,13 +1039,19 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
   // --- Load tunnel traffic metrics for detail chart ---
   const loadTunnelMetrics = useCallback(
     async (tunnelId: number, options?: { silent?: boolean }) => {
+      if (options?.silent && loadTunnelMetricsPending.current > 0) return;
+      loadTunnelMetricsPending.current += 1;
       const silent = options?.silent ?? false;
 
       if (!silent) setTunnelMetricsLoading(true);
       try {
         const end = Date.now();
         const start = end - tunnelRangeMs;
-        const response = await getTunnelMetrics(tunnelId, start, end);
+        const response = await getTunnelMetrics(tunnelId, start, end).finally(
+          () => {
+            loadTunnelMetricsPending.current -= 1;
+          },
+        );
 
         if (response.code === 0 && Array.isArray(response.data)) {
           setTunnelMetricsError(null);
@@ -1084,23 +1087,24 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
     monitorTunnelQualityEnabled,
   ]);
 
-  // Auto-refresh detail charts
-  useEffect(() => {
-    if (!detailTunnelId) return;
-    const timer = window.setInterval(() => {
-      if (monitorTunnelQualityEnabled) {
-        void loadQualityHistory(detailTunnelId, { silent: true });
-      }
-      void loadTunnelMetrics(detailTunnelId, { silent: true });
-    }, 30_000);
-
-    return () => window.clearInterval(timer);
-  }, [
-    detailTunnelId,
-    loadQualityHistory,
-    loadTunnelMetrics,
-    monitorTunnelQualityEnabled,
-  ]);
+  // Auto-refresh detail charts only while the document is visible.
+  useVisiblePolling(
+    useCallback(async () => {
+      if (!detailTunnelId) return;
+      await Promise.all([
+        monitorTunnelQualityEnabled
+          ? loadQualityHistory(detailTunnelId, { silent: true })
+          : Promise.resolve(),
+        loadTunnelMetrics(detailTunnelId, { silent: true }),
+      ]);
+    }, [
+      detailTunnelId,
+      loadQualityHistory,
+      loadTunnelMetrics,
+      monitorTunnelQualityEnabled,
+    ]),
+    30_000,
+  );
 
   // Memoize chart data so React.memo sub-components see stable references
   const qualityChartData = useMemo(
