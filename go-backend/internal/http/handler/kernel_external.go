@@ -59,8 +59,9 @@ func (h *Handler) inboundImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Links     string `json:"links"`
-		RelayOnly bool   `json:"relayOnly"`
+		Links     string   `json:"links"`
+		RelayOnly bool     `json:"relayOnly"`
+		Tags      []string `json:"tags"`
 	}
 	if err := decodeJSON(r.Body, &req); err != nil {
 		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
@@ -78,6 +79,11 @@ func (h *Handler) inboundImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		text = body
+	}
+	tags, err := normalizeTags(req.Tags)
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
 	}
 	nodes, parseErrs := kernel.ParseImport(text)
 	if len(nodes) > maxImportNodes {
@@ -107,6 +113,7 @@ func (h *Handler) inboundImport(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[key] = true
 		row, err := externalRow(node, req.RelayOnly, now)
+		row.Tags = tags
 		if err == nil {
 			err = h.repo.CreateNodeInbound(&row)
 		}

@@ -490,6 +490,16 @@ func (r *Repository) TunnelExitNodeIDs(tunnelID int64) ([]int64, error) {
 	return ids, err
 }
 
+// SetNodeInboundTags replaces the tags of the given inbounds.
+func (r *Repository) SetNodeInboundTags(ids []int64, tags string, now int64) (int64, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("repository not initialized")
+	}
+	res := r.db.Model(&model.NodeInbound{}).Where("id IN ?", ids).
+		Updates(map[string]interface{}{"tags": tags, "updated_time": now})
+	return res.RowsAffected, res.Error
+}
+
 func (r *Repository) SetNodeInboundRelayOnly(id int64, relayOnly int) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
