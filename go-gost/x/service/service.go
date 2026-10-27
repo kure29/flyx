@@ -390,6 +390,9 @@ func (s *defaultService) observeStats(ctx context.Context) {
 			if isUpdated {
 				inputBytes := st.Get(stats.KindInputBytes)
 				outputBytes := st.Get(stats.KindOutputBytes)
+				if localStats, ok := st.(*xstats.Stats); ok {
+					inputBytes, outputBytes = localStats.TakeTraffic()
+				}
 
 				evs := []observer.Event{
 					xstats.StatsEvent{
@@ -407,11 +410,6 @@ func (s *defaultService) observeStats(ctx context.Context) {
 				if outputBytes > 0 || inputBytes > 0 {
 					globalManager := GetGlobalTrafficManager()
 					globalManager.AddTraffic(s.name, int64(outputBytes), int64(inputBytes))
-
-					// 立即重置流量计数（因为已经记录到全局管理器中）
-					if xstats, ok := st.(*xstats.Stats); ok {
-						xstats.ResetTraffic(st.Get(stats.KindInputBytes)-inputBytes, st.Get(stats.KindOutputBytes)-outputBytes)
-					}
 				}
 
 				if err := s.options.observer.Observe(ctx, evs); err != nil {
