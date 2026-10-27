@@ -697,7 +697,7 @@ export default function InboundPage() {
 
     const badges = (
       <>
-        <TagChips tags={item.tags} />
+        <TagChips max={card ? undefined : 3} tags={item.tags} />
         {item.outboundIpStrategy && item.outboundIpStrategy !== "auto" && (
           <Chip
             className="shrink-0 whitespace-nowrap"
@@ -887,8 +887,11 @@ export default function InboundPage() {
           title={stateText}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate font-medium">{item.name}</span>
+          {/* Badges wrap under the name rather than squeezing it out. */}
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <span className="min-w-0 max-w-full truncate font-medium">
+              {item.name}
+            </span>
             {badges}
           </div>
           <div className="truncate text-xs text-default-500">

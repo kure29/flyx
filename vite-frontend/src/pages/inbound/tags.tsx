@@ -37,10 +37,15 @@ export function collectTags(items: Array<{ tags?: string[] }>): string[] {
     .map(([t]) => t);
 }
 
-export function TagChips({ tags }: { tags?: string[] }) {
+/** The tags as chips; past max, the rest collapse into a "+N" chip. */
+export function TagChips({ tags, max }: { tags?: string[]; max?: number }) {
+  const all = tags ?? [];
+  const shown = max !== undefined && all.length > max ? all.slice(0, max) : all;
+  const rest = all.length - shown.length;
+
   return (
     <>
-      {(tags ?? []).map((t) => (
+      {shown.map((t) => (
         <Chip
           key={t}
           className="shrink-0 whitespace-nowrap"
@@ -51,6 +56,16 @@ export function TagChips({ tags }: { tags?: string[] }) {
           {t}
         </Chip>
       ))}
+      {rest > 0 && (
+        <Chip
+          className="shrink-0 whitespace-nowrap"
+          size="sm"
+          title={all.slice(shown.length).join("、")}
+          variant="flat"
+        >
+          +{rest}
+        </Chip>
+      )}
     </>
   );
 }
