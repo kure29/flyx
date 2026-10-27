@@ -25,11 +25,12 @@ func (h *Handler) StartBackgroundJobs() {
 	h.jobsCancel = cancel
 	h.jobsCtx = ctx
 	h.jobsStarted = true
-	h.jobsWG.Add(14)
+	h.jobsWG.Add(15)
 	h.jobsMu.Unlock()
 
 	go h.runHourlyStatsLoop(ctx)
 	go h.runDailyMaintenanceLoop(ctx)
+	go h.runQuotaControlLoop(ctx)
 	go h.runNodeRenewalCycleLoop(ctx)
 	go h.runMetricsIngestion(ctx)
 	go h.runHealthChecks(ctx)
@@ -272,7 +273,6 @@ func (h *Handler) runResetAndExpiryJob(now time.Time) {
 	}
 
 	h.resetMonthlyFlow(now)
-	h.resetUserQuotaWindows(now)
 	h.disableExpiredUsers(now.UnixMilli())
 	h.disableExpiredUserTunnels(now.UnixMilli())
 }
@@ -349,4 +349,23 @@ func (h *Handler) runNodeRenewalCycleJob(now time.Time) {
 	}
 
 	_ = advanced
+}
+
+func (h *Handler) runQuotaControlLoop(ctx context.Context) {
+	defer h.jobsWG.Done()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		h.resetUserQuotaWindows(time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

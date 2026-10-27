@@ -208,6 +208,23 @@ func (r *Repository) ListActiveForwardsByNode(nodeID int64) ([]model.ForwardReco
 	return forwardRecordsFromModels(forwards), nil
 }
 
+func (r *Repository) ListNftablesForwardsByNode(nodeID int64) ([]model.ForwardRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var forwards []model.Forward
+	err := r.db.Model(&model.Forward{}).
+		Joins("JOIN forward_port ON forward_port.forward_id = forward.id").
+		Where("forward_port.node_id = ? AND forward.status IN (0, 1)", nodeID).
+		Order("forward.id ASC").
+		Distinct("forward.*").
+		Find(&forwards).Error
+	if err != nil {
+		return nil, err
+	}
+	return forwardRecordsFromModels(forwards), nil
+}
+
 // ListRealmForwardsByNode lists the forwards, paused ones included, with a
 // port on the node in tunnels run by realm.
 func (r *Repository) ListRealmForwardsByNode(nodeID int64) ([]model.ForwardRecord, error) {

@@ -160,3 +160,29 @@ func TestManagerMethodsRequireInitializedRunner(t *testing.T) {
 		t.Fatalf("expected not initialized error from CollectCounters, got %v", err)
 	}
 }
+
+type blockCleanupRunner struct {
+	fakeRunner
+	cleared  bool
+	clearErr error
+}
+
+func (r *blockCleanupRunner) ClearBlocks(context.Context, SSHConfig) error {
+	r.cleared = true
+	return r.clearErr
+}
+
+func TestManagerClearRemovesQuotaFiltersAndReportsFailure(t *testing.T) {
+	runner := &blockCleanupRunner{clearErr: errors.New("filter cleanup failed")}
+	manager := NewManager(runner)
+	if err := manager.Clear(context.Background(), SSHConfig{}); !errors.Is(err, runner.clearErr) {
+		t.Fatalf("lost cleanup failure: %v", err)
+	}
+	if !runner.cleared || len(runner.scripts) != 1 {
+		t.Fatal("missing NAT or quota cleanup")
+	}
+	runner.clearErr = nil
+	if err := manager.Clear(context.Background(), SSHConfig{}); err != nil {
+		t.Fatal(err)
+	}
+}

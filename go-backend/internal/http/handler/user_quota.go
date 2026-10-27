@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -38,65 +40,92 @@ func (h *Handler) userQuotaBlockReason(userID int64, now int64) (string, error) 
 }
 
 func (h *Handler) enforceUserQuotaIfNeeded(userID int64, quota *model.UserQuotaView) {
-	if h == nil || h.repo == nil || userID <= 0 || quota == nil {
+	if h == nil || h.repo == nil || quota == nil {
 		return
 	}
-	if quota.DisabledByQuota == 1 || !isUserQuotaExceeded(quota) {
+	if !isUserQuotaExceeded(quota) && quota.DisabledByQuota == 0 && quota.PausedForwardIDs == "" {
 		return
 	}
+	h.reconcileUserQuota(userID, time.Now())
+}
 
-	forwards, err := h.listActiveForwardsByUser(userID)
-	if err != nil {
+func (h *Handler) reconcileUserQuota(userID int64, now time.Time) {
+	h.quotaControlMu.Lock()
+	defer h.quotaControlMu.Unlock()
+	quota, err := h.repo.GetUserQuotaView(userID, now)
+	if err != nil || quota == nil {
 		return
 	}
-	pausedIDs := make([]int64, 0, len(forwards))
-	now := time.Now().UnixMilli()
-	for i := range forwards {
-		forward := &forwards[i]
-		if forward.Status != 1 {
-			continue
+	if isUserQuotaExceeded(quota) {
+		forwards, err := h.listActiveForwardsByUser(userID)
+		if err != nil {
+			return
 		}
-		if err := h.controlForwardServices(forward, "PauseService", false); err != nil {
-			continue
+		ids := make([]int64, 0, len(forwards))
+		for _, f := range forwards {
+			if f.Status == 1 {
+				ids = append(ids, f.ID)
+			}
 		}
-		if err := h.repo.UpdateForwardStatus(forward.ID, 0, now); err != nil {
-			continue
+		// Persist every intended pause before attempting any remote operation.
+		if err := h.repo.MarkUserQuotaDisabled(userID, ids, now.UnixMilli()); err != nil {
+			return
 		}
-		pausedIDs = append(pausedIDs, forward.ID)
+		quota, err = h.repo.GetUserQuotaView(userID, now)
+		if err != nil || quota == nil {
+			return
+		}
 	}
-	_ = h.repo.MarkUserQuotaDisabled(userID, pausedIDs, now)
+	for _, id := range repo.QuotaForwardIDs(quota) {
+		forward, err := h.getForwardRecord(id)
+		if errors.Is(err, errForwardNotFound) || errors.Is(err, sql.ErrNoRows) || (err == nil && forward == nil) {
+			_ = h.repo.AcknowledgeQuotaResume(userID, id, now.UnixMilli())
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		command, status := "ResumeService", 1
+		if quota.DisabledByQuota == 1 {
+			command, status = "PauseService", 0
+			// Retry even acknowledged pauses: a node restart can discard its
+			// runtime block while the panel's durable intent remains valid.
+		} else if err := h.ensureUserTunnelForwardAllowed(forward.UserID, forward.TunnelID, now.UnixMilli()); err != nil {
+			continue
+		}
+		if err := h.controlForwardServices(forward, command, false); err != nil {
+			log.Printf("quota control user=%d forward=%d command=%s: %v", userID, id, command, err)
+			continue
+		}
+		if err := h.repo.UpdateForwardStatus(id, status, now.UnixMilli()); err != nil {
+			continue
+		}
+		if status == 1 {
+			_ = h.repo.AcknowledgeQuotaResume(userID, id, now.UnixMilli())
+		}
+	}
 }
 
 func (h *Handler) applyUserQuotaRelease(release *repo.UserQuotaRelease, now int64) {
-	if h == nil || h.repo == nil || release == nil || release.UserID <= 0 || !release.UnblockUser {
+	if h == nil || h.repo == nil || release == nil || !release.UnblockUser {
 		return
 	}
-	for _, forwardID := range release.ForwardIDs {
-		forward, err := h.getForwardRecord(forwardID)
-		if err != nil || forward == nil {
-			continue
-		}
-		if err := h.ensureUserTunnelForwardAllowed(forward.UserID, forward.TunnelID, now); err != nil {
-			continue
-		}
-		if err := h.controlForwardServices(forward, "ResumeService", false); err != nil {
-			continue
-		}
-		_ = h.repo.UpdateForwardStatus(forwardID, 1, now)
-	}
+	h.reconcileUserQuota(release.UserID, time.UnixMilli(now))
 }
 
 func (h *Handler) resetUserQuotaWindows(now time.Time) {
 	if h == nil || h.repo == nil {
 		return
 	}
-	releases, err := h.repo.RollUserQuotaWindows(now)
+	if _, err := h.repo.RollUserQuotaWindows(now); err != nil {
+		return
+	}
+	ids, err := h.repo.ListUserQuotaControlUsers()
 	if err != nil {
 		return
 	}
-	nowMs := now.UnixMilli()
-	for i := range releases {
-		h.applyUserQuotaRelease(&releases[i], nowMs)
+	for _, id := range ids {
+		h.reconcileUserQuota(id, now)
 	}
 }
 

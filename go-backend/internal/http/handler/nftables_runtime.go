@@ -19,6 +19,7 @@ import (
 )
 
 type nftablesRuntimeManager interface {
+	SetBlocked(context.Context, runtimenft.SSHConfig, int, bool) error
 	Test(ctx context.Context, cfg runtimenft.SSHConfig) error
 	Reconcile(ctx context.Context, cfg runtimenft.SSHConfig, plan runtimenft.NodePlan) (runtimenft.ApplyResult, error)
 	Clear(ctx context.Context, cfg runtimenft.SSHConfig) error
@@ -155,7 +156,15 @@ func (h *Handler) buildNftablesNodePlan(nodeID int64) (runtimenft.NodePlan, *mod
 	if err != nil {
 		return runtimenft.NodePlan{}, nil, err
 	}
-	forwards, err := h.repo.ListActiveForwardsByNode(nodeID)
+	forwards, err := h.repo.ListNftablesForwardsByNode(nodeID)
+	if err != nil {
+		return runtimenft.NodePlan{}, nil, err
+	}
+	userIDs := make([]int64, 0, len(forwards))
+	for _, f := range forwards {
+		userIDs = append(userIDs, f.UserID)
+	}
+	quotas, err := h.repo.ListUserQuotaViewsByUserIDs(userIDs, time.Now())
 	if err != nil {
 		return runtimenft.NodePlan{}, nil, err
 	}
@@ -195,6 +204,7 @@ func (h *Handler) buildNftablesNodePlan(nodeID int64) (runtimenft.NodePlan, *mod
 				TargetHost: target.Host,
 				TargetPort: target.Port,
 				Protocols:  []string{"tcp", "udp"},
+				Paused:     forward.Status != 1 || (quotas[forward.UserID] != nil && (quotas[forward.UserID].DisabledByQuota == 1 || isUserQuotaExceeded(quotas[forward.UserID]))),
 			})
 		}
 	}
@@ -202,6 +212,12 @@ func (h *Handler) buildNftablesNodePlan(nodeID int64) (runtimenft.NodePlan, *mod
 }
 
 func (h *Handler) syncNftablesNode(nodeID int64) error {
+	h.nftablesControlMu.Lock()
+	defer h.nftablesControlMu.Unlock()
+	return h.syncNftablesNodeLocked(nodeID)
+}
+
+func (h *Handler) syncNftablesNodeLocked(nodeID int64) error {
 	if h == nil || h.repo == nil {
 		return errors.New("handler not initialized")
 	}
@@ -213,6 +229,14 @@ func (h *Handler) syncNftablesNode(nodeID int64) error {
 	if err != nil {
 		return err
 	}
+	// Restore blocks before NAT rules, including after a node restart.
+	for _, rule := range plan.Rules {
+		if rule.Paused {
+			if err := h.nftablesManager.SetBlocked(context.Background(), sshCfg, rule.InPort, true); err != nil {
+				return err
+			}
+		}
+	}
 	result, err := h.nftablesManager.Reconcile(context.Background(), sshCfg, plan)
 	now := time.Now().UnixMilli()
 	if err != nil {
@@ -221,6 +245,13 @@ func (h *Handler) syncNftablesNode(nodeID int64) error {
 			_ = h.repo.MarkNftRuleBindingError(binding.ForwardID, nodeID, err.Error(), now)
 		}
 		return err
+	}
+	for _, rule := range plan.Rules {
+		if !rule.Paused {
+			if err := h.nftablesManager.SetBlocked(context.Background(), sshCfg, rule.InPort, false); err != nil {
+				return err
+			}
+		}
 	}
 	activeForwardIDs := make(map[int64]struct{}, len(plan.Rules))
 	for _, rule := range plan.Rules {
@@ -271,6 +302,8 @@ func (h *Handler) loadNftablesSSHConfig(nodeID int64) (runtimenft.SSHConfig, err
 }
 
 func (h *Handler) clearNftablesNode(nodeID int64) error {
+	h.nftablesControlMu.Lock()
+	defer h.nftablesControlMu.Unlock()
 	if h == nil || h.repo == nil {
 		return errors.New("handler not initialized")
 	}
@@ -368,4 +401,57 @@ func (h *Handler) nodeNftablesClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, response.OKEmpty())
+}
+
+func (h *Handler) controlNftablesForward(forward *forwardRecord, nodes []int64, command string) error {
+	h.nftablesControlMu.Lock()
+	defer h.nftablesControlMu.Unlock()
+	if h.nftablesManager == nil {
+		return errors.New("nftables manager not initialized")
+	}
+	blocked := command == "PauseService" || command == "DeleteService"
+	if !blocked && command != "ResumeService" {
+		return fmt.Errorf("unsupported nftables command: %s", command)
+	}
+	ports, err := h.listForwardPorts(forward.ID)
+	if err != nil {
+		return err
+	}
+	if len(nodes) != 1 || len(ports) == 0 {
+		return errors.New("nftables forward has no valid entry port")
+	}
+	cfg, err := h.loadNftablesSSHConfig(nodes[0])
+	if err != nil {
+		return err
+	}
+	if !blocked {
+		bindings, err := h.repo.ListNftRuleBindingsByNode(nodes[0])
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, binding := range bindings {
+			if binding.ForwardID == forward.ID && binding.Status == runtimenft.StatusApplied {
+				found = true
+			}
+		}
+		if !found {
+			if err := h.syncNftablesNodeLocked(nodes[0]); err != nil {
+				return err
+			}
+		}
+	}
+	for _, port := range ports {
+		if port.NodeID != nodes[0] {
+			continue
+		}
+		if err := h.nftablesManager.SetBlocked(context.Background(), cfg, port.Port, blocked); err != nil {
+			return err
+		}
+	}
+	status := 1
+	if blocked {
+		status = 0
+	}
+	return h.repo.UpdateForwardStatus(forward.ID, status, time.Now().UnixMilli())
 }

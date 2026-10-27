@@ -325,12 +325,21 @@ func (r *Repository) MarkUserQuotaDisabled(userID int64, pausedForwardIDs []int6
 	if userID <= 0 {
 		return errors.New("user id is required")
 	}
-	return r.db.Model(&model.UserQuota{}).Where("user_id = ?", userID).Updates(map[string]interface{}{
-		"disabled_by_quota":  1,
-		"disabled_at":        now,
-		"paused_forward_ids": joinPausedForwardIDs(pausedForwardIDs),
-		"updated_time":       now,
-	}).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		q, err := r.loadOrCreateUserQuotaTx(tx, userID, time.UnixMilli(now))
+		if err != nil {
+			return err
+		}
+		// A reset may have happened since the caller read the quota.
+		if !userQuotaExceeded(normalizeUserQuotaView(cloneUserQuotaView(*q), time.UnixMilli(now))) {
+			return nil
+		}
+		ids := append(parsePausedForwardIDs(q.PausedForwardIDs), pausedForwardIDs...)
+		return tx.Model(q).Updates(map[string]interface{}{
+			"disabled_by_quota": 1, "disabled_at": now,
+			"paused_forward_ids": joinPausedForwardIDs(ids), "updated_time": now,
+		}).Error
+	})
 }
 
 func (r *Repository) ResetUserQuotaUsage(userID int64, scope string, now time.Time) (*UserQuotaRelease, error) {
@@ -370,7 +379,7 @@ func (r *Repository) ResetUserQuotaUsage(userID int64, scope string, now time.Ti
 			release.ForwardIDs = parsePausedForwardIDs(q.PausedForwardIDs)
 			q.DisabledByQuota = 0
 			q.DisabledAt = 0
-			q.PausedForwardIDs = ""
+			// Keep restoration intent until the node acknowledges the resume.
 		}
 		return tx.Model(&model.UserQuota{}).Where("user_id = ?", userID).Updates(map[string]interface{}{
 			"daily_used_bytes":   q.DailyUsedBytes,
@@ -396,7 +405,10 @@ func (r *Repository) RollUserQuotaWindows(now time.Time) ([]UserQuotaRelease, er
 	var releases []UserQuotaRelease
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var rows []model.UserQuota
-		if err := tx.Find(&rows).Error; err != nil {
+		// Usage updates lock the same rows before reading them. Keep the lock
+		// through the window roll so maintenance cannot overwrite newer usage.
+		// Match the batch writer's order to avoid inverted lock acquisition.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Order("user_id ASC").Find(&rows).Error; err != nil {
 			return err
 		}
 		nowMs := now.UnixMilli()
@@ -409,7 +421,7 @@ func (r *Repository) RollUserQuotaWindows(now time.Time) ([]UserQuotaRelease, er
 				release.ForwardIDs = parsePausedForwardIDs(q.PausedForwardIDs)
 				q.DisabledByQuota = 0
 				q.DisabledAt = 0
-				q.PausedForwardIDs = ""
+				// Keep restoration intent until the node acknowledges the resume.
 				changed = true
 			}
 			if !changed {
@@ -438,4 +450,62 @@ func (r *Repository) RollUserQuotaWindows(now time.Time) ([]UserQuotaRelease, er
 		return nil, err
 	}
 	return releases, nil
+}
+
+// ListUserQuotaControlUsers includes unfinished operations after a window reset
+// or a panel restart. PausedForwardIDs records intent, not command success.
+func (r *Repository) ListUserQuotaControlUsers() ([]int64, error) {
+	var ids []int64
+	err := r.db.Model(&model.UserQuota{}).Where("disabled_by_quota = 1 OR paused_forward_ids <> '' OR daily_limit_gb > 0 OR monthly_limit_gb > 0").Order("user_id ASC").Pluck("user_id", &ids).Error
+	return ids, err
+}
+
+func QuotaForwardIDs(view *model.UserQuotaView) []int64 {
+	if view == nil {
+		return nil
+	}
+	return parsePausedForwardIDs(view.PausedForwardIDs)
+}
+
+// AcknowledgeQuotaResume removes only a completed release. A concurrent new
+// quota violation keeps its pause intent, so the next retry converges again.
+func (r *Repository) AcknowledgeQuotaResume(userID, forwardID, now int64) error {
+	return r.forgetQuotaForward(userID, forwardID, now, false)
+}
+
+func (r *Repository) forgetQuotaForward(userID, forwardID, now int64, manual bool) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var q model.UserQuota
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&q).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !manual && (q.DisabledByQuota == 1 || userQuotaExceeded(normalizeUserQuotaView(cloneUserQuotaView(q), time.UnixMilli(now)))) {
+			return nil
+		}
+		ids := parsePausedForwardIDs(q.PausedForwardIDs)
+		kept := ids[:0]
+		for _, id := range ids {
+			if id != forwardID {
+				kept = append(kept, id)
+			}
+		}
+		return tx.Model(&q).Updates(map[string]interface{}{"paused_forward_ids": joinPausedForwardIDs(kept), "updated_time": now}).Error
+	})
+}
+
+// A manual pause relinquishes quota ownership, so a later quota reset cannot
+// silently undo the user's choice. Status and ownership change atomically.
+func (r *Repository) SetManualForwardStatus(userID, forwardID int64, status int, now int64) error {
+	return r.db.Transaction(func(db *gorm.DB) error {
+		tx := &Repository{db: db, dbPath: r.dbPath}
+		// Match accounting's forward-before-quota row lock order.
+		if err := tx.UpdateForwardStatus(forwardID, status, now); err != nil {
+			return err
+		}
+		return tx.forgetQuotaForward(userID, forwardID, now, true)
+	})
 }

@@ -473,6 +473,8 @@ func (h *Handler) forwardForceDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) forwardPause(w http.ResponseWriter, r *http.Request) {
+	h.quotaControlMu.Lock()
+	defer h.quotaControlMu.Unlock()
 	id := idFromBody(r, w)
 	if id <= 0 {
 		return
@@ -490,7 +492,10 @@ func (h *Handler) forwardPause(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
-	_ = h.repo.UpdateForwardStatus(id, 0, time.Now().UnixMilli())
+	if err := h.repo.SetManualForwardStatus(forward.UserID, id, 0, time.Now().UnixMilli()); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
 	response.WriteJSON(w, response.OKEmpty())
 }
 
@@ -515,6 +520,8 @@ func (h *Handler) forwardResetFlow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) forwardResume(w http.ResponseWriter, r *http.Request) {
+	h.quotaControlMu.Lock()
+	defer h.quotaControlMu.Unlock()
 	id := idFromBody(r, w)
 	if id <= 0 {
 		return
@@ -537,7 +544,10 @@ func (h *Handler) forwardResume(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
-	_ = h.repo.UpdateForwardStatus(id, 1, now)
+	if err := h.repo.SetManualForwardStatus(forward.UserID, id, 1, now); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
 	response.WriteJSON(w, response.OKEmpty())
 }
 
@@ -641,6 +651,8 @@ func (h *Handler) forwardBatchDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) forwardBatchPause(w http.ResponseWriter, r *http.Request) {
+	h.quotaControlMu.Lock()
+	defer h.quotaControlMu.Unlock()
 	ids := idsFromBody(r, w)
 	if ids == nil {
 		return
@@ -665,7 +677,7 @@ func (h *Handler) forwardBatchPause(w http.ResponseWriter, r *http.Request) {
 			failures = appendBatchFailure(failures, id, forward.Name, err)
 			continue
 		}
-		if err := h.repo.UpdateForwardStatus(id, 0, time.Now().UnixMilli()); err != nil {
+		if err := h.repo.SetManualForwardStatus(forward.UserID, id, 0, time.Now().UnixMilli()); err != nil {
 			f++
 			failures = appendBatchFailure(failures, id, forward.Name, err)
 		} else {
@@ -676,6 +688,8 @@ func (h *Handler) forwardBatchPause(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) forwardBatchResume(w http.ResponseWriter, r *http.Request) {
+	h.quotaControlMu.Lock()
+	defer h.quotaControlMu.Unlock()
 	ids := idsFromBody(r, w)
 	if ids == nil {
 		return
@@ -706,7 +720,7 @@ func (h *Handler) forwardBatchResume(w http.ResponseWriter, r *http.Request) {
 			failures = appendBatchFailure(failures, id, forward.Name, err)
 			continue
 		}
-		if err := h.repo.UpdateForwardStatus(id, 1, now); err != nil {
+		if err := h.repo.SetManualForwardStatus(forward.UserID, id, 1, now); err != nil {
 			f++
 			failures = appendBatchFailure(failures, id, forward.Name, err)
 		} else {

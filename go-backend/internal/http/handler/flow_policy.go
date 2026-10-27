@@ -412,7 +412,10 @@ func (h *Handler) pauseUserTunnelForwards(userID int64, tunnelID int64, now int6
 func (h *Handler) pauseForwardRecords(forwards []forwardRecord, now int64) {
 	for i := range forwards {
 		forward := forwards[i]
-		_ = h.controlForwardServices(&forward, "PauseService", false)
+		if err := h.controlForwardServices(&forward, "PauseService", false); err != nil {
+			log.Printf("flow policy pause failed forward=%d: %v", forward.ID, err)
+			continue
+		}
 		_ = h.repo.UpdateForwardStatus(forward.ID, 0, now)
 	}
 }

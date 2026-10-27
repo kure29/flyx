@@ -19,6 +19,7 @@ type Target struct {
 }
 
 type Rule struct {
+	Paused     bool
 	ForwardID  int64
 	InPort     int
 	BindIP     string

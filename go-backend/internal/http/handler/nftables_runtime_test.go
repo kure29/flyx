@@ -21,6 +21,9 @@ import (
 )
 
 type fakeNftablesManager struct {
+	blockErr       error
+	blocked        map[int]bool
+	blockHit       int
 	mu             sync.Mutex
 	testErr        error
 	reconcileErr   error
@@ -708,4 +711,18 @@ func assertNftablesSuccessWithBody(t *testing.T, res *httptest.ResponseRecorder)
 	if payload.Code != 0 {
 		t.Fatalf("expected success, got %+v", payload)
 	}
+}
+
+func (f *fakeNftablesManager) SetBlocked(_ context.Context, _ runtimenft.SSHConfig, port int, blocked bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blockHit++
+	if f.blockErr != nil {
+		return f.blockErr
+	}
+	if f.blocked == nil {
+		f.blocked = map[int]bool{}
+	}
+	f.blocked[port] = blocked
+	return nil
 }

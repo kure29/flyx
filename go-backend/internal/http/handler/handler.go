@@ -38,13 +38,15 @@ type Handler struct {
 	healthCheck     *health.Checker
 	nftablesManager nftablesRuntimeManager
 
-	peerResourceMu sync.Mutex
-	captchaMu      sync.Mutex
-	captchaTokens  map[string]int64
-	passkeyMu      sync.Mutex
-	passkeyPending map[string]passkeyCeremony
-	githubMu       sync.Mutex
-	githubPending  map[string]githubState
+	quotaControlMu    sync.Mutex
+	nftablesControlMu sync.Mutex
+	peerResourceMu    sync.Mutex
+	captchaMu         sync.Mutex
+	captchaTokens     map[string]int64
+	passkeyMu         sync.Mutex
+	passkeyPending    map[string]passkeyCeremony
+	githubMu          sync.Mutex
+	githubPending     map[string]githubState
 
 	jobsMu          sync.Mutex
 	jobsCancel      context.CancelFunc

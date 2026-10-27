@@ -144,7 +144,7 @@ func TestRunResetAndExpiryJobResetsFlowAndDisablesExpiredRecords(t *testing.T) {
 	}
 }
 
-func TestRunResetAndExpiryJobResetsUserQuotaAndUnblocksUser(t *testing.T) {
+func TestResetUserQuotaWindowsResetsUsageAndUnblocksUser(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "jobs-quota-reset.db")
 	r, err := repo.Open(dbPath)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestRunResetAndExpiryJobResetsUserQuotaAndUnblocksUser(t *testing.T) {
 		t.Fatalf("insert user quota: %v", err)
 	}
 
-	h.runResetAndExpiryJob(now)
+	h.resetUserQuotaWindows(now)
 
 	dailyUsed := mustQueryInt(t, r, `SELECT daily_used_bytes FROM user_quota WHERE user_id = 2`)
 	if dailyUsed != 0 {

@@ -326,6 +326,13 @@ func (h *Handler) controlForwardServices(forward *forwardRecord, commandType str
 	if tunnel, err := h.getTunnelRecord(forward.TunnelID); err == nil && tunnelIsRealm(tunnel) {
 		return h.controlRealmForward(forward, commandType)
 	}
+	usesNFT, nodes, err := h.tunnelUsesNftables(forward.TunnelID)
+	if err != nil {
+		return err
+	}
+	if usesNFT {
+		return h.controlNftablesForward(forward, nodes, commandType)
+	}
 	ports, err := h.listForwardPorts(forward.ID)
 	if err != nil {
 		return err
@@ -378,9 +385,6 @@ func (h *Handler) controlForwardServices(forward *forwardRecord, commandType str
 
 		nodeHandled, lastNotFoundErr, err := h.controlForwardServicesOnNode(fp.NodeID, bases, commandType)
 		if err != nil {
-			if isNodeOfflineOrTimeoutError(err) {
-				continue
-			}
 			return err
 		}
 
