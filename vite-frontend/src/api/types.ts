@@ -886,6 +886,8 @@ export interface InboundApiItem {
   outboundMissing?: boolean;
   /** 分流 rules, tried in order before the default exit. */
   splitRules: SplitRule[];
+  /** The user's labels, for telling nodes apart in the list. */
+  tags?: string[];
 }
 
 export interface InboundMutationPayload {

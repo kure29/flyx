@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import axios from "axios";
 
 import { IS_DEMO, startDemoRealtime } from "@/demo";
@@ -20,6 +20,10 @@ const MAX_STANDARD_RECONNECT_ATTEMPTS = 5;
 const STANDARD_RECONNECT_DELAY_MS = 3000;
 const MAX_STANDARD_RECONNECT_DELAY_MS = 15000;
 const FALLBACK_RECONNECT_DELAY_MS = 30000;
+/** Kept open this long after the last page leaves, so switching back reuses it. */
+const LINGER_MS = 60_000;
+/** A first connection quicker than this shows no "connecting" notice. */
+const QUIET_CONNECT_MS = 2000;
 
 const getRealtimeWsUrl = (): string => {
   const baseUrl =
@@ -34,151 +38,225 @@ const getRealtimeWsUrl = (): string => {
   );
 };
 
+// One connection is shared by every page that shows live node data, so
+// switching between them does not reconnect.
+
+interface RealtimeState {
+  connected: boolean;
+  connecting: boolean;
+  /** Connecting for the first time and not yet slow enough to mention. */
+  starting: boolean;
+  usingPollingFallback: boolean;
+}
+
+let state: RealtimeState = {
+  connected: false,
+  connecting: false,
+  starting: false,
+  usingPollingFallback: false,
+};
+const stateListeners = new Set<() => void>();
+const handlers = new Set<(m: NodeRealtimeMessage) => void>();
+
+let socket: WebSocket | null = null;
+let socketUrl = "";
+let attempts = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let lingerTimer: ReturnType<typeof setTimeout> | null = null;
+let quietTimer: ReturnType<typeof setTimeout> | null = null;
+
+function setState(patch: Partial<RealtimeState>) {
+  state = { ...state, ...patch };
+  stateListeners.forEach((l) => l());
+}
+
+function clearTimer(t: ReturnType<typeof setTimeout> | null) {
+  if (t) clearTimeout(t);
+
+  return null;
+}
+
+function closeSocket() {
+  reconnectTimer = clearTimer(reconnectTimer);
+  quietTimer = clearTimer(quietTimer);
+  attempts = 0;
+  if (socket) {
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onerror = null;
+    socket.onclose = null;
+    if (
+      socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING
+    ) {
+      socket.close();
+    }
+    socket = null;
+  }
+  setState({
+    connected: false,
+    connecting: false,
+    starting: false,
+    usingPollingFallback: false,
+  });
+}
+
+function openSocket() {
+  const url = getRealtimeWsUrl();
+
+  // Another login (a new token) must not keep the old stream.
+  if (socket && socketUrl !== url) closeSocket();
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+
+  const first = attempts === 0;
+
+  setState({ connecting: true, starting: first });
+  if (first) {
+    quietTimer = clearTimer(quietTimer);
+    quietTimer = setTimeout(() => {
+      quietTimer = null;
+      setState({ starting: false });
+    }, QUIET_CONNECT_MS);
+  }
+
+  let ws: WebSocket;
+
+  try {
+    ws = new WebSocket(url);
+  } catch {
+    setState({ connected: false, connecting: false, starting: false });
+
+    return;
+  }
+  socket = ws;
+  socketUrl = url;
+
+  ws.onopen = () => {
+    attempts = 0;
+    quietTimer = clearTimer(quietTimer);
+    setState({
+      connected: true,
+      connecting: false,
+      starting: false,
+      usingPollingFallback: false,
+    });
+  };
+  ws.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(event.data);
+
+      if (parsed && typeof parsed === "object") {
+        handlers.forEach((h) => h(parsed as NodeRealtimeMessage));
+      }
+    } catch {}
+  };
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    socket = null;
+    quietTimer = clearTimer(quietTimer);
+    attempts += 1;
+    const exhausted = attempts >= MAX_STANDARD_RECONNECT_ATTEMPTS;
+
+    setState({
+      connected: false,
+      connecting: false,
+      starting: false,
+      usingPollingFallback: exhausted,
+    });
+    if (handlers.size === 0) return;
+    const delay = exhausted
+      ? FALLBACK_RECONNECT_DELAY_MS
+      : Math.min(
+          STANDARD_RECONNECT_DELAY_MS * attempts,
+          MAX_STANDARD_RECONNECT_DELAY_MS,
+        );
+
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      openSocket();
+    }, delay);
+  };
+}
+
+function subscribe(handler: (m: NodeRealtimeMessage) => void): () => void {
+  handlers.add(handler);
+  lingerTimer = clearTimer(lingerTimer);
+  if (!reconnectTimer) openSocket();
+
+  return () => {
+    handlers.delete(handler);
+    if (handlers.size > 0) return;
+    lingerTimer = clearTimer(lingerTimer);
+    lingerTimer = setTimeout(() => {
+      lingerTimer = null;
+      if (handlers.size === 0) closeSocket();
+    }, LINGER_MS);
+  };
+}
+
+function subscribeState(listener: () => void) {
+  stateListeners.add(listener);
+
+  return () => {
+    stateListeners.delete(listener);
+  };
+}
+
+const getState = () => state;
+
 export const useNodeRealtime = ({
   onMessage,
   enabled = true,
 }: UseNodeRealtimeOptions) => {
-  // The demo shows the nodes as connected (it has no live stream).
-  const [wsConnected, setWsConnected] = useState(IS_DEMO);
-  const [wsConnecting, setWsConnecting] = useState(false);
-  const [usingPollingFallback, setUsingPollingFallback] = useState(false);
-
-  const websocketRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttemptsRef = useRef(0);
   const onMessageRef = useRef(onMessage);
+  const shared = useSyncExternalStore(subscribeState, getState);
+  // A page that subscribes while the shared socket is already open has
+  // nothing to wait for; until its effect runs, report the shared state.
+  const [subscribed, setSubscribed] = useState(false);
 
   useEffect(() => {
     onMessageRef.current = onMessage;
   }, [onMessage]);
 
-  const clearReconnectTimer = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-  }, []);
-
-  const disconnect = useCallback(() => {
-    clearReconnectTimer();
-    reconnectAttemptsRef.current = 0;
-    setWsConnected(false);
-    setWsConnecting(false);
-    setUsingPollingFallback(false);
-
-    if (!websocketRef.current) {
-      return;
-    }
-
-    websocketRef.current.onopen = null;
-    websocketRef.current.onmessage = null;
-    websocketRef.current.onerror = null;
-    websocketRef.current.onclose = null;
-
-    if (
-      websocketRef.current.readyState === WebSocket.OPEN ||
-      websocketRef.current.readyState === WebSocket.CONNECTING
-    ) {
-      websocketRef.current.close();
-    }
-
-    websocketRef.current = null;
-  }, [clearReconnectTimer]);
-
-  const connect = useCallback(() => {
-    // The online demo has no server to stream from.
-    if (!enabled || IS_DEMO) {
-      return;
-    }
-
-    if (
-      websocketRef.current &&
-      (websocketRef.current.readyState === WebSocket.OPEN ||
-        websocketRef.current.readyState === WebSocket.CONNECTING)
-    ) {
-      return;
-    }
-
-    if (websocketRef.current) {
-      disconnect();
-    }
-
-    try {
-      setWsConnecting(true);
-      websocketRef.current = new WebSocket(getRealtimeWsUrl());
-
-      websocketRef.current.onopen = () => {
-        reconnectAttemptsRef.current = 0;
-        setWsConnected(true);
-        setWsConnecting(false);
-        setUsingPollingFallback(false);
-      };
-
-      websocketRef.current.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-
-          if (parsed && typeof parsed === "object") {
-            onMessageRef.current(parsed as NodeRealtimeMessage);
-          }
-        } catch {}
-      };
-
-      websocketRef.current.onerror = () => {};
-
-      websocketRef.current.onclose = () => {
-        websocketRef.current = null;
-        setWsConnected(false);
-        setWsConnecting(false);
-
-        if (!enabled) {
-          return;
-        }
-
-        reconnectAttemptsRef.current += 1;
-        const exhaustedStandardRetries =
-          reconnectAttemptsRef.current >= MAX_STANDARD_RECONNECT_ATTEMPTS;
-
-        setUsingPollingFallback(exhaustedStandardRetries);
-
-        const reconnectDelay = exhaustedStandardRetries
-          ? FALLBACK_RECONNECT_DELAY_MS
-          : Math.min(
-              STANDARD_RECONNECT_DELAY_MS * reconnectAttemptsRef.current,
-              MAX_STANDARD_RECONNECT_DELAY_MS,
-            );
-
-        reconnectTimerRef.current = setTimeout(() => {
-          reconnectTimerRef.current = null;
-          connect();
-        }, reconnectDelay);
-      };
-    } catch {
-      setWsConnected(false);
-      setWsConnecting(false);
-    }
-  }, [disconnect, enabled]);
-
   useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-    if (IS_DEMO) {
-      return startDemoRealtime((m) => onMessageRef.current(m));
-    }
+    if (!enabled) return;
+    // The online demo has no server to stream from.
+    if (IS_DEMO) return startDemoRealtime((m) => onMessageRef.current(m));
+    const unsubscribe = subscribe((m) => onMessageRef.current(m));
 
-    connect();
+    setSubscribed(true);
 
     return () => {
-      disconnect();
+      unsubscribe();
+      setSubscribed(false);
     };
-  }, [connect, disconnect, enabled]);
+  }, [enabled]);
+
+  if (IS_DEMO) {
+    // The demo shows the nodes as connected (it has no live stream).
+    return {
+      wsConnected: true,
+      wsConnecting: false,
+      wsStarting: false,
+      usingPollingFallback: false,
+    };
+  }
+
+  // Before the first subscribe nothing has started yet: treat it as the
+  // quiet start rather than as a dropped connection.
+  const starting = shared.starting || (!subscribed && !shared.connected);
 
   return {
-    wsConnected,
-    wsConnecting,
-    usingPollingFallback,
-    reconnectRealtime: connect,
-    disconnectRealtime: disconnect,
+    wsConnected: shared.connected,
+    wsConnecting: shared.connecting && !shared.starting,
+    /** Connecting for the first time; not worth a notice yet. */
+    wsStarting: enabled && starting,
+    usingPollingFallback: shared.usingPollingFallback,
   };
 };

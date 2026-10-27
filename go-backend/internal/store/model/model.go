@@ -531,6 +531,7 @@ type InboundBackup struct {
 	ImportedName        string `json:"importedName,omitempty"`
 	OutboundID          int64  `json:"outboundId,omitempty"`
 	SplitRules          string `json:"splitRules,omitempty"`
+	Tags                string `json:"tags,omitempty"`
 }
 
 type TemplateBackup struct {

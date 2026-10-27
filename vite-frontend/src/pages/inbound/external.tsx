@@ -13,6 +13,13 @@ import {
   readSubscriptionFile,
   syncText,
 } from "@/pages/inbound/sources";
+import {
+  type ManualNode,
+  ManualNodeFields,
+  emptyManualNode,
+  manualNodeLink,
+} from "@/pages/inbound/manual-node";
+import { TagInput } from "@/pages/inbound/tags";
 import { Segmented } from "@/pages/subscription/controls";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
@@ -45,18 +52,32 @@ function subscriptionURL(text: string): URL | null {
   }
 }
 
+type ImportMode = "paste" | "manual";
+
+const IMPORT_MODES: Array<[ImportMode, string]> = [
+  ["paste", "粘贴链接 / 订阅"],
+  ["manual", "手动填写"],
+];
+
 export function ImportModal({
   isOpen,
+  ssMethods,
+  tagSuggestions,
   onClose,
   onImported,
   onSourceAdded,
 }: {
   isOpen: boolean;
+  ssMethods: string[];
+  tagSuggestions: string[];
   onClose: () => void;
   onImported: () => void;
   /** A subscription URL was saved as a synced source. */
   onSourceAdded: () => void;
 }) {
+  const [mode, setMode] = useState<ImportMode>("paste");
+  const [manual, setManual] = useState<ManualNode>(emptyManualNode);
+  const [tags, setTags] = useState<string[]>([]);
   const [links, setLinks] = useState("");
   const [relayOnly, setRelayOnly] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -70,6 +91,9 @@ export function ImportModal({
 
   useEffect(() => {
     if (isOpen) {
+      setMode("paste");
+      setManual(emptyManualNode());
+      setTags([]);
       setLinks("");
       setRole("");
       setFileName("");
@@ -81,8 +105,9 @@ export function ImportModal({
     }
   }, [isOpen]);
 
-  const subURL = subscriptionURL(links);
-  const fromFile = Boolean(fileName) && !subURL;
+  const manualMode = mode === "manual";
+  const subURL = manualMode ? null : subscriptionURL(links);
+  const fromFile = !manualMode && Boolean(fileName) && !subURL;
   const syncing = (Boolean(subURL) || fromFile) && sync;
 
   const addSource = async () => {
@@ -132,9 +157,22 @@ export function ImportModal({
 
       return;
     }
+    let text = links;
+
+    if (manualMode) {
+      const built = manualNodeLink(manual);
+
+      if (!built.link) {
+        setErrors([]);
+        toast.error(built.error ?? "请检查填写的内容");
+
+        return;
+      }
+      text = built.link;
+    }
     setSaving(true);
     try {
-      const res = await importInbounds(links, relayOnly);
+      const res = await importInbounds(text, relayOnly, tags);
       const failed = res.data?.errors ?? [];
 
       setErrors(failed);
@@ -147,7 +185,7 @@ export function ImportModal({
 
       onImported();
       if (failed.length === 0) {
-        toast.success(`已导入 ${created} 个节点`);
+        toast.success(manualMode ? "已添加节点" : `已导入 ${created} 个节点`);
         onClose();
       } else {
         toast(`已导入 ${created} 个，${failed.length} 个失败`, { icon: "⚠️" });
@@ -175,78 +213,108 @@ export function ImportModal({
           </p>
         </ModalHeader>
         <ModalBody>
-          <FilePick
-            fileName={fileName}
-            onFile={async (file) => {
-              const text = await readSubscriptionFile(file);
-
-              if (text !== null) {
-                setLinks(text);
-                setFileName(file.name);
-              }
+          <Segmented
+            options={IMPORT_MODES}
+            value={mode}
+            onChange={(m) => {
+              setMode(m);
+              setErrors([]);
             }}
           />
-          <Textarea
-            description="支持：分享链接（ss / vmess / vless / trojan / hysteria2 / tuic / anytls / socks5，每行一个）、base64 订阅、Clash / Mihomo 配置、sing-box 配置、Surge / Loon 节点行，或直接填订阅地址（https://...）"
-            label="节点或订阅"
-            minRows={5}
-            placeholder={"vless://...\nss://...\n或 https://订阅地址"}
-            value={links}
-            variant="bordered"
-            onChange={(e) => setLinks(e.target.value)}
-          />
-          {(subURL || fromFile) && (
-            <div className="space-y-3 rounded-xl border border-divider p-3">
-              <div className="flex items-start gap-2">
-                <Switch isSelected={sync} size="sm" onValueChange={setSync} />
-                <div>
-                  <p className="text-sm">
-                    {subURL ? "定时同步" : "存为订阅源"}
-                  </p>
-                  <p className="text-xs text-default-500">
-                    {!sync
-                      ? "只导入一次，之后不再更新"
-                      : subURL
-                        ? "存为订阅源：按时重新拉取，节点增删改自动跟上"
-                        : "以后重新上传文件，节点增删改自动跟上"}
-                  </p>
-                </div>
-              </div>
-              {sync && (
-                <>
-                  <Input
-                    label="名称"
-                    placeholder={
-                      subURL
-                        ? subURL.hostname
-                        : fileName.replace(/\.[^.]+$/, "")
-                    }
-                    size="sm"
-                    value={sourceName}
-                    variant="bordered"
-                    onChange={(e) => setSourceName(e.target.value)}
-                  />
-                  {subURL && (
-                    <Segmented
-                      options={INTERVALS}
-                      value={intervalHours}
-                      onChange={setIntervalHours}
+          {manualMode ? (
+            <ManualNodeFields
+              ssMethods={ssMethods}
+              value={manual}
+              onChange={setManual}
+            />
+          ) : (
+            <>
+              <FilePick
+                fileName={fileName}
+                onFile={async (file) => {
+                  const text = await readSubscriptionFile(file);
+
+                  if (text !== null) {
+                    setLinks(text);
+                    setFileName(file.name);
+                  }
+                }}
+              />
+              <Textarea
+                description="支持：分享链接（ss / vmess / vless / trojan / hysteria2 / tuic / anytls / socks5，每行一个）、base64 订阅、Clash / Mihomo 配置、sing-box 配置、Surge / Loon 节点行，或直接填订阅地址（https://...）"
+                label="节点或订阅"
+                minRows={5}
+                placeholder={"vless://...\nss://...\n或 https://订阅地址"}
+                value={links}
+                variant="bordered"
+                onChange={(e) => setLinks(e.target.value)}
+              />
+              {(subURL || fromFile) && (
+                <div className="space-y-3 rounded-xl border border-divider p-3">
+                  <div className="flex items-start gap-2">
+                    <Switch
+                      isSelected={sync}
+                      size="sm"
+                      onValueChange={setSync}
                     />
-                  )}
-                  <div className="space-y-1.5">
-                    <p className="text-sm">用途</p>
-                    <Segmented
-                      options={SOURCE_ROLES}
-                      value={role}
-                      onChange={(v) => setRole(v as RemoteSourceRole)}
-                    />
-                    <p className="text-xs text-default-500">
-                      {ROLE_HINTS[role]}
-                    </p>
+                    <div>
+                      <p className="text-sm">
+                        {subURL ? "定时同步" : "存为订阅源"}
+                      </p>
+                      <p className="text-xs text-default-500">
+                        {!sync
+                          ? "只导入一次，之后不再更新"
+                          : subURL
+                            ? "存为订阅源：按时重新拉取，节点增删改自动跟上"
+                            : "以后重新上传文件，节点增删改自动跟上"}
+                      </p>
+                    </div>
                   </div>
-                </>
+                  {sync && (
+                    <>
+                      <Input
+                        label="名称"
+                        placeholder={
+                          subURL
+                            ? subURL.hostname
+                            : fileName.replace(/\.[^.]+$/, "")
+                        }
+                        size="sm"
+                        value={sourceName}
+                        variant="bordered"
+                        onChange={(e) => setSourceName(e.target.value)}
+                      />
+                      {subURL && (
+                        <Segmented
+                          options={INTERVALS}
+                          value={intervalHours}
+                          onChange={setIntervalHours}
+                        />
+                      )}
+                      <div className="space-y-1.5">
+                        <p className="text-sm">用途</p>
+                        <Segmented
+                          options={SOURCE_ROLES}
+                          value={role}
+                          onChange={(v) => setRole(v as RemoteSourceRole)}
+                        />
+                        <p className="text-xs text-default-500">
+                          {ROLE_HINTS[role]}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
-            </div>
+            </>
+          )}
+          {!syncing && (
+            <TagInput
+              label="标签（可选）"
+              suggestions={tagSuggestions}
+              value={tags}
+              onChange={setTags}
+            />
           )}
           <Checkbox isSelected={relayOnly} onValueChange={setRelayOnly}>
             <span className="text-sm">
@@ -269,11 +337,17 @@ export function ImportModal({
           </Button>
           <Button
             color="primary"
-            isDisabled={!links.trim()}
+            isDisabled={!manualMode && !links.trim()}
             isLoading={saving}
             onPress={submit}
           >
-            {syncing ? (fromFile ? "添加订阅源" : "添加并同步") : "导入"}
+            {syncing
+              ? fromFile
+                ? "添加订阅源"
+                : "添加并同步"
+              : manualMode
+                ? "添加"
+                : "导入"}
           </Button>
         </ModalFooter>
       </ModalContent>
