@@ -61,6 +61,10 @@ func (h *Handler) processFlowItem(nodeID int64, item flowItem) {
 	if err != nil {
 		metas = nil
 	}
+	if err := validateFlowUploadItems([]flowItem{item}, metas); err != nil {
+		log.Printf("flow upload rejected node_id=%d err=%v", nodeID, err)
+		return
+	}
 	h.applyFlowUploadBatch(nodeID, h.buildNodeFlowUploadBatch(nodeID, []flowItem{item}, metas), time.Now())
 }
 
