@@ -678,3 +678,46 @@ func mustHandlerCount(t *testing.T, h *Handler, query string, args ...interface{
 	}
 	return value
 }
+
+func TestForwardCounterAccountingIsolatesMissingMetadata(t *testing.T) {
+	f := setupNftablesCollectionFixture(t)
+	h := f.handler
+	t.Cleanup(func() { _ = h.repo.Close() })
+	now := time.Now()
+	hashes := map[int64]string{f.forwardID: "realm:test", 999: "realm:test"}
+	sample := func(n uint64) []runtimenft.CounterSample {
+		return []runtimenft.CounterSample{
+			{ForwardID: f.forwardID, Protocol: "tcp", Direction: runtimenft.CounterDirectionToTarget, Bytes: n},
+			{ForwardID: 999, Protocol: "tcp", Direction: runtimenft.CounterDirectionToTarget, Bytes: n},
+		}
+	}
+	h.accountForwardCounterSamples(f.nodeID, sample(100), hashes, now)
+	h.accountForwardCounterSamples(f.nodeID, sample(150), hashes, now.Add(time.Minute))
+	h.accountForwardCounterSamples(f.nodeID, sample(200), hashes, now.Add(2*time.Minute))
+	for _, query := range []string{"SELECT in_flow FROM forward", "SELECT in_flow FROM user WHERE id=1", "SELECT in_flow FROM user_tunnel", "SELECT daily_used_bytes FROM user_quota WHERE user_id=1"} {
+		if got := mustHandlerCount(t, h, query); got != 100 {
+			t.Errorf("%s: got %d want 100", query, got)
+		}
+	}
+	states, err := h.repo.GetNftCounterStatesByNode(f.nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states) != 2 {
+		t.Fatalf("counter state count = %d", len(states))
+	}
+	for _, state := range states {
+		want := int64(200)
+		if state.ForwardID == 999 {
+			want = 100
+		}
+		if state.Bytes != want {
+			t.Errorf("forward=%d baseline=%d want=%d", state.ForwardID, state.Bytes, want)
+		}
+	}
+	// Repeating a successful sample must not debit the healthy forward again.
+	h.accountForwardCounterSamples(f.nodeID, sample(200), hashes, now.Add(3*time.Minute))
+	if got := mustHandlerCount(t, h, "SELECT in_flow FROM forward"); got != 100 {
+		t.Fatalf("healthy sample counted twice: %d", got)
+	}
+}
