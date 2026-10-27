@@ -35,3 +35,46 @@ func TestSubTrafficBuckets(t *testing.T) {
 		t.Fatalf("month: %+v", month)
 	}
 }
+
+func TestSubTrafficFractionalTimezones(t *testing.T) {
+	for _, offset := range []int{330, 345, -210} {
+		loc := time.FixedZone("", offset*60)
+		now := time.Date(2026, 4, 1, 0, 20, 0, 0, loc)
+		midnight := time.Date(2026, 4, 1, 0, 0, 0, 0, loc)
+		rows := []model.SubscriptionTraffic{
+			{Hour: midnight.Add(-15 * time.Minute).UnixMilli(), BucketMinutes: 15, UploadBytes: 10},
+			{Hour: midnight.UnixMilli(), BucketMinutes: 15, UploadBytes: 20},
+		}
+		for _, key := range []string{"hour", "day", "month"} {
+			view := subTraffic(rows, key, now)
+			n := len(view.Points)
+			if view.Points[n-1].Up != 20 || view.Points[n-2].Up != 10 || view.Up != 30 || view.Estimated {
+				t.Fatalf("offset=%d range=%s: %+v", offset, key, view)
+			}
+			if view.Points[n-1].Time != midnight.UnixMilli() {
+				t.Fatal("bucket not aligned to local boundary")
+			}
+		}
+	}
+}
+
+func TestSubTrafficLegacyOverlapConservesBytes(t *testing.T) {
+	loc := time.FixedZone("", 345*60)
+	now := time.Date(2026, 4, 1, 1, 0, 0, 0, loc)
+	midnight := time.Date(2026, 4, 1, 0, 0, 0, 0, loc)
+	row := model.SubscriptionTraffic{Hour: midnight.Truncate(time.Hour).UnixMilli(), BucketMinutes: 60, UploadBytes: 101, DownloadBytes: 9223372036854775807}
+	for _, key := range []string{"day", "month"} {
+		view := subTraffic([]model.SubscriptionTraffic{row}, key, now)
+		n := len(view.Points)
+		if !view.Estimated || view.Up != 101 || view.Down != row.DownloadBytes || view.Points[n-2].Up != 25 || view.Points[n-1].Up != 76 {
+			t.Fatalf("%s: %+v", key, view)
+		}
+	}
+	// Include only the overlap when a legacy hour starts before the range.
+	start := subTrafficBuckets("day", now)[0]
+	row.Hour = start.Truncate(time.Hour).UnixMilli()
+	view := subTraffic([]model.SubscriptionTraffic{row}, "day", now)
+	if view.Up != 76 || !view.Estimated {
+		t.Fatalf("partial first hour: %+v", view)
+	}
+}

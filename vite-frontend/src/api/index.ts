@@ -1098,6 +1098,8 @@ export const resetMySubscription = (id: number) =>
 export type SubTrafficRange = "hour" | "day" | "month";
 /** A subscription's traffic: 24 hours, 30 days or 12 months in the viewer's time zone. */
 export interface SubTraffic {
+  /** Coarse history crossed a local time boundary. */
+  estimated?: boolean;
   range: SubTrafficRange;
   /** Each bucket's start (unix ms) and bytes. */
   points: Array<{ time: number; up: number; down: number }>;

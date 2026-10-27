@@ -348,4 +348,16 @@ func TestNodeTrafficFromCounters(t *testing.T) {
 	if in != 700 || out != 450 {
 		t.Fatalf("traffic in=%d out=%d", in, out)
 	}
+	var rows []model.NodeTraffic
+	if err := r.DB().Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("no traffic buckets persisted")
+	}
+	for _, row := range rows {
+		if row.BucketMinutes != 15 || row.Hour%int64(15*time.Minute/time.Millisecond) != 0 {
+			t.Fatalf("not a 15-minute bucket: %+v", row)
+		}
+	}
 }

@@ -8,7 +8,7 @@ import (
 	"go-backend/internal/store/model"
 )
 
-// Subscription traffic history: hourly rows (model.SubscriptionTraffic)
+// Subscription traffic history: quarter-hour rows (legacy rows are hourly)
 // summed into the last 24 hours, 30 days or 12 months, in the viewer's
 // time zone.
 
@@ -30,10 +30,11 @@ type subTrafficPoint struct {
 }
 
 type subTrafficView struct {
-	Range  string            `json:"range"`
-	Points []subTrafficPoint `json:"points"`
-	Up     int64             `json:"up"`
-	Down   int64             `json:"down"`
+	Range     string            `json:"range"`
+	Estimated bool              `json:"estimated"`
+	Points    []subTrafficPoint `json:"points"`
+	Up        int64             `json:"up"`
+	Down      int64             `json:"down"`
 	// Since is when the subscription's used traffic started counting (its
 	// creation or last reset), for marking it on the chart.
 	Since int64 `json:"since"`
@@ -55,7 +56,7 @@ func subTrafficBuckets(rangeKey string, now time.Time) []time.Time {
 			out = append(out, month.AddDate(0, -i, 0))
 		}
 	default:
-		hour := now.Truncate(time.Hour)
+		hour := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location())
 		for i := 23; i >= 0; i-- {
 			out = append(out, hour.Add(-time.Duration(i)*time.Hour))
 		}
@@ -63,30 +64,60 @@ func subTrafficBuckets(rangeKey string, now time.Time) []time.Time {
 	return out
 }
 
-// subTraffic sums a subscription's hours into the range's buckets.
-func subTraffic(hours []model.SubscriptionTraffic, rangeKey string, now time.Time) subTrafficView {
+// subTraffic sums interval overlaps. Legacy hours crossing a local boundary
+// cannot be reconstructed; distribute them proportionally and mark the estimate.
+func subTraffic(rows []model.SubscriptionTraffic, rangeKey string, now time.Time) subTrafficView {
 	if rangeKey != "day" && rangeKey != "month" {
 		rangeKey = "hour"
 	}
 	starts := subTrafficBuckets(rangeKey, now)
-	view := subTrafficView{Range: rangeKey, Points: make([]subTrafficPoint, len(starts))}
-	for i, s := range starts {
-		view.Points[i].Time = s.UnixMilli()
+	end := starts[len(starts)-1].Add(time.Hour)
+	if rangeKey == "day" {
+		end = starts[len(starts)-1].AddDate(0, 0, 1)
 	}
-	b := 0
-	for _, h := range hours {
-		if h.Hour < view.Points[0].Time {
-			continue
+	if rangeKey == "month" {
+		end = starts[len(starts)-1].AddDate(0, 1, 0)
+	}
+	view := subTrafficView{Range: rangeKey, Points: make([]subTrafficPoint, len(starts))}
+	for i, start := range starts {
+		view.Points[i].Time = start.UnixMilli()
+	}
+	for _, row := range rows {
+		minutes := row.BucketMinutes
+		if minutes <= 0 {
+			minutes = 60
 		}
-		for b+1 < len(view.Points) && h.Hour >= view.Points[b+1].Time {
-			b++
+		duration := int64(minutes) * int64(time.Minute/time.Millisecond)
+		rowEnd := row.Hour + duration
+		for i := range view.Points {
+			start, finish := view.Points[i].Time, end.UnixMilli()
+			if i+1 < len(view.Points) {
+				finish = view.Points[i+1].Time
+			}
+			left, right := max(start, row.Hour), min(finish, rowEnd)
+			if left >= right {
+				continue
+			}
+			if left != row.Hour || right != rowEnd {
+				if row.UploadBytes != 0 || row.DownloadBytes != 0 {
+					view.Estimated = true
+				}
+			}
+			// Cumulative integer shares preserve every byte across adjacent
+			// buckets and avoid overflow from multiplying the entire count.
+			up := trafficShare(row.UploadBytes, right-row.Hour, duration) - trafficShare(row.UploadBytes, left-row.Hour, duration)
+			down := trafficShare(row.DownloadBytes, right-row.Hour, duration) - trafficShare(row.DownloadBytes, left-row.Hour, duration)
+			view.Points[i].Up += up
+			view.Points[i].Down += down
+			view.Up += up
+			view.Down += down
 		}
-		view.Points[b].Up += h.UploadBytes
-		view.Points[b].Down += h.DownloadBytes
-		view.Up += h.UploadBytes
-		view.Down += h.DownloadBytes
 	}
 	return view
+}
+
+func trafficShare(bytes, elapsed, duration int64) int64 {
+	return bytes/duration*elapsed + bytes%duration*elapsed/duration
 }
 
 func (h *Handler) respondSubTraffic(w http.ResponseWriter, s *model.Subscription, req subTrafficRequest) {
@@ -95,7 +126,7 @@ func (h *Handler) respondSubTraffic(w http.ResponseWriter, s *model.Subscription
 	}
 	now := time.Now().In(time.FixedZone("", req.TZOffset*60))
 	starts := subTrafficBuckets(req.Range, now)
-	hours, err := h.repo.ListSubscriptionTraffic(s.ID, starts[0].UnixMilli())
+	hours, err := h.repo.ListSubscriptionTraffic(s.ID, starts[0].Add(-time.Hour).UnixMilli())
 	if err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return

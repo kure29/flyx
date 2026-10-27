@@ -42,7 +42,7 @@ function bucketLabel(
 ): [string, string, string] {
   const d = new Date(ms);
   const md = `${d.getMonth() + 1}/${d.getDate()}`;
-  const hm = `${pad(d.getHours())}:00`;
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
   if (range === "hour") return [hm, `${md} ${hm}`, `${md} ${hm}`];
   if (range === "day") return [md, md, `${d.getFullYear()}/${md}`];
@@ -136,6 +136,11 @@ export function SubTrafficStats({ id, mine }: { id: number; mine?: boolean }) {
         }}
       />
       <p className="text-xs text-default-500">{RANGE_HINT[range]}的流量</p>
+      {shown?.estimated && (
+        <p className="text-xs text-default-500">
+          部分旧记录跨越本地时间边界，已按时长估算分配。
+        </p>
+      )}
       <div className="grid grid-cols-3 gap-2">
         {(
           [

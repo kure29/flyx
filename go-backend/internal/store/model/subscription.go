@@ -97,9 +97,10 @@ type SubscriptionCounter struct {
 
 func (SubscriptionCounter) TableName() string { return "subscription_counter" }
 
-// SubscriptionTraffic is a subscription's traffic in one hour; Hour is the
-// unix ms the hour starts at. Days and months are summed from it.
+// SubscriptionTraffic stores 15-minute aggregates. Hour retains its old column
+// name for compatibility; BucketMinutes distinguishes legacy hourly history.
 type SubscriptionTraffic struct {
+	BucketMinutes  int   `gorm:"not null;default:60"`
 	ID             int64 `gorm:"primaryKey;autoIncrement"`
 	SubscriptionID int64 `gorm:"column:subscription_id;not null;uniqueIndex:idx_sub_traffic_hour,priority:1"`
 	Hour           int64 `gorm:"not null;uniqueIndex:idx_sub_traffic_hour,priority:2;index:idx_sub_traffic_time"`

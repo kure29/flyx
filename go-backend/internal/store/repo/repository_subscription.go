@@ -367,7 +367,7 @@ func (r *Repository) ApplySubscriptionCounterSamples(nodeID int64, epoch string,
 		for id := range down {
 			ids[id] = true
 		}
-		hour := now - now%int64(time.Hour/time.Millisecond)
+		hour := now - now%int64(15*time.Minute/time.Millisecond)
 		var hourly []model.SubscriptionTraffic
 		for id := range ids {
 			if err := tx.Model(&model.Subscription{}).Where("id = ?", id).Updates(map[string]interface{}{
@@ -376,15 +376,17 @@ func (r *Repository) ApplySubscriptionCounterSamples(nodeID int64, epoch string,
 			}).Error; err != nil {
 				return err
 			}
-			hourly = append(hourly, model.SubscriptionTraffic{SubscriptionID: id, Hour: hour, UploadBytes: up[id], DownloadBytes: down[id]})
+			hourly = append(hourly, model.SubscriptionTraffic{SubscriptionID: id, Hour: hour, BucketMinutes: 15, UploadBytes: up[id], DownloadBytes: down[id]})
 		}
 		if len(hourly) == 0 {
 			return nil
 		}
-		// The hour's history, for the traffic charts.
+		// Quarter-hour history aligns with half-hour and quarter-hour time zones.
 		return tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "subscription_id"}, {Name: "hour"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
+				// The first new bucket can overlap an existing legacy hour.
+				"bucket_minutes": gorm.Expr("CASE WHEN subscription_traffic.bucket_minutes > excluded.bucket_minutes THEN subscription_traffic.bucket_minutes ELSE excluded.bucket_minutes END"),
 				"upload_bytes":   gorm.Expr("subscription_traffic.upload_bytes + excluded.upload_bytes"),
 				"download_bytes": gorm.Expr("subscription_traffic.download_bytes + excluded.download_bytes"),
 			}),
@@ -392,7 +394,7 @@ func (r *Repository) ApplySubscriptionCounterSamples(nodeID int64, epoch string,
 	})
 }
 
-// ListSubscriptionTraffic returns a subscription's hours from fromMs on,
+// ListSubscriptionTraffic returns a subscription's aggregates from fromMs on,
 // oldest first.
 func (r *Repository) ListSubscriptionTraffic(id, fromMs int64) ([]model.SubscriptionTraffic, error) {
 	if r == nil || r.db == nil {

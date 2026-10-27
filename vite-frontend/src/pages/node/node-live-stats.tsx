@@ -67,6 +67,10 @@ export function NodeLiveStats({
   const upIcon = <ArrowUp className="h-3 w-3 shrink-0 text-emerald-500" />;
   const downIcon = <ArrowDown className="h-3 w-3 shrink-0 text-sky-500" />;
   const total = month ? bytes(month[0] + month[1]) : "—";
+  const monthHint =
+    new Date().getTimezoneOffset() % 60 !== 0
+      ? "按本地时区统计；跨月的旧小时记录按时长估算"
+      : "按本地时区统计";
   const split = month ? `↑${bytes(month[1])} ↓${bytes(month[0])}` : "";
 
   if (variant !== "row") {
@@ -89,7 +93,7 @@ export function NodeLiveStats({
               </span>
             </div>
           </div>
-          <div className="min-w-0 px-2.5" title={split}>
+          <div className="min-w-0 px-2.5" title={`${split} ${monthHint}`}>
             <div className="text-[10px] text-default-400">本月流量</div>
             <div className="flex flex-wrap items-baseline gap-x-1.5">
               <span className="font-semibold">{total}</span>
@@ -116,7 +120,10 @@ export function NodeLiveStats({
           {rate(down)}
         </div>
       </div>
-      <div className="w-28 space-y-0.5 leading-tight tabular-nums">
+      <div
+        className="w-28 space-y-0.5 leading-tight tabular-nums"
+        title={monthHint}
+      >
         <div className="flex items-baseline gap-1.5 text-[11px]">
           <span className="text-[10px] text-default-400">本月</span>
           <span className="font-semibold">{total}</span>

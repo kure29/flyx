@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -403,7 +404,7 @@ func (r *Repository) PruneServiceMonitorResults(olderThanMs int64) error {
 	return r.db.Where("timestamp < ?", olderThanMs).Delete(&model.ServiceMonitorResult{}).Error
 }
 
-// AddNodeTraffic adds hourly traffic to the nodes' rows.
+// AddNodeTraffic adds bucketed traffic to the nodes' rows.
 func (r *Repository) AddNodeTraffic(rows []model.NodeTraffic) error {
 	if r == nil || r.db == nil || len(rows) == 0 {
 		return nil
@@ -430,11 +431,36 @@ func (r *Repository) NodeTrafficSince(fromMs int64) (map[int64][2]int64, error) 
 	}
 	err := r.db.Model(&model.NodeTraffic{}).Select("node_id, SUM(in_bytes) AS in_bytes, SUM(out_bytes) AS out_bytes").
 		Where("hour >= ?", fromMs).Group("node_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
 	out := make(map[int64][2]int64, len(rows))
 	for _, row := range rows {
 		out[row.NodeID] = [2]int64{row.InBytes, row.OutBytes}
 	}
-	return out, err
+	// Only buckets overlapping the lower boundary need reconstruction. Keep
+	// the full month's aggregation in SQL instead of loading every row.
+	var overlap []model.NodeTraffic
+	if err := r.db.Where("hour >= ? AND hour < ?", fromMs-int64(time.Hour/time.Millisecond), fromMs).Find(&overlap).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range overlap {
+		minutes := row.BucketMinutes
+		if minutes <= 0 {
+			minutes = 60
+		}
+		duration := int64(minutes) * int64(time.Minute/time.Millisecond)
+		elapsed := fromMs - row.Hour
+		if elapsed >= duration {
+			continue
+		}
+		used := func(bytes int64) int64 { return bytes/duration*elapsed + bytes%duration*elapsed/duration }
+		total := out[row.NodeID]
+		total[0] += row.InBytes - used(row.InBytes)
+		total[1] += row.OutBytes - used(row.OutBytes)
+		out[row.NodeID] = total
+	}
+	return out, nil
 }
 
 // PruneNodeTraffic drops the hours before beforeMs.
