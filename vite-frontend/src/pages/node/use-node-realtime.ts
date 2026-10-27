@@ -24,6 +24,15 @@ const FALLBACK_RECONNECT_DELAY_MS = 30000;
 const LINGER_MS = 60_000;
 /** A first connection quicker than this shows no "connecting" notice. */
 const QUIET_CONNECT_MS = 2000;
+/**
+ * Messages are handed to the pages at most this often. Each message used to
+ * re-render the whole node list (every node reports every few seconds, and a
+ * new connection replays all of them at once); delivered together, React
+ * renders once per batch.
+ */
+const FLUSH_INTERVAL_MS = 1000;
+/** The first batch after a quiet spell goes out this soon. */
+const FIRST_FLUSH_MS = 50;
 
 const getRealtimeWsUrl = (): string => {
   const baseUrl =
@@ -64,6 +73,30 @@ let attempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lingerTimer: ReturnType<typeof setTimeout> | null = null;
 let quietTimer: ReturnType<typeof setTimeout> | null = null;
+let queue: NodeRealtimeMessage[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let lastFlush = 0;
+
+function flush() {
+  flushTimer = null;
+  lastFlush = Date.now();
+  const batch = queue;
+
+  queue = [];
+  // One task: React batches every handler's state updates into one render.
+  for (const m of batch) handlers.forEach((h) => h(m));
+}
+
+function enqueue(m: NodeRealtimeMessage) {
+  queue.push(m);
+  if (flushTimer) return;
+  const wait = Math.max(
+    FIRST_FLUSH_MS,
+    lastFlush + FLUSH_INTERVAL_MS - Date.now(),
+  );
+
+  flushTimer = setTimeout(flush, wait);
+}
 
 function setState(patch: Partial<RealtimeState>) {
   state = { ...state, ...patch };
@@ -79,6 +112,8 @@ function clearTimer(t: ReturnType<typeof setTimeout> | null) {
 function closeSocket() {
   reconnectTimer = clearTimer(reconnectTimer);
   quietTimer = clearTimer(quietTimer);
+  flushTimer = clearTimer(flushTimer);
+  queue = [];
   attempts = 0;
   if (socket) {
     socket.onopen = null;
@@ -152,7 +187,7 @@ function openSocket() {
       const parsed = JSON.parse(event.data);
 
       if (parsed && typeof parsed === "object") {
-        handlers.forEach((h) => h(parsed as NodeRealtimeMessage));
+        enqueue(parsed as NodeRealtimeMessage);
       }
     } catch {}
   };
