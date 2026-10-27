@@ -129,7 +129,7 @@ function planText(userinfo: string): string {
 export function syncText(r: RemoteSyncResult): string {
   const parts = [`新增 ${r.added}`, `更新 ${r.updated}`, `移除 ${r.removed}`];
 
-  if (r.kept) parts.push(`${r.kept} 个已不在订阅里但有中转，已保留`);
+  if (r.kept) parts.push(`保留 ${r.kept} 个旧节点`);
 
   return parts.join("，");
 }
