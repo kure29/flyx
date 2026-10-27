@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -329,17 +330,21 @@ func TestZeroValues(t *testing.T) {
 // Traffic is what the byte counters grew by; the first report is only a
 // baseline and a smaller counter (a reboot) counts in full.
 func TestNodeTrafficFromCounters(t *testing.T) {
-	s := NewIngestionService(nil)
+	r, err := repo.Open(filepath.Join(t.TempDir(), "traffic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	s := NewIngestionService(r)
 	s.RecordNodeMetric(7, SystemInfo{BytesReceived: 1000, BytesTransmitted: 500})
 	s.RecordNodeMetric(7, SystemInfo{BytesReceived: 1600, BytesTransmitted: 900})
 	s.RecordNodeMetric(7, SystemInfo{BytesReceived: 100, BytesTransmitted: 50})
-	var in, out int64
-	for k, v := range s.traffic {
-		if k.node == 7 {
-			in += v[0]
-			out += v[1]
-		}
+	s.flushNodeMetrics()
+	totals, err := r.NodeTrafficSince(0)
+	if err != nil {
+		t.Fatal(err)
 	}
+	in, out := totals[7][0], totals[7][1]
 	if in != 700 || out != 450 {
 		t.Fatalf("traffic in=%d out=%d", in, out)
 	}

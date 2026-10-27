@@ -411,8 +411,9 @@ func (r *Repository) AddNodeTraffic(rows []model.NodeTraffic) error {
 	return r.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "node_id"}, {Name: "hour"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"in_bytes":  gorm.Expr("node_traffic.in_bytes + excluded.in_bytes"),
-			"out_bytes": gorm.Expr("node_traffic.out_bytes + excluded.out_bytes"),
+			"bucket_minutes": gorm.Expr("CASE WHEN node_traffic.bucket_minutes > excluded.bucket_minutes THEN node_traffic.bucket_minutes ELSE excluded.bucket_minutes END"),
+			"in_bytes":       gorm.Expr("node_traffic.in_bytes + excluded.in_bytes"),
+			"out_bytes":      gorm.Expr("node_traffic.out_bytes + excluded.out_bytes"),
 		}),
 	}).Create(&rows).Error
 }

@@ -929,14 +929,15 @@ type NodeMetric struct {
 
 func (NodeMetric) TableName() string { return "node_metric" }
 
-// NodeTraffic is a node's network traffic in one hour (Hour: unix ms the
-// hour starts at), summed from the agent's byte counters.
+// NodeTraffic stores network counter deltas in 15-minute buckets. Hour keeps
+// its legacy name; BucketMinutes distinguishes old hourly aggregates.
 type NodeTraffic struct {
-	ID       int64 `gorm:"primaryKey;autoIncrement"`
-	NodeID   int64 `gorm:"column:node_id;not null;uniqueIndex:idx_node_traffic_hour,priority:1"`
-	Hour     int64 `gorm:"not null;uniqueIndex:idx_node_traffic_hour,priority:2;index:idx_node_traffic_time"`
-	InBytes  int64 `gorm:"column:in_bytes;not null;default:0"`
-	OutBytes int64 `gorm:"column:out_bytes;not null;default:0"`
+	BucketMinutes int   `gorm:"not null;default:60"`
+	ID            int64 `gorm:"primaryKey;autoIncrement"`
+	NodeID        int64 `gorm:"column:node_id;not null;uniqueIndex:idx_node_traffic_hour,priority:1"`
+	Hour          int64 `gorm:"not null;uniqueIndex:idx_node_traffic_hour,priority:2;index:idx_node_traffic_time"`
+	InBytes       int64 `gorm:"column:in_bytes;not null;default:0"`
+	OutBytes      int64 `gorm:"column:out_bytes;not null;default:0"`
 }
 
 func (NodeTraffic) TableName() string { return "node_traffic" }
