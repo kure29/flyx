@@ -96,26 +96,6 @@ export function TagInput({
 
   return (
     <div className="space-y-2">
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {value.map((t) => (
-            <span
-              key={t}
-              className="inline-flex items-center gap-1 rounded-full bg-success-50 py-0.5 pl-2.5 pr-1 text-xs text-success-700 dark:bg-success-900/30 dark:text-success-400"
-            >
-              {t}
-              <button
-                aria-label={`移除标签 ${t}`}
-                className="rounded-full p-0.5 hover:bg-success-100 dark:hover:bg-success-900/50"
-                type="button"
-                onClick={() => onChange(value.filter((v) => v !== t))}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
       <Input
         description="输入后按回车添加，可以加多个，比如“出站”“落地”“香港”"
         label={label}
@@ -136,6 +116,26 @@ export function TagInput({
           }
         }}
       />
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map((t) => (
+            <span
+              key={t}
+              className="inline-flex items-center gap-1 rounded-full bg-success-50 py-0.5 pl-2.5 pr-1 text-xs text-success-700 dark:bg-success-900/30 dark:text-success-400"
+            >
+              {t}
+              <button
+                aria-label={`移除标签 ${t}`}
+                className="rounded-full p-0.5 hover:bg-success-100 dark:hover:bg-success-900/50"
+                type="button"
+                onClick={() => onChange(value.filter((v) => v !== t))}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       {offered.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {offered.slice(0, 12).map((t) => (
