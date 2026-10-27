@@ -328,13 +328,16 @@ func buildNftFlowUploadBatch(deltas []nftTrafficDelta, metas map[int64]repo.Flow
 			continue
 		}
 
-		scaledIn, ok := scaleNftTrafficBytes(delta.BytesIn, meta.TrafficRatio, meta.TunnelFlow)
+		scaledIn, ok := scaleNftTrafficBytes(delta.BytesIn, meta.TrafficRatio)
 		if !ok {
 			continue
 		}
-		scaledOut, ok := scaleNftTrafficBytes(delta.BytesOut, meta.TrafficRatio, meta.TunnelFlow)
-		if !ok {
-			continue
+		var scaledOut int64
+		if meta.TunnelFlow != 1 {
+			scaledOut, ok = scaleNftTrafficBytes(delta.BytesOut, meta.TrafficRatio)
+			if !ok {
+				continue
+			}
 		}
 		if scaledIn > math.MaxInt64-scaledOut {
 			continue
@@ -385,8 +388,8 @@ func buildNftFlowUploadBatch(deltas []nftTrafficDelta, metas map[int64]repo.Flow
 	return batch
 }
 
-func scaleNftTrafficBytes(bytes int64, ratio float64, tunnelFlow int64) (int64, bool) {
-	if bytes < 0 || ratio < 0 || tunnelFlow < 0 {
+func scaleNftTrafficBytes(bytes int64, ratio float64) (int64, bool) {
+	if bytes < 0 || ratio < 0 {
 		return 0, false
 	}
 	var scaled int64
@@ -399,8 +402,5 @@ func scaleNftTrafficBytes(bytes int64, ratio float64, tunnelFlow int64) (int64, 
 		}
 		scaled = int64(scaledFloat)
 	}
-	if tunnelFlow != 0 && scaled > math.MaxInt64/tunnelFlow {
-		return 0, false
-	}
-	return scaled * tunnelFlow, true
+	return scaled, true
 }

@@ -75,8 +75,12 @@ func (h *Handler) buildFlowUploadBatch(items []flowItem, metas map[int64]repo.Fl
 		raw.bytesOut += item.U
 		batch.forwardTraffic[forwardID] = raw
 
-		scaledIn := int64(float64(item.D)*meta.TrafficRatio) * meta.TunnelFlow
-		scaledOut := int64(float64(item.U)*meta.TrafficRatio) * meta.TunnelFlow
+		// flow selects the billable directions; traffic_ratio is the multiplier.
+		scaledIn := int64(float64(item.D) * meta.TrafficRatio)
+		var scaledOut int64
+		if meta.TunnelFlow != 1 {
+			scaledOut = int64(float64(item.U) * meta.TrafficRatio)
+		}
 		if idx, ok := flowSeen[forwardID]; ok {
 			batch.flowDeltas[idx].InFlow += scaledIn
 			batch.flowDeltas[idx].OutFlow += scaledOut

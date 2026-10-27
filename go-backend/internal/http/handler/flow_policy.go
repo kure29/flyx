@@ -225,22 +225,6 @@ func (h *Handler) enforcePeerShareFlowLimit(shareID int64) {
 	}
 }
 
-func (h *Handler) scaleFlowByTunnel(forwardID int64, inFlow int64, outFlow int64) (int64, int64) {
-	forward, err := h.getForwardRecord(forwardID)
-	if err != nil || forward == nil {
-		return inFlow, outFlow
-	}
-
-	tunnel, err := h.getTunnelRecord(forward.TunnelID)
-	if err != nil || tunnel == nil {
-		return inFlow, outFlow
-	}
-
-	scaledIn := int64(float64(inFlow)*tunnel.TrafficRatio) * tunnel.Flow
-	scaledOut := int64(float64(outFlow)*tunnel.TrafficRatio) * tunnel.Flow
-	return scaledIn, scaledOut
-}
-
 func (h *Handler) enforceFlowPolicies(userID int64, userTunnelID int64) {
 	now := time.Now().UnixMilli()
 

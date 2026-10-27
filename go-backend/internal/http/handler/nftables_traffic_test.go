@@ -208,21 +208,21 @@ func TestBuildNftFlowUploadBatchScalesFlowAndPreservesRawTunnelTraffic(t *testin
 		{ForwardID: 21, BytesIn: 7, BytesOut: 11},
 		{ForwardID: 20, BytesIn: 20, BytesOut: 10},
 	}, map[int64]repo.FlowUploadForwardMeta{
-		20: {ForwardID: 20, UserID: 2, UserTunnelID: 10, TunnelID: 1, TrafficRatio: 2, TunnelFlow: 3},
+		20: {ForwardID: 20, UserID: 2, UserTunnelID: 10, TunnelID: 1, TrafficRatio: 2, TunnelFlow: 2},
 		21: {ForwardID: 21, UserID: 2, UserTunnelID: 10, TunnelID: 1, TrafficRatio: 1.5, TunnelFlow: 2},
 	})
 
 	if len(batch.flowDeltas) != 2 {
 		t.Fatalf("expected two flow deltas, got %#v", batch.flowDeltas)
 	}
-	if batch.flowDeltas[0].ForwardID != 20 || batch.flowDeltas[0].InFlow != 600 || batch.flowDeltas[0].OutFlow != 720 {
+	if batch.flowDeltas[0].ForwardID != 20 || batch.flowDeltas[0].InFlow != 200 || batch.flowDeltas[0].OutFlow != 240 {
 		t.Fatalf("unexpected first flow delta: %#v", batch.flowDeltas[0])
 	}
-	if batch.flowDeltas[1].ForwardID != 21 || batch.flowDeltas[1].InFlow != 20 || batch.flowDeltas[1].OutFlow != 32 {
+	if batch.flowDeltas[1].ForwardID != 21 || batch.flowDeltas[1].InFlow != 10 || batch.flowDeltas[1].OutFlow != 16 {
 		t.Fatalf("unexpected second flow delta: %#v", batch.flowDeltas[1])
 	}
-	if batch.quotaUsage[2] != 1372 {
-		t.Fatalf("expected quota usage 1372, got %d", batch.quotaUsage[2])
+	if batch.quotaUsage[2] != 466 {
+		t.Fatalf("expected quota usage 466, got %d", batch.quotaUsage[2])
 	}
 	if len(batch.policyTargets) != 1 || batch.policyTargets[0].UserID != 2 || batch.policyTargets[0].UserTunnelID != 10 {
 		t.Fatalf("expected deduped policy target, got %#v", batch.policyTargets)
@@ -633,6 +633,9 @@ func setupNftablesCollectionFixture(t *testing.T) nftablesCollectionFixture {
 	h := fixture.handler
 	seedNftablesSSHConfig(t, h, fixture.nodeID)
 	tunnelID := seedTunnelForNftables(t, h, "nft-traffic-tunnel", fixture.nodeID)
+	if err := h.repo.DB().Exec("UPDATE tunnel SET flow = 2 WHERE id = ?", tunnelID).Error; err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UnixMilli()
 	if err := h.repo.DB().Exec(`
 		INSERT INTO user_tunnel(user_id, tunnel_id, speed_id, num, flow, in_flow, out_flow, flow_reset_time, exp_time, status)

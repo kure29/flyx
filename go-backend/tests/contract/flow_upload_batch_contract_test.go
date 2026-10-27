@@ -27,7 +27,7 @@ func TestFlowUploadAggregatesRepeatedItemsAndDisablesQuotaImmediately(t *testing
 	if err := repo.DB().Exec(`INSERT INTO user(id, user, pwd, role_id, exp_time, flow, in_flow, out_flow, flow_reset_time, num, created_time, updated_time, status) VALUES(2, 'flow_user', 'pwd', 1, 2727251700000, 99999, 0, 0, 1, 99999, ?, ?, 1)`, nowMs, nowMs).Error; err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	tunnel := &model.Tunnel{Name: "tunnel-1", TrafficRatio: 1.0, Type: 1, Protocol: "tls", Flow: 1, CreatedTime: nowMs, UpdatedTime: nowMs, Status: 1}
+	tunnel := &model.Tunnel{Name: "tunnel-1", TrafficRatio: 1.0, Type: 1, Protocol: "tls", Flow: 2, CreatedTime: nowMs, UpdatedTime: nowMs, Status: 1}
 	if err := repo.DB().Create(tunnel).Error; err != nil {
 		t.Fatalf("seed tunnel: %v", err)
 	}
