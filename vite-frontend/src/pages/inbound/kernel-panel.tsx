@@ -264,7 +264,9 @@ export function KernelPanel({
         >
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
           <span className="truncate">
-            {!k.synced && !k.lastError ? "待同步" : st.label}
+            {!k.synced && !k.lastError && k.status !== "offline"
+              ? "待同步"
+              : st.label}
           </span>
         </span>
         <span className="w-full truncate text-sm font-semibold text-foreground">

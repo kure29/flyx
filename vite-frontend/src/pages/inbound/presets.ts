@@ -63,7 +63,16 @@ export const KERNEL_STATUS: Record<
   stopped: { label: "已停止", color: "default" },
   pending: { label: "待下发", color: "warning" },
   error: { label: "异常", color: "danger" },
+  // The server is offline: the last reported state may be out of date.
+  offline: { label: "服务器离线", color: "default" },
 };
+
+/** A kernel status for an inbound: "内核运行中", or "服务器离线". */
+export function kernelStatusText(status: string): string {
+  if (status === "offline") return KERNEL_STATUS.offline.label;
+
+  return `内核${KERNEL_STATUS[status]?.label ?? "异常"}`;
+}
 
 export interface InboundForm {
   id?: number;

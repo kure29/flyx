@@ -61,9 +61,9 @@ import { TagChips, TagsModal, collectTags } from "@/pages/inbound/tags";
 import {
   type InboundForm,
   KERNEL_LABELS,
-  KERNEL_STATUS,
   describeInbound,
   emptyForm,
+  kernelStatusText,
   formFromItem,
 } from "@/pages/inbound/presets";
 import { Button } from "@/shadcn-bridge/heroui/button";
@@ -692,7 +692,7 @@ export default function InboundPage() {
             : "可连接"
           : "运行中"
         : item.enabled
-          ? `内核${KERNEL_STATUS[item.kernelStatus]?.label ?? "异常"}`
+          ? kernelStatusText(item.kernelStatus)
           : "已停用";
 
     const badges = (
@@ -757,7 +757,7 @@ export default function InboundPage() {
         )}
         {kernelBad && (
           <Chip color="warning" size="sm" variant="flat">
-            内核{KERNEL_STATUS[item.kernelStatus]?.label ?? "异常"}
+            {kernelStatusText(item.kernelStatus)}
           </Chip>
         )}
       </>

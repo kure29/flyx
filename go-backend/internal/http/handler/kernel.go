@@ -28,7 +28,23 @@ const (
 	kernelStatusRunning = "running"
 	kernelStatusStopped = "stopped"
 	kernelStatusError   = "error"
+	// kernelStatusOffline is shown, never stored: the node is offline, so
+	// the last known state may be stale (e.g. the server was reinstalled).
+	kernelStatusOffline = "offline"
 )
+
+// kernelStatusOnNode is the status to show for a kernel: what the agent
+// last reported, unless the node is offline and the report is out of date.
+func kernelStatusOnNode(status string, node *model.Node) string {
+	// Imported nodes have no kernel (and no status) to override.
+	if status == "" || status == kernelStatusPending {
+		return status
+	}
+	if node == nil || node.Status != 1 {
+		return kernelStatusOffline
+	}
+	return status
+}
 
 var kernelStatusInterval = 60 * time.Second
 
@@ -259,7 +275,7 @@ func (h *Handler) kernelViews(nodeID int64) ([]kernelView, error) {
 			KernelType:       k.KernelType,
 			Version:          k.Version,
 			InstalledVersion: k.InstalledVersion,
-			Status:           k.Status,
+			Status:           kernelStatusOnNode(k.Status, node),
 			LastError:        k.LastError,
 			Synced:           k.ConfigHash != "" && k.ConfigHash == k.AppliedHash,
 			Enabled:          k.Enabled == 1,
@@ -551,7 +567,7 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			ID:                 row.ID,
 			KernelID:           row.KernelID,
 			KernelType:         k.KernelType,
-			KernelStatus:       k.Status,
+			KernelStatus:       kernelStatusOnNode(k.Status, node),
 			External:           isExternalInbound(&row),
 			NodeID:             row.NodeID,
 			Name:               row.Name,
@@ -1608,7 +1624,9 @@ func (h *Handler) reconcileNodeKernels(nodeID int64) {
 		return
 	}
 	for _, k := range kernels {
-		if err := h.applyKernel(k.ID, false); err != nil {
+		// A reconnecting agent may have to download the kernel again (the
+		// server was reinstalled), so allow an install's time.
+		if err := h.applyKernel(k.ID, true); err != nil {
 			log.Printf("kernel reconcile failed node_id=%d kernel=%s err=%v", nodeID, k.KernelType, err)
 		}
 	}
@@ -1668,7 +1686,7 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 				continue
 			}
 			go func(id int64) {
-				if err := h.applyKernel(id, false); err != nil {
+				if err := h.applyKernel(id, true); err != nil {
 					log.Printf("kernel drift re-apply failed kernel_id=%d err=%v", id, err)
 				}
 			}(k.ID)
