@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { formatTraffic } from "@/utils/traffic";
 import { EmptyHint, ListGroup, ListRow } from "@/components/page-kit";
 import {
@@ -808,15 +809,22 @@ export function MonitorView({
     }
   }, [preferredNodeId, selectedNodeId]);
 
+  const beginMetricsRequest = useLatestRequest(
+    `${selectedNodeId}:${metricsRangeMs}`,
+  );
+
   const loadMetrics = useCallback(
     async (nodeId: number, options?: { silent?: boolean }) => {
       const silent = options?.silent ?? false;
+      const isCurrent = beginMetricsRequest();
 
       if (!silent) setMetricsLoading(true);
       try {
         const end = Date.now();
         const start = end - metricsRangeMs;
         const response = await getNodeMetrics(nodeId, start, end);
+
+        if (!isCurrent()) return;
 
         if (response.code === 0 && Array.isArray(response.data)) {
           setAccessDenied(null);
@@ -847,14 +855,22 @@ export function MonitorView({
         setMetricsError(friendlyMsg);
         if (!silent) toast.error(friendlyMsg);
       } catch {
+        if (!isCurrent()) return;
         setMetricsTruncated(false);
         if (!silent) setMetricsError("加载指标失败");
       } finally {
-        if (!silent) setMetricsLoading(false);
+        if (isCurrent()) setMetricsLoading(false);
       }
     },
-    [metricsRangeMs],
+    [metricsRangeMs, beginMetricsRequest],
   );
+
+  useEffect(() => {
+    setMetrics([]);
+    setMetricsError(null);
+    setMetricsTruncated(false);
+    setMetricsLoading(false);
+  }, [selectedNodeId, metricsRangeMs]);
 
   const loadServiceMonitors = useCallback(
     async (options?: { silent?: boolean }) => {

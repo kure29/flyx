@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { formatTraffic } from "@/utils/traffic";
 import {
   getMonitorTunnels,
@@ -1001,9 +1002,14 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
   }, [loadQuality, monitorTunnelQualityEnabled, tunnelQualityIntervalSec]);
 
   // --- Load quality history for detail chart ---
+  const beginQualityHistoryRequest = useLatestRequest(
+    `${detailTunnelId}:${qualityRangeMs}:${monitorTunnelQualityEnabled}`,
+  );
+
   const loadQualityHistory = useCallback(
     async (tunnelId: number, options?: { silent?: boolean }) => {
       const silent = options?.silent ?? false;
+      const isCurrent = beginQualityHistoryRequest();
 
       if (!silent) setQualityHistoryLoading(true);
       try {
@@ -1014,6 +1020,8 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
           start,
           end,
         );
+
+        if (!isCurrent()) return;
 
         if (response.code === 0 && Array.isArray(response.data)) {
           setQualityHistoryError(null);
@@ -1029,26 +1037,40 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
         setQualityHistoryError(response.msg || "加载质量历史失败");
         if (!silent) toast.error(response.msg || "加载质量历史失败");
       } catch {
+        if (!isCurrent()) return;
         if (!silent) {
           setQualityHistoryError("加载质量历史失败");
         }
       } finally {
-        if (!silent) setQualityHistoryLoading(false);
+        if (isCurrent()) setQualityHistoryLoading(false);
       }
     },
-    [qualityRangeMs],
+    [qualityRangeMs, beginQualityHistoryRequest],
   );
 
+  useEffect(() => {
+    setQualityHistory([]);
+    setQualityHistoryError(null);
+    setQualityHistoryLoading(false);
+  }, [detailTunnelId, qualityRangeMs, monitorTunnelQualityEnabled]);
+
   // --- Load tunnel traffic metrics for detail chart ---
+  const beginTunnelMetricsRequest = useLatestRequest(
+    `${detailTunnelId}:${tunnelRangeMs}`,
+  );
+
   const loadTunnelMetrics = useCallback(
     async (tunnelId: number, options?: { silent?: boolean }) => {
       const silent = options?.silent ?? false;
+      const isCurrent = beginTunnelMetricsRequest();
 
       if (!silent) setTunnelMetricsLoading(true);
       try {
         const end = Date.now();
         const start = end - tunnelRangeMs;
         const response = await getTunnelMetrics(tunnelId, start, end);
+
+        if (!isCurrent()) return;
 
         if (response.code === 0 && Array.isArray(response.data)) {
           setTunnelMetricsError(null);
@@ -1062,13 +1084,20 @@ export function TunnelMonitorView({ card }: { card?: boolean } = {}) {
         }
         setTunnelMetricsError(response.msg || "加载流量数据失败");
       } catch {
+        if (!isCurrent()) return;
         if (!silent) setTunnelMetricsError("加载流量数据失败");
       } finally {
-        if (!silent) setTunnelMetricsLoading(false);
+        if (isCurrent()) setTunnelMetricsLoading(false);
       }
     },
-    [tunnelRangeMs],
+    [tunnelRangeMs, beginTunnelMetricsRequest],
   );
+
+  useEffect(() => {
+    setTunnelMetrics([]);
+    setTunnelMetricsError(null);
+    setTunnelMetricsLoading(false);
+  }, [detailTunnelId, tunnelRangeMs]);
 
   useEffect(() => {
     if (detailTunnelId) {
