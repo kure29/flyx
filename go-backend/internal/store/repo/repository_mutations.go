@@ -58,6 +58,7 @@ func (r *Repository) CreateUser(username, pwdHash string, roleID int, expTime, f
 		InFlow:            0,
 		OutFlow:           0,
 		FlowResetTime:     flowResetTime,
+		FlowResetAt:       now,
 		Num:               num,
 		MaxConn:           maxConn,
 		CreatedTime:       now,
@@ -757,6 +758,7 @@ func (r *Repository) InsertUserTunnel(userID, tunnelID int64, speedID interface{
 		InFlow:        0,
 		OutFlow:       0,
 		FlowResetTime: flowResetTime,
+		FlowResetAt:   time.Now().UnixMilli(),
 		ExpTime:       expTime,
 		Status:        status,
 	}
@@ -1365,6 +1367,7 @@ func (r *Repository) EnsureUserTunnelGrant(userID, tunnelID int64) (int64, bool,
 		InFlow:        0,
 		OutFlow:       0,
 		FlowResetTime: flowReset,
+		FlowResetAt:   time.Now().UnixMilli(),
 		ExpTime:       expTime,
 		Status:        1,
 	}

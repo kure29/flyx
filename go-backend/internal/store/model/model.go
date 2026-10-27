@@ -20,6 +20,7 @@ type User struct {
 	InFlow            int64         `gorm:"column:in_flow;not null;default:0"`
 	OutFlow           int64         `gorm:"column:out_flow;not null;default:0"`
 	FlowResetTime     int64         `gorm:"column:flow_reset_time;not null"`
+	FlowResetAt       int64         `gorm:"column:flow_reset_at;not null;default:0"`
 	Num               int           `gorm:"not null"`
 	CreatedTime       int64         `gorm:"column:created_time;not null"`
 	UpdatedTime       sql.NullInt64 `gorm:"column:updated_time"`
@@ -243,6 +244,7 @@ type UserTunnel struct {
 	InFlow        int64         `gorm:"column:in_flow;not null;default:0"`
 	OutFlow       int64         `gorm:"column:out_flow;not null;default:0"`
 	FlowResetTime int64         `gorm:"column:flow_reset_time;not null"`
+	FlowResetAt   int64         `gorm:"column:flow_reset_at;not null;default:0"`
 	ExpTime       int64         `gorm:"column:exp_time;not null"`
 	Status        int           `gorm:"not null"`
 }
@@ -577,6 +579,7 @@ type InboundCounterBackup struct {
 }
 
 type UserBackup struct {
+	FlowResetAt     int64  `json:"flowResetAt,omitempty"`
 	ID              int64  `json:"id"`
 	User            string `json:"user"`
 	Pwd             string `json:"pwd"`
@@ -690,6 +693,7 @@ type ForwardPortBackup struct {
 }
 
 type UserTunnelBackup struct {
+	FlowResetAt   int64 `json:"flowResetAt,omitempty"`
 	ID            int64 `json:"id"`
 	UserID        int64 `json:"userId"`
 	TunnelID      int64 `json:"tunnelId"`

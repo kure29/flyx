@@ -111,6 +111,14 @@ func TestRunResetAndExpiryJobResetsFlowAndDisablesExpiredRecords(t *testing.T) {
 		t.Fatalf("insert non-expiring forward: %v", err)
 	}
 
+	// These records have a known previous cycle, as records created by the
+	// repository do. Legacy zero markers are covered separately.
+	for _, table := range []string{"user", "user_tunnel"} {
+		if err := r.DB().Table(table).Where("1 = 1").Update("flow_reset_at", now.AddDate(0, -1, 0).UnixMilli()).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	h.runResetAndExpiryJob(now)
 
 	userIn, userOut, userStatus := mustQueryInt64Int64Int(t, r, `SELECT in_flow, out_flow, status FROM user WHERE id = 2`)

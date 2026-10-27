@@ -226,7 +226,7 @@ func (r *Repository) exportUsers() ([]model.UserBackup, error) {
 		b := model.UserBackup{
 			ID: u.ID, User: u.User, Pwd: u.Pwd, RoleID: u.RoleID,
 			ExpTime: u.ExpTime, Flow: u.Flow, FlowMiB: u.FlowMiB, InFlow: u.InFlow, OutFlow: u.OutFlow,
-			FlowResetTime: u.FlowResetTime, Num: u.Num,
+			FlowResetTime: u.FlowResetTime, FlowResetAt: u.FlowResetAt, Num: u.Num,
 			CreatedTime: u.CreatedTime, Status: u.Status,
 		}
 		if quota := quotaMap[u.ID]; quota != nil {
@@ -405,7 +405,7 @@ func (r *Repository) exportUserTunnels() ([]model.UserTunnelBackup, error) {
 		b := model.UserTunnelBackup{
 			ID: ut.ID, UserID: ut.UserID, TunnelID: ut.TunnelID,
 			Num: ut.Num, Flow: ut.Flow, FlowMiB: ut.FlowMiB, InFlow: ut.InFlow, OutFlow: ut.OutFlow,
-			FlowResetTime: ut.FlowResetTime, ExpTime: ut.ExpTime, Status: ut.Status,
+			FlowResetTime: ut.FlowResetTime, FlowResetAt: ut.FlowResetAt, ExpTime: ut.ExpTime, Status: ut.Status,
 		}
 		if ut.SpeedID.Valid {
 			b.SpeedID = ut.SpeedID.Int64
@@ -641,6 +641,7 @@ func importUsers(tx *gorm.DB, users []model.UserBackup, now int64) (int, error) 
 			InFlow:            u.InFlow,
 			OutFlow:           u.OutFlow,
 			FlowResetTime:     u.FlowResetTime,
+			FlowResetAt:       u.FlowResetAt,
 			Num:               u.Num,
 			CreatedTime:       u.CreatedTime,
 			UpdatedTime:       sql.NullInt64{Int64: now, Valid: true},
@@ -651,7 +652,7 @@ func importUsers(tx *gorm.DB, users []model.UserBackup, now int64) (int, error) 
 			Columns: []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"user", "pwd", "role_id", "exp_time", "flow", "flow_mib", "in_flow", "out_flow",
-				"flow_reset_time", "num", "updated_time", "status", "password_changed_at",
+				"flow_reset_time", "flow_reset_at", "num", "updated_time", "status", "password_changed_at",
 			}),
 		}).Create(&item).Error
 		if err != nil {
@@ -898,15 +899,15 @@ func importUserTunnels(tx *gorm.DB, userTunnels []model.UserTunnelBackup, _ int6
 			FlowMiB:       ut.FlowMiB,
 			InFlow:        ut.InFlow,
 			OutFlow:       ut.OutFlow,
-			FlowResetTime: ut.FlowResetTime,
-			ExpTime:       ut.ExpTime,
-			Status:        ut.Status,
+			FlowResetTime: ut.FlowResetTime, FlowResetAt: ut.FlowResetAt,
+			ExpTime: ut.ExpTime,
+			Status:  ut.Status,
 		}
 		err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"user_id", "tunnel_id", "speed_id", "num", "flow", "flow_mib", "in_flow", "out_flow",
-				"flow_reset_time", "exp_time", "status",
+				"flow_reset_time", "flow_reset_at", "exp_time", "status",
 			}),
 		}).Create(&item).Error
 		if err != nil {

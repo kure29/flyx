@@ -204,17 +204,19 @@ func (h *Handler) runHourlyStatsLoop(ctx context.Context) {
 func (h *Handler) runDailyMaintenanceLoop(ctx context.Context) {
 	defer h.jobsWG.Done()
 
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for {
-		wait := durationUntilNextDailyMaintenance(time.Now())
-		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
 			return
-		case <-timer.C:
-			h.runResetAndExpiryJob(time.Now())
+		default:
+		}
+		h.runResetAndExpiryJob(time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
 }
@@ -293,11 +295,9 @@ func (h *Handler) runResetAndExpiryJob(now time.Time) {
 }
 
 func (h *Handler) resetMonthlyFlow(now time.Time) {
-	currentDay := now.Day()
-	lastDay := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location()).Day()
-
-	_ = h.repo.ResetUserMonthlyFlow(currentDay, lastDay)
-	_ = h.repo.ResetUserTunnelMonthlyFlow(currentDay, lastDay)
+	if err := h.repo.RollMonthlyFlows(now); err != nil {
+		log.Printf("monthly flow reset failed: %v", err)
+	}
 }
 
 func (h *Handler) disableExpiredUsers(nowMs int64) {

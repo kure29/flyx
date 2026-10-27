@@ -181,36 +181,6 @@ func (r *Repository) ListUsers() ([]map[string]interface{}, error) {
 	return items, nil
 }
 
-func (r *Repository) ResetUserMonthlyFlow(day int, lastDay int) error {
-	if r == nil || r.db == nil {
-		return errors.New("repository not initialized")
-	}
-	updates := map[string]interface{}{"in_flow": 0, "out_flow": 0}
-	if day == lastDay {
-		return r.db.Model(&model.User{}).
-			Where("flow_reset_time != 0 AND (flow_reset_time = ? OR flow_reset_time > ?)", day, lastDay).
-			Updates(updates).Error
-	}
-	return r.db.Model(&model.User{}).
-		Where("flow_reset_time != 0 AND flow_reset_time = ?", day).
-		Updates(updates).Error
-}
-
-func (r *Repository) ResetUserTunnelMonthlyFlow(day int, lastDay int) error {
-	if r == nil || r.db == nil {
-		return errors.New("repository not initialized")
-	}
-	updates := map[string]interface{}{"in_flow": 0, "out_flow": 0}
-	if day == lastDay {
-		return r.db.Model(&model.UserTunnel{}).
-			Where("flow_reset_time != 0 AND (flow_reset_time = ? OR flow_reset_time > ?)", day, lastDay).
-			Updates(updates).Error
-	}
-	return r.db.Model(&model.UserTunnel{}).
-		Where("flow_reset_time != 0 AND flow_reset_time = ?", day).
-		Updates(updates).Error
-}
-
 func (r *Repository) ListExpiredActiveUserIDs(nowMs int64) ([]int64, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("repository not initialized")

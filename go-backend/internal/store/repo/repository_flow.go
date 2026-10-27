@@ -469,6 +469,15 @@ func applyFlowUploadDeltasTx(tx *gorm.DB, deltas []FlowUploadCounterDelta, now t
 		}
 	}
 
+	// Roll the cycle before adding a new upload, including when the scheduled
+	// job was missed. The row locks and increments share this transaction.
+	if err := rollMonthlyFlowTx(tx, "user", sortedFlowUploadTargetIDs(userTotals), now); err != nil {
+		return err
+	}
+	if err := rollMonthlyFlowTx(tx, "user_tunnel", sortedFlowUploadTargetIDs(userTunnelTotals), now); err != nil {
+		return err
+	}
+
 	for _, forwardID := range sortedFlowUploadTargetIDs(forwardTotals) {
 		total := forwardTotals[forwardID]
 		if err := tx.Model(&model.Forward{}).Where("id = ?", forwardID).UpdateColumns(map[string]interface{}{
