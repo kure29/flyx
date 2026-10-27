@@ -108,6 +108,7 @@ type inboundView struct {
 	// SplitRules are the inbound's 分流 rules.
 	SplitRules         []kernel.SplitRule `json:"splitRules"`
 	OutboundIPStrategy string             `json:"outboundIpStrategy"`
+	Tags               []string           `json:"tags"`
 }
 
 // kernelSecurityView hides the self-signed private material and DNS API
@@ -580,6 +581,7 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			OutboundID:         row.OutboundID,
 			SplitRules:         rowSplitRules(row),
 			OutboundIPStrategy: row.OutboundIPStrategy,
+			Tags:               splitTags(row.Tags),
 		}
 		v.ShareAddress = inboundShareAddress(&row, nodes[row.NodeID])
 		if v.SplitRules == nil {

@@ -1306,11 +1306,18 @@ export const resetInboundTraffic = (id: number) =>
   Network.post("/inbound/reset-traffic", { id });
 export const regenerateInbound = (id: number) =>
   Network.post("/inbound/regenerate", { id });
-export const importInbounds = (links: string, relayOnly: boolean) =>
+export const importInbounds = (
+  links: string,
+  relayOnly: boolean,
+  tags: string[] = [],
+) =>
   Network.post<{ created: number[]; errors: string[] }>("/inbound/import", {
     links,
     relayOnly,
+    tags,
   });
+export const setInboundTags = (ids: number[], tags: string[]) =>
+  Network.post("/inbound/tags", { ids, tags });
 export const updateExternalInbound = (data: {
   id: number;
   name: string;

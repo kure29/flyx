@@ -283,6 +283,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/subscription/icon-library/save", h.subscriptionIconLibrarySave)
 	mux.HandleFunc("/api/v1/subscription/icon-library/delete", h.subscriptionIconLibraryDelete)
 	mux.HandleFunc("/api/v1/inbound/toggle", h.inboundToggle)
+	mux.HandleFunc("/api/v1/inbound/tags", h.inboundTags)
 	mux.HandleFunc("/api/v1/inbound/split", h.inboundSplitSave)
 	mux.HandleFunc("/api/v1/inbound/reset-traffic", h.inboundResetTraffic)
 	mux.HandleFunc("/api/v1/inbound/regenerate", h.inboundRegenerate)

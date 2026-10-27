@@ -531,9 +531,10 @@ export default function NodePage({
     }
   };
 
-  const { wsConnected, wsConnecting, usingPollingFallback } = useNodeRealtime({
-    onMessage: handleWebSocketMessage,
-  });
+  const { wsConnected, wsConnecting, wsStarting, usingPollingFallback } =
+    useNodeRealtime({
+      onMessage: handleWebSocketMessage,
+    });
 
   useEffect(() => {
     // With cached data on screen, reload without the loading state.
@@ -1607,7 +1608,8 @@ export default function NodePage({
         </PageToolbar>
       )}
 
-      {!wsConnected && (
+      {/* A connection that comes up within a moment needs no notice. */}
+      {!wsConnected && !wsStarting && (
         <Alert
           className="mb-3"
           color="warning"

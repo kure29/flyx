@@ -794,10 +794,13 @@ export function MonitorView({
     }
   }, []);
 
-  const { wsConnected, wsConnecting } = useNodeRealtime({
+  const realtime = useNodeRealtime({
     onMessage: handleRealtimeMessage,
     enabled: !accessDenied,
   });
+  const { wsConnected } = realtime;
+  // The small status dot shows the first connection too.
+  const wsConnecting = realtime.wsConnecting || realtime.wsStarting;
 
   useEffect(() => {
     if (!selectedNodeId && preferredNodeId > 0) {

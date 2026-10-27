@@ -62,6 +62,9 @@ type NodeInbound struct {
 	// SplitRules are the 分流 rules (JSON list of kernel.SplitRule).
 	SplitRules         string `gorm:"column:split_rules;type:text;not null;default:''"`
 	OutboundIPStrategy string `gorm:"column:outbound_ip_strategy;type:varchar(20);not null;default:'auto'"`
+	// Tags are the user's labels (comma-separated), for telling nodes apart
+	// in the list; they do not affect rendering or subscriptions.
+	Tags string `gorm:"column:tags;type:text;not null;default:''"`
 }
 
 func (NodeInbound) TableName() string { return "node_inbound" }
