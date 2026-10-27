@@ -958,62 +958,58 @@ export function MonitorView({
     [],
   );
 
-  const loadLatestMonitorResults = useCallback(
-    async (options?: { silent?: boolean }) => {
-      if (options?.silent && loadLatestMonitorResultsPending.current > 0)
-        return;
-      loadLatestMonitorResultsPending.current += 1;
+  const loadLatestMonitorResults = useCallback(async (silent = false) => {
+    if (silent && loadLatestMonitorResultsPending.current > 0) return;
+    loadLatestMonitorResultsPending.current += 1;
 
-      try {
-        const response = await getServiceMonitorLatestResults();
+    try {
+      const response = await getServiceMonitorLatestResults();
 
-        if (response.code === 0 && Array.isArray(response.data)) {
-          setAccessDenied(null);
-          setLatestResultsError(null);
-          setMonitorResults((prev) => {
-            const next: Record<number, ServiceMonitorResultApiItem[]> = {
-              ...prev,
-            };
+      if (response.code === 0 && Array.isArray(response.data)) {
+        setAccessDenied(null);
+        setLatestResultsError(null);
+        setMonitorResults((prev) => {
+          const next: Record<number, ServiceMonitorResultApiItem[]> = {
+            ...prev,
+          };
 
-            response.data.forEach((r) => {
-              const monitorId = Number(r?.monitorId ?? 0);
+          response.data.forEach((r) => {
+            const monitorId = Number(r?.monitorId ?? 0);
 
-              if (monitorId <= 0) return;
+            if (monitorId <= 0) return;
 
-              const existing = next[monitorId];
+            const existing = next[monitorId];
 
-              if (existing && existing.length > 1) {
-                const rest = existing.filter((x) => x.id !== r.id);
+            if (existing && existing.length > 1) {
+              const rest = existing.filter((x) => x.id !== r.id);
 
-                next[monitorId] = [r, ...rest];
+              next[monitorId] = [r, ...rest];
 
-                return;
-              }
+              return;
+            }
 
-              next[monitorId] = [r];
-            });
-
-            return next;
+            next[monitorId] = [r];
           });
 
-          return;
-        }
-        if (response.code === 403) {
-          setAccessDenied(response.msg || "暂无监控权限，请联系管理员授权");
-          setLatestResultsError(null);
+          return next;
+        });
 
-          return;
-        }
-
-        setLatestResultsError(response.msg || "加载最新监控结果失败");
-      } catch {
-        setLatestResultsError("加载最新监控结果失败");
-      } finally {
-        loadLatestMonitorResultsPending.current -= 1;
+        return;
       }
-    },
-    [],
-  );
+      if (response.code === 403) {
+        setAccessDenied(response.msg || "暂无监控权限，请联系管理员授权");
+        setLatestResultsError(null);
+
+        return;
+      }
+
+      setLatestResultsError(response.msg || "加载最新监控结果失败");
+    } catch {
+      setLatestResultsError("加载最新监控结果失败");
+    } finally {
+      loadLatestMonitorResultsPending.current -= 1;
+    }
+  }, []);
 
   const loadResultsForModal = useCallback(async () => {
     if (!resultsMonitorId) return;
@@ -1035,7 +1031,7 @@ export function MonitorView({
     useCallback(async () => {
       await Promise.all([
         loadServiceMonitors({ silent: true }),
-        loadLatestMonitorResults({ silent: true }),
+        loadLatestMonitorResults(true),
       ]);
     }, [loadLatestMonitorResults, loadServiceMonitors]),
     5_000,
