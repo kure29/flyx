@@ -120,7 +120,7 @@ func (r *Repository) ApplyNftTrafficAccounting(deltas []FlowUploadCounterDelta, 
 
 	quotaViews := map[int64]*model.UserQuotaView{}
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		if err := applyFlowUploadDeltasTx(tx, deltas); err != nil {
+		if err := applyFlowUploadDeltasTx(tx, deltas, now); err != nil {
 			return err
 		}
 		var err error

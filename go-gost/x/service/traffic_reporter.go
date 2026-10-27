@@ -222,52 +222,6 @@ func postJSONWithFallback(ctx context.Context, urls []string, requestBody []byte
 	return false, fmt.Errorf("发送HTTP请求失败: %s", strings.Join(errs, " | "))
 }
 
-// sendBatchTrafficReport 批量发送多个服务的流量报告到HTTP接口
-func sendBatchTrafficReport(ctx context.Context, reportItems []TrafficReportItem) (bool, error) {
-	if httpReportURL == "" {
-		return false, fmt.Errorf("流量上报URL未设置")
-	}
-
-	jsonData, err := json.Marshal(reportItems)
-	if err != nil {
-		return false, fmt.Errorf("序列化报告数据失败: %v", err)
-	}
-
-	var requestBody []byte
-
-	// 如果有加密器，则加密数据
-	if httpAESCrypto != nil {
-		encryptedData, err := httpAESCrypto.Encrypt(jsonData)
-		if err != nil {
-			fmt.Printf("⚠️ 加密流量报告失败，发送原始数据: %v\n", err)
-			requestBody = jsonData
-		} else {
-			// 创建加密消息包装器
-			encryptedMessage := map[string]interface{}{
-				"encrypted": true,
-				"data":      encryptedData,
-				"timestamp": time.Now().Unix(),
-			}
-			requestBody, err = json.Marshal(encryptedMessage)
-			if err != nil {
-				fmt.Printf("⚠️ 序列化加密流量报告失败，发送原始数据: %v\n", err)
-				requestBody = jsonData
-			}
-		}
-	} else {
-		requestBody = jsonData
-	}
-
-	return postJSONWithFallback(
-		ctx,
-		strings.Split(httpReportURL, ","),
-		requestBody,
-		"GOST-Traffic-Reporter/1.0",
-		5*time.Second,
-		&preferredUploadURL,
-	)
-}
-
 // sendConfigReport 发送配置报告到HTTP接口
 func sendConfigReport(ctx context.Context) (bool, error) {
 	if configReportURL == "" {

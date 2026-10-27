@@ -233,12 +233,16 @@ func (p *program) Stop() error {
 	defer unlock()
 	p.stopped = true
 	p.stopRuntime()
+	xservice.GetGlobalTrafficManager().Stop()
 	return nil
 }
 
 func (p *program) stopRuntime() {
-	for name := range registry.ServiceRegistry().GetAll() {
+	for name, service := range registry.ServiceRegistry().GetAll() {
 		registry.ServiceRegistry().Unregister(name)
+		if flusher, ok := service.(interface{ FlushTraffic() }); ok {
+			flusher.FlushTraffic()
+		}
 		logger.Default().Debugf("service %s shutdown", name)
 	}
 

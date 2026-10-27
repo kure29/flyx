@@ -11,6 +11,8 @@ import (
 
 // GlobalTrafficManager 全局流量管理器（所有服务共享）
 type GlobalTrafficManager struct {
+	reportMu       sync.Mutex
+	spool          *trafficSpool
 	mu             sync.RWMutex
 	serviceTraffic map[string]*ServiceTraffic // key: 服务名, value: 流量数据
 	ctx            context.Context
@@ -37,6 +39,7 @@ func GetGlobalTrafficManager() *GlobalTrafficManager {
 		ctx, cancel := context.WithCancel(context.Background())
 		globalManager = &GlobalTrafficManager{
 			serviceTraffic: make(map[string]*ServiceTraffic),
+			spool:          configuredTrafficSpool,
 			ctx:            ctx,
 			cancel:         cancel,
 			reportTicker:   time.NewTicker(5 * time.Second),
@@ -49,10 +52,16 @@ func GetGlobalTrafficManager() *GlobalTrafficManager {
 
 // AddTraffic 添加流量到指定服务（由各服务调用）
 func (m *GlobalTrafficManager) AddTraffic(serviceName string, upBytes, downBytes int64) {
-	if upBytes == 0 && downBytes == 0 {
+	if !registry.ServiceRegistry().IsRegistered(serviceName) {
 		return
 	}
-	if !registry.ServiceRegistry().IsRegistered(serviceName) {
+	m.addServiceTraffic(serviceName, upBytes, downBytes)
+}
+
+// addServiceTraffic accepts samples from a service's own lifetime, including
+// connections draining after its listener has been unregistered.
+func (m *GlobalTrafficManager) addServiceTraffic(serviceName string, upBytes, downBytes int64) {
+	if upBytes == 0 && downBytes == 0 {
 		return
 	}
 
@@ -137,59 +146,77 @@ func (m *GlobalTrafficManager) startReporting() {
 
 // collectAndReport 收集所有服务流量并合并上报
 func (m *GlobalTrafficManager) collectAndReport() {
-	m.mu.Lock()
-
-	if len(m.serviceTraffic) == 0 {
-		m.mu.Unlock()
+	m.reportMu.Lock()
+	defer m.reportMu.Unlock()
+	if err := m.persistTraffic(); err != nil {
+		fmt.Printf("traffic spool write failed: %v\n", err)
 		return
 	}
+	if m.spool.state.Pending == nil {
+		return
+	}
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := sendReliableTrafficReport(ctx, *m.spool.state.Pending); err != nil {
+		fmt.Printf("%v\n", err)
+		return
+	}
+	next := m.spool.state
+	next.Pending = nil
+	next.Next++
+	if err := m.spool.save(next); err != nil {
+		fmt.Printf("traffic ACK persistence failed: %v\n", err)
+		return
+	}
+	m.spool.state = next
+}
 
-	reportItems := make([]TrafficReportItem, 0, len(m.serviceTraffic))
-
+// persistTraffic advances memory only after the exact retry batch is durable.
+// A pending batch and a coalesced buffer avoid storing one entry per retry.
+func (m *GlobalTrafficManager) persistTraffic() error {
+	if m.spool == nil {
+		var err error
+		m.spool, err = openTrafficSpool("")
+		if err != nil {
+			return err
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	items := make([]TrafficReportItem, 0, len(m.serviceTraffic))
 	for name, traffic := range m.serviceTraffic {
 		traffic.mu.Lock()
-		up := traffic.UpBytes
-		down := traffic.DownBytes
-		if up > 0 || down > 0 {
-			traffic.UpBytes = 0
-			traffic.DownBytes = 0
-		}
+		up, down := traffic.UpBytes, traffic.DownBytes
 		traffic.mu.Unlock()
-		isStale := !registry.ServiceRegistry().IsRegistered(name)
-
 		if up > 0 || down > 0 {
-			reportItems = append(reportItems, TrafficReportItem{
-				N: name,
-				U: up,
-				D: down,
-			})
+			items = append(items, TrafficReportItem{N: name, U: up, D: down})
 		}
-		if isStale {
+	}
+	if len(items) == 0 && (m.spool.state.Pending != nil || len(m.spool.state.Buffered) == 0) {
+		return nil
+	}
+
+	next := m.spool.state
+	next.Buffered = mergeTrafficItems(next.Buffered, items)
+	if next.Pending == nil && len(next.Buffered) > 0 {
+		next.Pending = &trafficEnvelope{Stream: next.Stream, Sequence: next.Next, Items: next.Buffered}
+		next.Buffered = nil
+	}
+	if err := m.spool.save(next); err != nil {
+		return err
+	}
+	m.spool.state = next
+	for name, traffic := range m.serviceTraffic {
+		traffic.mu.Lock()
+		traffic.UpBytes, traffic.DownBytes = 0, 0
+		traffic.mu.Unlock()
+		if !registry.ServiceRegistry().IsRegistered(name) {
 			delete(m.serviceTraffic, name)
 		}
 	}
-
-	m.mu.Unlock()
-
-	if len(reportItems) == 0 {
-		return
-	}
-
-	var totalUp, totalDown int64
-	for _, item := range reportItems {
-		totalUp += item.U
-		totalDown += item.D
-	}
-
-	success, err := sendBatchTrafficReport(m.ctx, reportItems)
-	if err != nil {
-		fmt.Printf("❌ 全局流量上报失败: %v (总流量: ↑%d ↓%d, %d个服务)\n", err, totalUp, totalDown, len(reportItems))
-		return
-	}
-
-	if !success {
-		fmt.Printf("⚠️ 全局流量上报未成功 (总流量: ↑%d ↓%d, %d个服务)\n", totalUp, totalDown, len(reportItems))
-	}
+	return nil
 }
 
 // Stop 停止全局流量管理器
@@ -200,6 +227,11 @@ func (m *GlobalTrafficManager) Stop() {
 	if m.cancel != nil {
 		m.cancel()
 	}
+	m.reportMu.Lock()
+	if err := m.persistTraffic(); err != nil {
+		fmt.Printf("traffic shutdown persistence failed: %v\n", err)
+	}
+	m.reportMu.Unlock()
 	fmt.Printf("🛑 全局流量管理器已停止\n")
 }
 

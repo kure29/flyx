@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -71,9 +72,14 @@ func TestGlobalTrafficManagerCollectAndReportDropsStaleEntriesAfterReporting(t *
 			t.Fatalf("read request body: %v", err)
 		}
 		requestBody = string(body)
+		var batch trafficEnvelope
+		if err := json.Unmarshal(body, &batch); err != nil {
+			t.Fatal(err)
+		}
+		ack, _ := json.Marshal(map[string]any{"stream": batch.Stream, "sequence": batch.Sequence})
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("ok")),
+			Body:       io.NopCloser(strings.NewReader(string(ack))),
 		}, nil
 	}
 

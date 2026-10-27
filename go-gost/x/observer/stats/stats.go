@@ -66,9 +66,10 @@ func (s *Stats) Get(kind stats.Kind) uint64 {
 	return 0
 }
 
-func (s *Stats) ResetTraffic(reportedInputBytes, reportedOutputBytes uint64) {
-	s.inputBytes.Store(reportedInputBytes)
-	s.outputBytes.Store(reportedOutputBytes)
+// TakeTraffic transfers the pending bytes to a collector. Concurrent Add calls
+// belong to either this snapshot or the next one, and are never overwritten.
+func (s *Stats) TakeTraffic() (input, output uint64) {
+	return s.inputBytes.Swap(0), s.outputBytes.Swap(0)
 }
 
 func (s *Stats) Reset() {

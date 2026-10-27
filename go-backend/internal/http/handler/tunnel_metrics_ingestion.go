@@ -39,13 +39,13 @@ func collectFlowUploadForwardIDs(items []flowItem) []int64 {
 	return ids
 }
 
-func (h *Handler) recordTunnelMetricsFromForwardBatch(nodeID int64, forwardDeltas map[int64]tunnelTrafficDelta, metas map[int64]repo.FlowUploadForwardMeta, nowMs int64) {
+func (h *Handler) recordTunnelMetricsFromForwardBatch(nodeID int64, forwardDeltas map[int64]tunnelTrafficDelta, metas map[int64]repo.FlowUploadForwardMeta, nowMs int64) error {
 	if h == nil || h.repo == nil || nodeID <= 0 || len(forwardDeltas) == 0 {
-		return
+		return nil
 	}
 	bucketTs := unixMilliBucketMinute(nowMs)
 	if bucketTs <= 0 {
-		return
+		return nil
 	}
 
 	tunnelAgg := make(map[int64]tunnelTrafficDelta)
@@ -74,12 +74,13 @@ func (h *Handler) recordTunnelMetricsFromForwardBatch(nodeID int64, forwardDelta
 		})
 	}
 	if len(metrics) == 0 {
-		return
+		return nil
 	}
 
 	if err := h.repo.UpsertTunnelMetricBuckets(metrics); err != nil {
 		log.Printf("monitoring write failed op=tunnel_metric.upsert_buckets node_id=%d bucket_ts=%d count=%d err=%v", nodeID, bucketTs, len(metrics), err)
-		return
+		return err
 	}
 	log.Printf("monitoring ok op=tunnel_metric.upsert_buckets node_id=%d bucket_ts=%d count=%d", nodeID, bucketTs, len(metrics))
+	return nil
 }

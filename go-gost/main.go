@@ -134,6 +134,10 @@ func main() {
 	}
 	fullVersion := fmt.Sprintf("%s (%s/%s)", version, distro, runtime.GOARCH)
 	service.SetHTTPReportURL(config.Addr, config.Secret)
+	if err := service.ConfigureTrafficSpool(".", config.Addr+"\x00"+config.Secret); err != nil {
+		logger.Default().Fatalf("traffic spool unavailable: %v", err)
+		return
+	}
 
 	p := &program{
 		startReporter: func() reporter {

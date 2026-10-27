@@ -18,7 +18,7 @@ func TestBuildFlowUploadBatchAggregatesForwardQuotaPeerShareAndCleanupTargets(t 
 			UserTunnelID: 10,
 			TunnelID:     1,
 			TrafficRatio: 2,
-			TunnelFlow:   3,
+			TunnelFlow:   2,
 		},
 	}
 
@@ -36,11 +36,11 @@ func TestBuildFlowUploadBatchAggregatesForwardQuotaPeerShareAndCleanupTargets(t 
 	if delta.ForwardID != 20 || delta.UserID != 2 || delta.UserTunnelID != 10 {
 		t.Fatalf("unexpected flow delta identity: %#v", delta)
 	}
-	if delta.InFlow != 480 || delta.OutFlow != 660 {
-		t.Fatalf("expected scaled flow in=480 out=660, got in=%d out=%d", delta.InFlow, delta.OutFlow)
+	if delta.InFlow != 160 || delta.OutFlow != 220 {
+		t.Fatalf("expected scaled flow in=160 out=220, got in=%d out=%d", delta.InFlow, delta.OutFlow)
 	}
-	if batch.quotaUsage[2] != 1140 {
-		t.Fatalf("expected quota usage 1140, got %d", batch.quotaUsage[2])
+	if batch.quotaUsage[2] != 380 {
+		t.Fatalf("expected quota usage 380, got %d", batch.quotaUsage[2])
 	}
 	if len(batch.policyTargets) != 1 {
 		t.Fatalf("expected 1 policy target, got %d", len(batch.policyTargets))
@@ -66,7 +66,7 @@ func TestBuildFlowUploadBatchAggregatesForwardQuotaPeerShareAndCleanupTargets(t 
 	}
 }
 
-func TestApplyFlowUploadBatchContinuesPolicyAndPeerShareSideEffectsWhenQuotaBatchFails(t *testing.T) {
+func TestApplyFlowUploadBatchRollsBackWhenQuotaBatchFails(t *testing.T) {
 	r, err := repo.Open(filepath.Join(t.TempDir(), "flow-upload-batch-quota-fail.db"))
 	if err != nil {
 		t.Fatalf("open repo: %v", err)
@@ -118,19 +118,19 @@ func TestApplyFlowUploadBatchContinuesPolicyAndPeerShareSideEffectsWhenQuotaBatc
 		peerShareForwardItems: map[string]flowItem{"20_2_10": {N: "20_2_10", U: 120, D: 80}},
 	}, now)
 
-	if got := mustQueryInt(t, r, `SELECT status FROM forward WHERE id = 20`); got != 0 {
-		t.Fatalf("expected flow-policy enforcement to pause forward after quota failure, got status=%d", got)
+	if got := mustQueryInt(t, r, `SELECT status FROM forward WHERE id = 20`); got != 1 {
+		t.Fatalf("expected no flow-policy side effect to pause forward after quota failure, got status=%d", got)
 	}
 	updatedShare, err := r.GetPeerShare(share.ID)
 	if err != nil || updatedShare == nil {
 		t.Fatalf("reload peer share: %v", err)
 	}
-	if updatedShare.CurrentFlow != 200 {
-		t.Fatalf("expected peer-share flow accounting to continue after quota failure, got %d", updatedShare.CurrentFlow)
+	if updatedShare.CurrentFlow != 0 {
+		t.Fatalf("expected peer-share flow accounting to roll back after quota failure, got %d", updatedShare.CurrentFlow)
 	}
 }
 
-func TestApplyFlowUploadBatchContinuesPeerShareSideEffectsWhenFlowBatchFails(t *testing.T) {
+func TestApplyFlowUploadBatchRollsBackWhenFlowBatchFails(t *testing.T) {
 	r, err := repo.Open(filepath.Join(t.TempDir(), "flow-upload-batch-flow-fail.db"))
 	if err != nil {
 		t.Fatalf("open repo: %v", err)
@@ -189,31 +189,31 @@ func TestApplyFlowUploadBatchContinuesPeerShareSideEffectsWhenFlowBatchFails(t *
 		peerShareForwardItems: map[string]flowItem{"20_2_10": {N: "20_2_10", U: 120, D: 80}},
 	}, now)
 
-	if got := mustQueryInt(t, r, `SELECT status FROM forward WHERE id = 20`); got != 0 {
-		t.Fatalf("expected flow-policy enforcement to pause forward after flow batch failure, got status=%d", got)
+	if got := mustQueryInt(t, r, `SELECT status FROM forward WHERE id = 20`); got != 1 {
+		t.Fatalf("expected no flow-policy side effect to pause forward after flow batch failure, got status=%d", got)
 	}
 	updatedShare, err := r.GetPeerShare(share.ID)
 	if err != nil || updatedShare == nil {
 		t.Fatalf("reload peer share: %v", err)
 	}
-	if updatedShare.CurrentFlow != 200 {
-		t.Fatalf("expected peer-share flow accounting to continue after flow batch failure, got %d", updatedShare.CurrentFlow)
+	if updatedShare.CurrentFlow != 0 {
+		t.Fatalf("expected peer-share flow accounting to roll back after flow batch failure, got %d", updatedShare.CurrentFlow)
 	}
-	if got := mustQueryInt(t, r, `SELECT in_flow FROM forward WHERE id = 20`); got != 80 {
-		t.Fatalf("expected flow fallback to persist forward 20 in_flow=80, got %d", got)
+	if got := mustQueryInt(t, r, `SELECT in_flow FROM forward WHERE id = 20`); got != 0 {
+		t.Fatalf("expected transaction to roll back forward 20, got %d", got)
 	}
 	if got := mustQueryInt(t, r, `SELECT in_flow FROM forward WHERE id = 21`); got != 0 {
 		t.Fatalf("expected failed forward 21 delta to remain unapplied, got %d", got)
 	}
-	if got := mustQueryInt(t, r, `SELECT in_flow FROM user WHERE id = 2`); got != 80 {
-		t.Fatalf("expected flow fallback to preserve successful user totals, got %d", got)
+	if got := mustQueryInt(t, r, `SELECT in_flow FROM user WHERE id = 2`); got != 0 {
+		t.Fatalf("expected user totals to roll back, got %d", got)
 	}
-	if got := mustQueryInt(t, r, `SELECT in_flow FROM user_tunnel WHERE id = 10`); got != 80 {
-		t.Fatalf("expected flow fallback to preserve successful user_tunnel totals, got %d", got)
+	if got := mustQueryInt(t, r, `SELECT in_flow FROM user_tunnel WHERE id = 10`); got != 0 {
+		t.Fatalf("expected user_tunnel totals to roll back, got %d", got)
 	}
 }
 
-func TestApplyFlowUploadBatchFallsBackToPerUserQuotaUpdates(t *testing.T) {
+func TestApplyFlowUploadBatchRollsBackAllUsersWhenQuotaUpdateFails(t *testing.T) {
 	r, err := repo.Open(filepath.Join(t.TempDir(), "flow-upload-batch-quota-fallback.db"))
 	if err != nil {
 		t.Fatalf("open repo: %v", err)
@@ -247,8 +247,8 @@ func TestApplyFlowUploadBatchFallsBackToPerUserQuotaUpdates(t *testing.T) {
 	h := &Handler{repo: r}
 	h.applyFlowUploadBatch(1, flowUploadBatch{quotaUsage: map[int64]int64{2: 200, 3: 300}}, now)
 
-	if got := mustQueryInt(t, r, `SELECT daily_used_bytes FROM user_quota WHERE user_id = 2`); got != 200 {
-		t.Fatalf("expected quota fallback to persist user 2 usage, got %d", got)
+	if got := mustQueryInt(t, r, `SELECT daily_used_bytes FROM user_quota WHERE user_id = 2`); got != 0 {
+		t.Fatalf("expected user 2 usage to roll back, got %d", got)
 	}
 	if got := mustQueryInt(t, r, `SELECT daily_used_bytes FROM user_quota WHERE user_id = 3`); got != 0 {
 		t.Fatalf("expected failed user 3 quota delta to remain unapplied, got %d", got)
