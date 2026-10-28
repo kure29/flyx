@@ -111,12 +111,13 @@ func (h *Handler) accountForwardCounterSamples(nodeID int64, samples []runtimenf
 		}
 		// A deleted rule can remain on the node after a failed cleanup. Keep
 		// its baseline for a later retry without blocking unrelated forwards.
+		// Invalid stored billing settings are isolated the same way.
 		missing := make(map[int64]struct{})
 		keptDeltas := deltas[:0]
 		for _, delta := range deltas {
-			if _, exists := metas[delta.ForwardID]; !exists {
+			if meta, exists := metas[delta.ForwardID]; !exists || !validTunnelBilling(meta.TunnelFlow, meta.TrafficRatio) {
 				missing[delta.ForwardID] = struct{}{}
-				log.Printf("forward counter accounting skipped state advance op=missing_flow_meta node_id=%d forward_id=%d", nodeID, delta.ForwardID)
+				log.Printf("forward counter accounting skipped state advance op=unusable_flow_meta node_id=%d forward_id=%d", nodeID, delta.ForwardID)
 				continue
 			}
 			keptDeltas = append(keptDeltas, delta)
