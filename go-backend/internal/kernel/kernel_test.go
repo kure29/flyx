@@ -45,6 +45,72 @@ func TestNormalizeFillsCredentials(t *testing.T) {
 	}
 }
 
+func TestClashProxyAddsX25519MLKEM768OnlyToVLESSReality(t *testing.T) {
+	tests := []struct {
+		name        string
+		proxy       Proxy
+		wantSupport bool
+	}{
+		{
+			name: "VLESS Reality",
+			proxy: Proxy{"type": "vless", "server": "example.com", "reality-opts": map[string]interface{}{
+				"public-key": "pub", "short-id": "sid",
+			}},
+			wantSupport: true,
+		},
+		{name: "VLESS TLS", proxy: Proxy{"type": "vless", "server": "example.com", "tls": true}},
+		{name: "VMess Reality", proxy: Proxy{"type": "vmess", "server": "example.com", "reality-opts": map[string]interface{}{"public-key": "pub"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node, ok := proxyClash(Endpoint{Name: "test", Host: "example.com", Port: 443, Proxy: tt.proxy})
+			if !ok {
+				t.Fatal("proxyClash rejected supported proxy")
+			}
+			var got bool
+			for _, field := range node {
+				if field.Key != "reality-opts" {
+					continue
+				}
+				options, ok := field.Value.(map[string]interface{})
+				if !ok {
+					t.Fatalf("reality-opts has type %T", field.Value)
+				}
+				got, _ = options["support-x25519mlkem768"].(bool)
+			}
+			if got != tt.wantSupport {
+				t.Fatalf("support-x25519mlkem768 = %v, want %v; node: %s", got, tt.wantSupport, marshalYAML(node))
+			}
+		})
+	}
+}
+
+func TestClashProxyAddsX25519MLKEM768ToBuiltVLESSReality(t *testing.T) {
+	e := Endpoint{
+		Name: "VLESS Reality",
+		Host: "example.com",
+		Port: 443,
+		Inbound: Inbound{
+			Protocol:  ProtocolVLESS,
+			Transport: Transport{Type: TransportTCP},
+			Security: Security{
+				Type: SecurityReality, SNI: "example.com", Fingerprint: "chrome",
+				RealityPublicKey: "pub", RealityShortIDs: []string{"sid"},
+			},
+		},
+	}
+
+	got, _, err := Subscription(FormatClash, []Endpoint{e}, SubOptions{})
+	if err != nil {
+		t.Fatalf("render Mihomo subscription: %v", err)
+	}
+	want := "support-x25519mlkem768: true"
+	if !strings.Contains(got, want) {
+		t.Fatalf("generated Mihomo proxy is missing %q:\n%s", want, got)
+	}
+}
+
 func TestNormalizeRejectsUnsupportedCombos(t *testing.T) {
 	cases := []struct {
 		name string

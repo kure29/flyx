@@ -267,6 +267,11 @@ func proxyClash(e Endpoint) (yamlNode, bool) {
 		// Mihomo XHTTP support is unstable; it only speaks Snell v1-v3.
 		return nil, false
 	}
+	if p.Type() == "vless" {
+		if realityOpts := p.sub("reality-opts"); len(realityOpts) > 0 {
+			realityOpts["support-x25519mlkem768"] = true
+		}
+	}
 	delete(p, "shadow-tls") // panel-only key for Snell over ShadowTLS
 	node := yamlNode{{"name", e.Name}, {"type", p.Type()}, {"server", p.str("server")}, {"port", e.Port}}
 	keys := make([]string, 0, len(p))

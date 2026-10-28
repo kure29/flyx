@@ -339,6 +339,9 @@ func ClashProxy(e Endpoint) (yamlNode, bool) {
 			if len(sec.RealityShortIDs) > 0 {
 				ro = append(ro, yamlField{"short-id", sec.RealityShortIDs[0]})
 			}
+			if in.Protocol == ProtocolVLESS {
+				ro = append(ro, yamlField{"support-x25519mlkem768", true})
+			}
 			p = append(p, yamlField{"reality-opts", ro})
 		}
 		if e.selfSigned() {
