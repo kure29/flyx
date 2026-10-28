@@ -17,6 +17,7 @@ proxies:
     reality-opts:
       public-key: "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw"
       short-id: "0123456789abcdef"
+      support-x25519mlkem768: true
   - name: "SS"
     type: "ss"
     server: "2001:db8::1"
@@ -68,6 +69,7 @@ proxies:
     reality-opts:
       public-key: "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw"
       short-id: "0123456789abcdef"
+      support-x25519mlkem768: true
 proxy-groups:
   - name: "节点选择"
     type: "select"
