@@ -35,7 +35,10 @@ out=$(run_agent -v "$fixture/legacy:/etc/flux_agent")
 [[ $(cat "$fixture/legacy/traffic-queue.json") == '{"pending":"keep"}' ]]
 
 # An in-panel upgrade survives a restart of the same image.
-printf '#!/bin/sh\necho self-updated\n' > "$fixture/legacy/flux_agent"
+# The binary belongs to container root; simulate the upgrade in the container
+# so the host test runner can remain unprivileged.
+docker run --rm -v "$fixture/legacy:/etc/flux_agent" alpine:3.22 \
+  sh -c 'printf "#!/bin/sh\necho self-updated\n" > /etc/flux_agent/flux_agent'
 out=$(run_agent -v "$fixture/legacy:/etc/flux_agent")
 [[ "$out" == self-updated ]]
 # Changing/rolling back the image version restores that image's binary.
