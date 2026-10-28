@@ -326,10 +326,10 @@ func (h *Handler) nodeInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ID      int64  `json:"id"`
-		Channel string `json:"channel"`
-		// Mode "docker" returns a docker run command instead of install.sh.
-		Mode string `json:"mode"`
+		ID         int64  `json:"id"`
+		Channel    string `json:"channel"`
+		Mode       string `json:"mode"`
+		Privileged bool   `json:"privileged"`
 	}
 	if err := decodeJSON(r.Body, &req); err != nil {
 		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
@@ -361,21 +361,41 @@ func (h *Handler) nodeInstall(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	if req.Mode == "docker" {
-		response.WriteJSON(w, response.OK(dockerInstallCommand(version, processServerAddress(panelAddr), secret)))
-		return
-	}
 	enabled, proxyURL := h.getGithubProxyConfig()
 
 	var cmd string
+	address := processServerAddress(panelAddr)
 	if enabled {
 		cmd = fmt.Sprintf("curl -L %s/https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && PROXY_ENABLED=true PROXY_URL=%s VERSION=%s ./install.sh -a %s -s %s",
-			proxyURL, githubRepo, version, proxyURL, version, processServerAddress(panelAddr), secret)
+			proxyURL, githubRepo, version, proxyURL, version, address, secret)
 	} else {
 		cmd = fmt.Sprintf("curl -L https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && PROXY_ENABLED=false VERSION=%s ./install.sh -a %s -s %s",
-			githubRepo, version, version, processServerAddress(panelAddr), secret)
+			githubRepo, version, version, address, secret)
 	}
-	response.WriteJSON(w, response.OK(cmd))
+	switch strings.ToLower(strings.TrimSpace(req.Mode)) {
+	case "docker":
+		response.WriteJSON(w, response.OK(dockerInstallCommand(version, address, secret, req.Privileged)))
+	case "docker-compose":
+		response.WriteJSON(w, response.OK(dockerComposeInstallCommand(version, address, secret, req.Privileged)))
+	case "all":
+		response.WriteJSON(w, response.OK(nodeInstallCommands{
+			Script:                  cmd,
+			Docker:                  dockerInstallCommand(version, address, secret, false),
+			DockerPrivileged:        dockerInstallCommand(version, address, secret, true),
+			DockerCompose:           dockerComposeInstallCommand(version, address, secret, false),
+			DockerComposePrivileged: dockerComposeInstallCommand(version, address, secret, true),
+		}))
+	default:
+		response.WriteJSON(w, response.OK(cmd))
+	}
+}
+
+type nodeInstallCommands struct {
+	Script                  string `json:"script"`
+	Docker                  string `json:"docker"`
+	DockerPrivileged        string `json:"dockerPrivileged"`
+	DockerCompose           string `json:"dockerCompose"`
+	DockerComposePrivileged string `json:"dockerComposePrivileged"`
 }
 
 // dockerInstallCommand runs the agent image published with the release.
@@ -383,10 +403,42 @@ func (h *Handler) nodeInstall(w http.ResponseWriter, r *http.Request) {
 // nftables counters and whitelists, and the restart policy brings the
 // container back after a one-click upgrade. An existing container of the
 // same name is replaced, so the command also reinstalls.
-func dockerInstallCommand(version, panelAddr, secret string) string {
+func dockerInstallCommand(version, panelAddr, secret string, privileged bool) string {
 	owner := strings.ToLower(strings.SplitN(githubRepo, "/", 2)[0])
-	return fmt.Sprintf("docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent --restart unless-stopped --network host --cap-add NET_ADMIN -v /etc/flux_agent:/etc/flux_agent -e FLUX_AGENT_ADDR=%s -e FLUX_AGENT_SECRET=%s ghcr.io/%s/flux-agent:%s",
-		panelAddr, secret, owner, version)
+	privilegedFlag := ""
+	if privileged {
+		privilegedFlag = " --privileged"
+	}
+	return fmt.Sprintf("docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent --restart unless-stopped --network host --cap-add NET_ADMIN%s -v /etc/flux_agent:/etc/flux_agent -e FLUX_AGENT_ADDR=%s -e FLUX_AGENT_SECRET=%s ghcr.io/%s/flux-agent:%s",
+		privilegedFlag, panelAddr, secret, owner, version)
+}
+
+// dockerComposeInstallCommand keeps the compose file under a stable directory
+// so reinstalling and changing the privileged switch only rewrites one file.
+func dockerComposeInstallCommand(version, panelAddr, secret string, privileged bool) string {
+	owner := strings.ToLower(strings.SplitN(githubRepo, "/", 2)[0])
+	privilegedLine := ""
+	if privileged {
+		privilegedLine = "    privileged: true\n"
+	}
+	return fmt.Sprintf(`[ -d /opt/docker ] || mkdir -p /opt/docker
+cat > /opt/docker/docker-compose.yaml <<'EOF'
+services:
+  flux-agent:
+    image: ghcr.io/%s/flux-agent:%s
+    container_name: flux_agent
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+%s    volumes:
+      - /etc/flux_agent:/etc/flux_agent
+    environment:
+      FLUX_AGENT_ADDR: %q
+      FLUX_AGENT_SECRET: %q
+EOF
+docker compose -f /opt/docker/docker-compose.yaml up -d`,
+		owner, version, privilegedLine, panelAddr, secret)
 }
 
 func (h *Handler) nodeUpdateOrder(w http.ResponseWriter, r *http.Request) {

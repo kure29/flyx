@@ -172,11 +172,22 @@ export const getDashboardNodeExpiryList = () =>
 export const updateNode = (data: NodeMutationPayload) =>
   Network.post("/node/update", data);
 export const deleteNode = (id: number) => Network.post("/node/delete", { id });
-export const getNodeInstallCommand = (
+export interface NodeInstallCommands {
+  script: string;
+  docker: string;
+  dockerPrivileged: string;
+  dockerCompose: string;
+  dockerComposePrivileged: string;
+}
+export const getNodeInstallCommands = (
   id: number,
   channel: ReleaseChannel = "stable",
-  mode: "script" | "docker" = "script",
-) => Network.post<string>("/node/install", { id, channel, mode });
+) =>
+  Network.post<NodeInstallCommands>("/node/install", {
+    id,
+    channel,
+    mode: "all",
+  });
 export const updateNodeOrder = (data: {
   nodes: Array<{ id: number; inx: number }>;
 }) => Network.post("/node/update-order", data);
