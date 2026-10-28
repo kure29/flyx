@@ -39,6 +39,7 @@ type Handler struct {
 	nftablesManager nftablesRuntimeManager
 
 	quotaControlMu    sync.Mutex
+	quotaPauseAcks    map[int64]time.Time
 	nftablesControlMu sync.Mutex
 	peerResourceMu    sync.Mutex
 	captchaMu         sync.Mutex

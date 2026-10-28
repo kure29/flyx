@@ -490,6 +490,7 @@ func (h *Handler) onNodeOnline(nodeID int64) {
 	if node, err := h.getNodeRecord(nodeID); err == nil && (node == nil || node.Status != 1) {
 		return // The next connection will resume any pending reconciliation.
 	}
+	h.invalidateNodeQuotaAcknowledgements(nodeID)
 	go func() {
 		h.reconcileNodeKernels(nodeID)
 		// Probe once the kernels are restored: earlier, the node's ports

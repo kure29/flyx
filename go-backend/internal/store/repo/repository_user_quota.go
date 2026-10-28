@@ -402,46 +402,66 @@ func (r *Repository) RollUserQuotaWindows(now time.Time) ([]UserQuotaRelease, er
 	if r == nil || r.db == nil {
 		return nil, errors.New("repository not initialized")
 	}
+	dayKey, monthKey := userQuotaWindowKeys(now)
+	var candidates []model.UserQuota
+	if err := r.db.Where("day_key <> ? OR month_key <> ? OR disabled_by_quota = 1", dayKey, monthKey).Order("user_id ASC").Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(candidates))
+	for _, q := range candidates {
+		changed := applyUserQuotaWindowRoll(&q, now)
+		if changed || (q.DisabledByQuota == 1 && !userQuotaExceeded(cloneUserQuotaView(q))) {
+			ids = append(ids, q.UserID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	var releases []UserQuotaRelease
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		var rows []model.UserQuota
-		// Usage updates lock the same rows before reading them. Keep the lock
-		// through the window roll so maintenance cannot overwrite newer usage.
-		// Match the batch writer's order to avoid inverted lock acquisition.
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Order("user_id ASC").Find(&rows).Error; err != nil {
-			return err
-		}
-		nowMs := now.UnixMilli()
-		for _, row := range rows {
-			q := row
-			changed := applyUserQuotaWindowRoll(&q, now)
-			release := UserQuotaRelease{UserID: q.UserID}
-			if q.DisabledByQuota == 1 && !userQuotaExceeded(cloneUserQuotaView(q)) {
-				release.UnblockUser = true
-				release.ForwardIDs = parsePausedForwardIDs(q.PausedForwardIDs)
-				q.DisabledByQuota = 0
-				q.DisabledAt = 0
-				// Keep restoration intent until the node acknowledges the resume.
-				changed = true
+		// The unlocked snapshot only selects candidates. Re-read and recheck
+		// under the same row locks as billing, in ascending user order.
+		for start := 0; start < len(ids); start += 500 {
+			end := start + 500
+			if end > len(ids) {
+				end = len(ids)
 			}
-			if !changed {
-				continue
-			}
-			q.UpdatedTime = nowMs
-			if err := tx.Model(&model.UserQuota{}).Where("user_id = ?", q.UserID).Updates(map[string]interface{}{
-				"daily_used_bytes":   q.DailyUsedBytes,
-				"monthly_used_bytes": q.MonthlyUsedBytes,
-				"day_key":            q.DayKey,
-				"month_key":          q.MonthKey,
-				"disabled_by_quota":  q.DisabledByQuota,
-				"disabled_at":        q.DisabledAt,
-				"paused_forward_ids": q.PausedForwardIDs,
-				"updated_time":       q.UpdatedTime,
-			}).Error; err != nil {
+			var rows []model.UserQuota
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id IN ?", ids[start:end]).Order("user_id ASC").Find(&rows).Error; err != nil {
 				return err
 			}
-			if release.UnblockUser {
-				releases = append(releases, release)
+			nowMs := now.UnixMilli()
+			for _, row := range rows {
+				q := row
+				changed := applyUserQuotaWindowRoll(&q, now)
+				release := UserQuotaRelease{UserID: q.UserID}
+				if q.DisabledByQuota == 1 && !userQuotaExceeded(cloneUserQuotaView(q)) {
+					release.UnblockUser = true
+					release.ForwardIDs = parsePausedForwardIDs(q.PausedForwardIDs)
+					q.DisabledByQuota = 0
+					q.DisabledAt = 0
+					// Keep restoration intent until the node acknowledges the resume.
+					changed = true
+				}
+				if !changed {
+					continue
+				}
+				q.UpdatedTime = nowMs
+				if err := tx.Model(&model.UserQuota{}).Where("user_id = ?", q.UserID).Updates(map[string]interface{}{
+					"daily_used_bytes":   q.DailyUsedBytes,
+					"monthly_used_bytes": q.MonthlyUsedBytes,
+					"day_key":            q.DayKey,
+					"month_key":          q.MonthKey,
+					"disabled_by_quota":  q.DisabledByQuota,
+					"disabled_at":        q.DisabledAt,
+					"paused_forward_ids": q.PausedForwardIDs,
+					"updated_time":       q.UpdatedTime,
+				}).Error; err != nil {
+					return err
+				}
+				if release.UnblockUser {
+					releases = append(releases, release)
+				}
 			}
 		}
 		return nil

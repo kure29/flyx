@@ -67,13 +67,15 @@ func (h *Handler) reconcileUserQuota(userID int64, now time.Time) {
 				ids = append(ids, f.ID)
 			}
 		}
-		// Persist every intended pause before attempting any remote operation.
-		if err := h.repo.MarkUserQuotaDisabled(userID, ids, now.UnixMilli()); err != nil {
-			return
-		}
-		quota, err = h.repo.GetUserQuotaView(userID, now)
-		if err != nil || quota == nil {
-			return
+		if len(ids) > 0 || quota.DisabledByQuota != 1 {
+			// Persist every intended pause before attempting any remote operation.
+			if err := h.repo.MarkUserQuotaDisabled(userID, ids, now.UnixMilli()); err != nil {
+				return
+			}
+			quota, err = h.repo.GetUserQuotaView(userID, now)
+			if err != nil || quota == nil {
+				return
+			}
 		}
 	}
 	for _, id := range repo.QuotaForwardIDs(quota) {
@@ -88,8 +90,11 @@ func (h *Handler) reconcileUserQuota(userID int64, now time.Time) {
 		command, status := "ResumeService", 1
 		if quota.DisabledByQuota == 1 {
 			command, status = "PauseService", 0
-			// Retry even acknowledged pauses: a node restart can discard its
-			// runtime block while the panel's durable intent remains valid.
+			// Status alone is not proof after a panel/node restart. Confirm
+			// once per process, then refresh successful pauses hourly.
+			if last, ok := h.quotaPauseAcks[id]; forward.Status == 0 && ok && now.Before(last.Add(time.Hour)) {
+				continue
+			}
 		} else if err := h.ensureUserTunnelForwardAllowed(forward.UserID, forward.TunnelID, now.UnixMilli()); err != nil {
 			continue
 		}
@@ -99,6 +104,14 @@ func (h *Handler) reconcileUserQuota(userID int64, now time.Time) {
 		}
 		if err := h.repo.UpdateForwardStatus(id, status, now.UnixMilli()); err != nil {
 			continue
+		}
+		if status == 0 {
+			if h.quotaPauseAcks == nil {
+				h.quotaPauseAcks = make(map[int64]time.Time)
+			}
+			h.quotaPauseAcks[id] = now
+		} else {
+			delete(h.quotaPauseAcks, id)
 		}
 		if status == 1 {
 			_ = h.repo.AcknowledgeQuotaResume(userID, id, now.UnixMilli())
@@ -117,6 +130,13 @@ func (h *Handler) resetUserQuotaWindows(now time.Time) {
 	if h == nil || h.repo == nil {
 		return
 	}
+	h.quotaControlMu.Lock()
+	for id, at := range h.quotaPauseAcks {
+		if !now.Before(at.Add(time.Hour)) {
+			delete(h.quotaPauseAcks, id)
+		}
+	}
+	h.quotaControlMu.Unlock()
 	if _, err := h.repo.RollUserQuotaWindows(now); err != nil {
 		return
 	}
@@ -165,4 +185,19 @@ func (h *Handler) ensureUserForwardAllowedByQuota(userID int64, now int64) error
 		return errors.New(reason)
 	}
 	return nil
+}
+
+// Invalidate confirmations when an agent reconnects; the minute loop reapplies
+// durable pauses even if the node lost its runtime state.
+func (h *Handler) invalidateNodeQuotaAcknowledgements(nodeID int64) {
+	ids, err := h.repo.ListForwardIDsByNode(nodeID)
+	if err != nil {
+		log.Printf("quota reconnect lookup node=%d: %v", nodeID, err)
+		return
+	}
+	h.quotaControlMu.Lock()
+	defer h.quotaControlMu.Unlock()
+	for _, id := range ids {
+		delete(h.quotaPauseAcks, id)
+	}
 }

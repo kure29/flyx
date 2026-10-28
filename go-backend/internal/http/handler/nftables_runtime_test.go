@@ -22,6 +22,7 @@ import (
 
 type fakeNftablesManager struct {
 	blockErr       error
+	blockCalls     int
 	blocked        map[int]bool
 	blockHit       int
 	mu             sync.Mutex
@@ -714,6 +715,7 @@ func assertNftablesSuccessWithBody(t *testing.T, res *httptest.ResponseRecorder)
 }
 
 func (f *fakeNftablesManager) SetBlocked(_ context.Context, _ runtimenft.SSHConfig, port int, blocked bool) error {
+	f.blockCalls++
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.blockHit++

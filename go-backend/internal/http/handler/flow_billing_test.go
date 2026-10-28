@@ -43,6 +43,7 @@ func TestFlowBillingUploadOnlyDoesNotPauseForDownloads(t *testing.T) {
 		t.Run(fmt.Sprint(mode), func(t *testing.T) {
 			f := setupNftablesCollectionFixture(t)
 			h := f.handler
+			h.nftablesManager = &fakeNftablesManager{}
 			t.Cleanup(func() { _ = h.repo.Close() })
 			if err := h.repo.DB().Exec("UPDATE tunnel SET flow = ?", mode).Error; err != nil {
 				t.Fatal(err)

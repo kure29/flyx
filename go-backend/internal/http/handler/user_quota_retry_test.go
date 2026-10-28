@@ -100,3 +100,60 @@ func TestQuotaControlRetriesAcrossRestartAndPreservesManualPause(t *testing.T) {
 		t.Fatal("paused rule not restored safely")
 	}
 }
+
+func TestQuotaAcknowledgedPausesRefreshHourlyAndAfterReconnect(t *testing.T) {
+	fixture := setupNftablesHandler(t)
+	h := fixture.handler
+	manager := &fakeNftablesManager{}
+	h.nftablesManager = manager
+	seedNftablesSSHConfig(t, h, fixture.nodeID)
+	tunnelID := seedTunnelForNftables(t, h, "quota-recheck", fixture.nodeID)
+	f := seedForwardForNftables(t, h, tunnelID, fixture.nodeID, "203.0.113.9:8080")
+	if err := h.syncNftablesNode(fixture.nodeID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if _, err := h.repo.AddUserQuotaUsage(f.UserID, bytesPerGB, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.repo.DB().Model(&model.UserQuota{}).Where("user_id=?", f.UserID).Update("daily_limit_gb", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	h.reconcileUserQuota(f.UserID, now)
+	first := manager.blockCalls
+	if first == 0 {
+		t.Fatal("initial pause not sent")
+	}
+	for minute := 1; minute < 60; minute++ {
+		h.resetUserQuotaWindows(now.Add(time.Duration(minute) * time.Minute))
+	}
+	if manager.blockCalls != first {
+		t.Fatalf("acknowledged pause repeated %d times", manager.blockCalls-first)
+	}
+	h.resetUserQuotaWindows(now.Add(time.Hour))
+	if manager.blockCalls != first+1 {
+		t.Fatalf("hourly refresh missing: %d", manager.blockCalls)
+	}
+	h.invalidateNodeQuotaAcknowledgements(fixture.nodeID)
+	manager.blockErr = errors.New("offline")
+	h.resetUserQuotaWindows(now.Add(61 * time.Minute))
+	failed := manager.blockCalls
+	if failed != first+2 {
+		t.Fatal("reconnect did not invalidate acknowledgement")
+	}
+	manager.blockErr = nil
+	h.resetUserQuotaWindows(now.Add(62 * time.Minute))
+	if manager.blockCalls != failed+1 {
+		t.Fatal("failed refresh did not retry")
+	}
+	h.resetUserQuotaWindows(now.Add(63 * time.Minute))
+	if manager.blockCalls != failed+1 {
+		t.Fatal("new acknowledgement did not throttle")
+	}
+	h = New(h.repo, "test-secret")
+	h.nftablesManager = manager
+	h.resetUserQuotaWindows(now.Add(64 * time.Minute))
+	if manager.blockCalls != failed+2 {
+		t.Fatal("panel restart trusted stale acknowledgement")
+	}
+}
