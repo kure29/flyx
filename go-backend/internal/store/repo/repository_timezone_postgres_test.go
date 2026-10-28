@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+func TestPostgresSubscriptionTrafficBucketUpgrade(t *testing.T) {
+	assertSubscriptionTrafficBucketUpgrade(t, openTrafficPostgresTest(t))
+}
+
 func TestPostgresNodeTrafficFractionalMonthBoundary(t *testing.T) {
 	r := openTrafficPostgresTest(t)
 	for _, offset := range []int{330, 345, -210} {
