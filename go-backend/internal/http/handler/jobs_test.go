@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"gorm.io/gorm"
 	"path/filepath"
 	"testing"
 	"time"
@@ -150,6 +151,19 @@ func TestRunResetAndExpiryJobResetsFlowAndDisablesExpiredRecords(t *testing.T) {
 	if nonExpForwardStatus != 1 {
 		t.Fatalf("expected non-expiring forward to remain enabled, got status=%d", nonExpForwardStatus)
 	}
+	// Once the state has changed, minute expiry checks must not repeat writes
+	// or pause already stopped forwards. Future/unlimited entries stay active.
+	updates := 0
+	if err := r.DB().Callback().Update().Before("gorm:update").Register("test:expiry_noop", func(tx *gorm.DB) { updates++ }); err != nil {
+		t.Fatal(err)
+	}
+	defer r.DB().Callback().Update().Remove("test:expiry_noop")
+	h.disableExpiredUsers(nowMs)
+	h.disableExpiredUserTunnels(nowMs)
+	if updates != 0 {
+		t.Fatalf("repeated expiry check issued %d updates", updates)
+	}
+
 }
 
 func TestResetUserQuotaWindowsResetsUsageAndUnblocksUser(t *testing.T) {
