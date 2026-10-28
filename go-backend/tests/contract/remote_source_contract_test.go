@@ -2,6 +2,9 @@ package contract_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,9 +13,160 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"gorm.io/gorm"
 
 	"go-backend/internal/auth"
+	"go-backend/internal/http/response"
 )
+
+func TestRemoteSourceIncompleteSyncPreservesReferences(t *testing.T) {
+	for _, kind := range []string{"file", "url"} {
+		for _, failure := range []string{"parse", "write"} {
+			t.Run(kind+"/"+failure, func(t *testing.T) {
+				const secret = "contract-jwt-secret"
+				router, r := setupContractRouter(t, secret)
+				admin, err := auth.GenerateToken(1, "admin_user", 0, secret)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var mu sync.Mutex
+				var body, url string
+				if kind == "url" {
+					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						mu.Lock()
+						defer mu.Unlock()
+						_, _ = w.Write([]byte(body))
+					}))
+					defer srv.Close()
+					url = srv.URL
+					if err := r.UpsertConfig("fetch_allow_local", "true", time.Now().UnixMilli()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var sourceID int64
+				syncSource := func(content string) response.R {
+					t.Helper()
+					mu.Lock()
+					body = content
+					mu.Unlock()
+					path := "/api/v1/subscription/source/save"
+					payload := map[string]interface{}{"id": sourceID, "name": "partial-source", "kind": kind, "content": content, "url": url}
+					if kind == "url" && sourceID > 0 {
+						path = "/api/v1/subscription/source/refresh"
+						payload = map[string]interface{}{"id": sourceID}
+					}
+					encoded, err := json.Marshal(payload)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return kernelContractPost(t, router, admin, path, string(encoded))
+				}
+				a := ssLink("203.0.113.1", "8388", "A")
+				b := ssLink("203.0.113.2", "8388", "B")
+				out := syncSource(a + "\n" + b)
+				if out.Code != 0 {
+					t.Fatalf("initial sync: %+v", out)
+				}
+				sourceID = int64(out.Data.(map[string]interface{})["source"].(map[string]interface{})["id"].(float64))
+				bID := mustQueryInt64(t, r, `SELECT id FROM node_inbound WHERE source_id=? AND name='B'`, sourceID)
+				groupID := saveNodeGroup(t, router, admin, fmt.Sprintf(`{"name":"selected B","sourceAll":false,"inboundIds":[%d]}`, bID))
+				a = ssLink("203.0.113.3", "8388", "A")
+				partial := a
+				var failWrite bool
+				if failure == "parse" {
+					partial += "\nss://bad@203.0.113.2:8388#B"
+				} else {
+					failWrite = true
+					const callback = "test:remote_source_write_failure"
+					if err := r.DB().Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
+						if failWrite && tx.Statement.Table == "node_inbound" {
+							tx.AddError(errors.New("simulated node write failure"))
+						}
+					}); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = r.DB().Callback().Update().Remove(callback) })
+				}
+				out = syncSource(partial)
+				if out.Code == 0 {
+					t.Fatalf("incomplete sync must report an error: %+v", out)
+				}
+				result := out.Data.(map[string]interface{})["result"].(map[string]interface{})
+				if valueAsInt(result["removed"]) != 0 || valueAsInt(result["kept"]) != 1 || len(result["errors"].([]interface{})) == 0 {
+					t.Fatalf("partial result: %+v", result)
+				}
+				if got := mustQueryInt64(t, r, `SELECT id FROM node_inbound WHERE source_id=? AND name='B'`, sourceID); got != bID {
+					t.Fatalf("B ID changed: %d -> %d", bID, got)
+				}
+				source, err := r.GetRemoteSource(sourceID)
+				if err != nil || source.LastError == "" || source.NodeCount != 2 {
+					t.Fatalf("partial state: %+v %v", source, err)
+				}
+				if failure == "parse" && mustQueryString(t, r, `SELECT listen FROM node_inbound WHERE source_id=? AND name='A'`, sourceID) != "203.0.113.3" {
+					t.Fatal("valid node did not update")
+				}
+				failWrite = false
+				if out = syncSource(a + "\n" + b); out.Code != 0 {
+					t.Fatalf("recovered sync: %+v", out)
+				}
+				if got := mustQueryInt64(t, r, `SELECT id FROM node_inbound WHERE source_id=? AND name='B'`, sourceID); got != bID {
+					t.Fatalf("recovery replaced B: %d -> %d", bID, got)
+				}
+				group, err := r.GetNodeGroup(groupID)
+				if err != nil || group.InboundIDs != jsonInt64(bID) {
+					t.Fatalf("group reference changed: %+v %v", group, err)
+				}
+				source, err = r.GetRemoteSource(sourceID)
+				if err != nil || source.LastError != "" {
+					t.Fatalf("recovery retained error: %+v %v", source, err)
+				}
+				// A fully valid response that intentionally removes B still deletes it.
+				if out = syncSource(a); out.Code != 0 {
+					t.Fatalf("complete removal: %+v", out)
+				}
+				if n := mustQueryInt(t, r, `SELECT COUNT(*) FROM node_inbound WHERE id=?`, bID); n != 0 {
+					t.Fatal("complete source no longer removes old nodes")
+				}
+			})
+		}
+	}
+}
+
+func TestRemoteSourceTruncationKeepsExistingNodes(t *testing.T) {
+	const secret = "contract-jwt-secret"
+	router, r := setupContractRouter(t, secret)
+	admin, err := auth.GenerateToken(1, "admin_user", 0, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	save := func(id int64, content string) response.R {
+		t.Helper()
+		body, err := json.Marshal(map[string]interface{}{"id": id, "name": "large source", "kind": "file", "content": content})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return kernelContractPost(t, router, admin, "/api/v1/subscription/source/save", string(body))
+	}
+	old := ssLink("203.0.113.1", "8388", "old")
+	out := save(0, old)
+	if out.Code != 0 {
+		t.Fatalf("initial sync: %+v", out)
+	}
+	id := int64(out.Data.(map[string]interface{})["source"].(map[string]interface{})["id"].(float64))
+	oldID := mustQueryInt64(t, r, `SELECT id FROM node_inbound WHERE source_id=?`, id)
+	lines := make([]string, 0, 501)
+	for i := 0; i < 500; i++ {
+		lines = append(lines, ssLink("203.0.113.2", fmt.Sprint(10000+i), fmt.Sprintf("new-%d", i)))
+	}
+	lines = append(lines, old)
+	out = save(id, strings.Join(lines, "\n"))
+	if out.Code == 0 {
+		t.Fatal("truncated response must report incomplete sync")
+	}
+	if n := mustQueryInt(t, r, `SELECT COUNT(*) FROM node_inbound WHERE id=?`, oldID); n != 1 {
+		t.Fatal("truncation deleted a node still present in the source")
+	}
+}
 
 func ssLink(host, port, name string) string {
 	cred := base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:pw"))

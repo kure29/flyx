@@ -4,8 +4,9 @@ import type {
   NodeApiItem,
 } from "@/api/types";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { getKernelCapabilities, getKernelList, getNodeList } from "@/api";
 import { PageLoadingState } from "@/components/page-state";
 import { type InstallRequest, KernelPanel } from "@/pages/inbound/kernel-panel";
@@ -23,28 +24,36 @@ export function KernelsTab({
   const [nodes, setNodes] = useState<NodeApiItem[]>([]);
   const [kernels, setKernels] = useState<KernelApiItem[]>([]);
 
-  const load = useCallback(async () => {
+  const loadPending = useRef(0);
+
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+
+    if (silent && loadPending.current > 0) return;
+    loadPending.current += 1;
     try {
       const [capsRes, nodeRes, kernelRes] = await Promise.all([
-        getKernelCapabilities(),
-        getNodeList(),
-        getKernelList(),
+        getKernelCapabilities().catch(() => null),
+        getNodeList().catch(() => null),
+        getKernelList().catch(() => null),
       ]);
 
-      if (capsRes.code === 0) setCaps(capsRes.data);
-      if (nodeRes.code === 0) setNodes(nodeRes.data || []);
-      if (kernelRes.code === 0) setKernels(kernelRes.data || []);
+      if (capsRes?.code === 0) setCaps(capsRes.data);
+      if (nodeRes?.code === 0) setNodes(nodeRes.data || []);
+      if (kernelRes?.code === 0) setKernels(kernelRes.data || []);
     } finally {
+      loadPending.current -= 1;
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
-    const timer = window.setInterval(load, 30000);
-
-    return () => window.clearInterval(timer);
+    void load();
   }, [load]);
+  useVisiblePolling(
+    useCallback(() => load({ silent: true }), [load]),
+    30_000,
+  );
 
   if (loading) return <PageLoadingState message="正在加载..." />;
 

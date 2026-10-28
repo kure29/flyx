@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { getNodeLatencyHistory } from "@/api";
 import {
   Modal,
@@ -62,14 +63,25 @@ export function LatencyTrendModal({
   const [trend, setTrend] = useState<LatencyTrend | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const beginRequest = useLatestRequest(`${nodeId}:${hours}`);
+
   useEffect(() => {
+    setTrend(null);
     if (nodeId === null) return;
+    const isCurrent = beginRequest();
+
     setLoading(true);
     getNodeLatencyHistory(nodeId, hours)
-      .then((res) => setTrend(res.code === 0 ? (res.data ?? null) : null))
-      .catch(() => setTrend(null))
-      .finally(() => setLoading(false));
-  }, [nodeId, hours]);
+      .then((res) => {
+        if (isCurrent()) setTrend(res.code === 0 ? (res.data ?? null) : null);
+      })
+      .catch(() => {
+        if (isCurrent()) setTrend(null);
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
+  }, [nodeId, hours, beginRequest]);
 
   useEffect(() => {
     if (nodeId === null) setHours(24);

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Loader2, RefreshCw } from "lucide-react";
 
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { getNodeRoute, probeNodeRoute } from "@/api";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import {
@@ -115,22 +116,38 @@ export function RouteModal({
   const [probing, setProbing] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
 
+  const beginRequest = useLatestRequest(nodeId);
+
   useEffect(() => {
+    setProbing(false);
     if (nodeId === null) return;
+    const isCurrent = beginRequest();
+
     setRoute(null);
     setOpen(null);
     setLoading(true);
     getNodeRoute(nodeId)
-      .then((res) => setRoute(res.code === 0 ? (res.data ?? null) : null))
-      .catch(() => setRoute(null))
-      .finally(() => setLoading(false));
-  }, [nodeId]);
+      .then((res) => {
+        if (isCurrent()) setRoute(res.code === 0 ? (res.data ?? null) : null);
+      })
+      .catch(() => {
+        if (isCurrent()) setRoute(null);
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
+  }, [nodeId, beginRequest]);
 
   const probe = async () => {
     if (nodeId === null) return;
+    const isCurrent = beginRequest();
+
+    setLoading(false);
     setProbing(true);
     try {
       const res = await probeNodeRoute(nodeId);
+
+      if (!isCurrent()) return;
 
       if (res.code !== 0) {
         toast.error(res.msg || "检测失败");
@@ -139,9 +156,9 @@ export function RouteModal({
       }
       setRoute(res.data ?? null);
     } catch {
-      toast.error("检测失败");
+      if (isCurrent()) toast.error("检测失败");
     } finally {
-      setProbing(false);
+      if (isCurrent()) setProbing(false);
     }
   };
 

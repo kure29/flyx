@@ -215,10 +215,6 @@ export function ModalContent({
   const context = useModalContext();
   const resolvedScrollBehavior = scrollBehavior ?? context?.scrollBehavior;
   const resolvedSize = size ?? context?.size;
-  const renderedChildren =
-    typeof children === "function"
-      ? children(() => context?.onClose())
-      : children;
 
   return (
     <BaseDialogContent
@@ -245,8 +241,25 @@ export function ModalContent({
       }}
       {...props}
     >
-      {renderedChildren}
+      <ModalContentChildren>{children}</ModalContentChildren>
     </BaseDialogContent>
+  );
+}
+
+// Radix mounts this child only while the dialog (including its exit animation)
+// is present. Defer render-prop evaluation until then, without changing focus,
+// transitions, or the lifetime of form fields.
+function ModalContentChildren({
+  children,
+}: Pick<ModalContentProps, "children">) {
+  const context = useModalContext();
+
+  return (
+    <>
+      {typeof children === "function"
+        ? children(() => context?.onClose())
+        : children}
+    </>
   );
 }
 

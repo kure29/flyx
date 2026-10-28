@@ -396,7 +396,10 @@ func (r *Repository) RollUserQuotaWindows(now time.Time) ([]UserQuotaRelease, er
 	var releases []UserQuotaRelease
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var rows []model.UserQuota
-		if err := tx.Find(&rows).Error; err != nil {
+		// Usage updates lock the same rows before reading them. Keep the lock
+		// through the window roll so maintenance cannot overwrite newer usage.
+		// Match the batch writer's order to avoid inverted lock acquisition.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Order("user_id ASC").Find(&rows).Error; err != nil {
 			return err
 		}
 		nowMs := now.UnixMilli()

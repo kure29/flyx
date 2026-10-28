@@ -11,6 +11,7 @@ import (
 
 	"go-backend/internal/auth"
 	"go-backend/internal/http/response"
+	"go-backend/internal/store/model"
 )
 
 func TestForwardCreateBlockedWhenUserQuotaExceeded(t *testing.T) {
@@ -177,5 +178,67 @@ func TestUserQuotaResetClearsDisableFlag(t *testing.T) {
 	quotaDisabled := mustQueryInt(t, repo, `SELECT disabled_by_quota FROM user_quota WHERE user_id = 2`)
 	if quotaDisabled != 0 {
 		t.Fatalf("expected quota disable flag cleared, got %d", quotaDisabled)
+	}
+	for _, column := range []string{"daily_used_bytes", "monthly_used_bytes"} {
+		if used := mustQueryInt64(t, repo, `SELECT `+column+` FROM user_quota WHERE user_id = 2`); used != 0 {
+			t.Errorf("expected %s cleared, got %d", column, used)
+		}
+	}
+}
+
+func TestUserQuotaResetRequiresAdmin(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		callerID int64
+		targetID int64
+		wantCode int
+	}{
+		{name: "unauthenticated", targetID: 2, wantCode: 401},
+		{name: "own quota", callerID: 2, targetID: 2, wantCode: 403},
+		{name: "another user's quota", callerID: 2, targetID: 3, wantCode: 403},
+	} {
+		for _, scope := range []string{"", "daily", "monthly", "all"} {
+			t.Run(tc.name+"/scope="+scope, func(t *testing.T) {
+				const secret = "contract-jwt-secret"
+				router, r := setupContractRouter(t, secret)
+				seedContractUser(t, r, 2, "quota_caller", 1, 1)
+				seedContractUser(t, r, 3, "quota_other", 1, 1)
+				now := time.Now()
+				before := model.UserQuota{
+					UserID: tc.targetID, DailyLimitGB: 10, MonthlyLimitGB: 10,
+					DailyUsedBytes: 11 * contractBytesPerGB, MonthlyUsedBytes: 11 * contractBytesPerGB,
+					DayKey:          int64(now.Year()*10000 + int(now.Month())*100 + now.Day()),
+					MonthKey:        int64(now.Year()*100 + int(now.Month())),
+					DisabledByQuota: 1, DisabledAt: now.UnixMilli(), PausedForwardIDs: "42",
+					CreatedTime: now.UnixMilli(), UpdatedTime: now.UnixMilli(),
+				}
+				if err := r.DB().Create(&before).Error; err != nil {
+					t.Fatalf("insert quota: %v", err)
+				}
+				var token string
+				if tc.callerID != 0 {
+					var err error
+					token, err = auth.GenerateToken(tc.callerID, "quota_caller", 1, secret)
+					if err != nil {
+						t.Fatalf("generate token: %v", err)
+					}
+				}
+				body, err := json.Marshal(map[string]interface{}{"userId": tc.targetID, "scope": scope})
+				if err != nil {
+					t.Fatalf("marshal request: %v", err)
+				}
+				out := kernelContractPost(t, router, token, "/api/v1/user/quota/reset", string(body))
+				if out.Code != tc.wantCode {
+					t.Errorf("expected code %d, got %d (%s)", tc.wantCode, out.Code, out.Msg)
+				}
+				var after model.UserQuota
+				if err := r.DB().Where("user_id = ?", tc.targetID).First(&after).Error; err != nil {
+					t.Fatalf("read quota: %v", err)
+				}
+				if after != before {
+					t.Errorf("unauthorized reset changed quota: before=%+v after=%+v", before, after)
+				}
+			})
+		}
 	}
 }

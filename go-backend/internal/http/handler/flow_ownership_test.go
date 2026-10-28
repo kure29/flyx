@@ -170,7 +170,8 @@ func TestFlowOwnershipLocalForwardRequiresReportingNode(t *testing.T) {
 		}
 		want := int64(0)
 		if nodeID == 2 {
-			want = 200
+			// Missing legacy tunnel metadata defaults to single-direction billing.
+			want = 80
 		}
 		if forward.InFlow+forward.OutFlow != want {
 			t.Fatalf("node %d local traffic=%d want=%d", nodeID, forward.InFlow+forward.OutFlow, want)

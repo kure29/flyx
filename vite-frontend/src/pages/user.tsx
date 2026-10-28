@@ -700,7 +700,14 @@ export default function UserPage({ embedded = false }: { embedded?: boolean }) {
       const response = await deleteUser(userToDelete.id);
 
       if (response.code === 0) {
-        toast.success("删除成功");
+        if (response.data?.warnings?.length) {
+          toast(`用户已删除；${response.data.warnings.join("；")}`, {
+            icon: "⚠️",
+            duration: 6000,
+          });
+        } else {
+          toast.success("删除成功");
+        }
         onDeleteModalClose();
         setUsers((prev) => removeItemsById(prev, [userToDelete.id]));
         setPagination((prev) => ({

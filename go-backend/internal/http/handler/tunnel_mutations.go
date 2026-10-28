@@ -30,6 +30,11 @@ func (h *Handler) tunnelCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
 		return
 	}
+	flow, trafficRatio, err := parseTunnelBilling(req)
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
 	if err := validateTunnelConnectIPConstraints(req); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
@@ -50,9 +55,7 @@ func (h *Handler) tunnelCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	typeVal := asInt(req["type"], 1)
-	flow := asInt64(req["flow"], 1)
 	status := asInt(req["status"], 1)
-	trafficRatio := asFloat(req["trafficRatio"], 1.0)
 	inIP := asString(req["inIp"])
 	ipPreference := asString(req["ipPreference"])
 	probeTarget, probeTargetConfigured, err := parseTunnelProbeTargetFromRequest(req)
@@ -354,6 +357,11 @@ func (h *Handler) tunnelUpdate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
 		return
 	}
+	flow, trafficRatio, err := parseTunnelBilling(req)
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
 	if err := validateTunnelConnectIPConstraints(req); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
@@ -461,7 +469,7 @@ func (h *Handler) tunnelUpdate(w http.ResponseWriter, r *http.Request) {
 		updateProtocol = strings.TrimSpace(runtimeState.InNodes[0].Protocol)
 	}
 	if err := h.repo.UpdateTunnelTx(validationTx, id, asString(req["name"]), typeVal,
-		asInt64(req["flow"], 1), asFloat(req["trafficRatio"], 1.0), asInt(req["status"], 1),
+		flow, trafficRatio, asInt(req["status"], 1),
 		inIp, ipPreference, updateProtocol, probeTargetHost, probeTargetPort, now); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
@@ -506,8 +514,8 @@ func (h *Handler) tunnelUpdate(w http.ResponseWriter, r *http.Request) {
 		id,
 		asString(req["name"]),
 		typeVal,
-		asInt64(req["flow"], 1),
-		asFloat(req["trafficRatio"], 1.0),
+		flow,
+		trafficRatio,
 		asInt(req["status"], 1),
 		inIp,
 		ipPreference,
