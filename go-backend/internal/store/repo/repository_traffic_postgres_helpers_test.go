@@ -2,8 +2,8 @@ package repo
 
 import (
 	"database/sql"
+	"go-backend/internal/config"
 	"net/url"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -11,7 +11,7 @@ import (
 
 func openTrafficPostgresTest(t *testing.T) *Repository {
 	t.Helper()
-	dsn := os.Getenv("FLVX_POSTGRES_TEST_DSN")
+	dsn := config.IdentityEnv("FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("requires temporary PostgreSQL")
 	}

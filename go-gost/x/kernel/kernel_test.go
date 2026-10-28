@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,11 +66,15 @@ func stubNft(t *testing.T) *nftRecorder {
 		case joined == "-f -":
 			rec.scripts = append(rec.scripts, stdin)
 			return nil, nil
-		case strings.HasPrefix(joined, "list table"):
+		case joined == "-j list tables":
 			if len(rec.scripts) == 0 {
-				return nil, errors.New("no table")
+				return []byte(`{"nftables":[]}`), nil
 			}
-			return nil, nil
+			table := nftTable
+			if strings.Contains(rec.scripts[len(rec.scripts)-1], legacyNftTable) {
+				table = legacyNftTable
+			}
+			return []byte(fmt.Sprintf(`{"nftables":[{"table":{"family":"inet","name":%q}}]}`, table)), nil
 		case strings.HasPrefix(joined, "-j list counters"):
 			return []byte(rec.listOut), nil
 		}
@@ -310,7 +313,7 @@ func TestNftScriptOnlyCounts(t *testing.T) {
 	if strings.Index(script, "in_1_tcp") > strings.Index(script, "in_2_tcp") {
 		t.Fatal("rules must be sorted for a stable signature")
 	}
-	if !strings.HasPrefix(script, "table inet flvx_kernel {}\ndelete table inet flvx_kernel\n") {
+	if !strings.HasPrefix(script, "table inet flyx_kernel {}\ndelete table inet flyx_kernel\n") {
 		t.Fatalf("script must recreate the table atomically: %s", script)
 	}
 }

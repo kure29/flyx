@@ -385,8 +385,36 @@ func (h *Handler) nodeInstall(w http.ResponseWriter, r *http.Request) {
 // same name is replaced, so the command also reinstalls.
 func dockerInstallCommand(version, panelAddr, secret string) string {
 	owner := strings.ToLower(strings.SplitN(githubRepo, "/", 2)[0])
-	return fmt.Sprintf("docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent --restart unless-stopped --network host --cap-add NET_ADMIN -v /etc/flux_agent:/etc/flux_agent -e FLUX_AGENT_ADDR=%s -e FLUX_AGENT_SECRET=%s ghcr.io/%s/flux-agent:%s",
-		panelAddr, secret, owner, version)
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+	script := fmt.Sprintf(`set -eu
+name=flyx-agent
+data=/etc/flyx-agent
+destination=/etc/flyx-agent
+current=$(docker inspect -f '{{.Name}}' flyx-agent 2>/dev/null || true)
+legacy=$(docker inspect -f '{{.Name}}' flux_agent 2>/dev/null || true)
+if [ -n "$current" ] && [ -n "$legacy" ]; then
+  echo '同时发现新旧节点容器，请先确认要重装的实例' >&2
+  exit 1
+fi
+if [ -n "$legacy" ]; then name=flux_agent; destination=/etc/flux_agent; fi
+if [ -n "$current$legacy" ]; then
+  data=$(docker inspect -f '{{range .Mounts}}{{if or (eq .Destination "/etc/flyx-agent") (eq .Destination "/etc/flux_agent")}}{{if eq .Type "volume"}}{{.Name}}{{else}}{{.Source}}{{end}}{{println}}{{end}}{{end}}' "$name")
+  case "$data" in ''|*'
+'*) echo '无法唯一识别节点数据挂载，重装已停止' >&2; exit 1;; esac
+fi
+image=%s
+if ! docker pull "$image"; then
+  image=%s
+  docker pull "$image"
+  destination=/etc/flux_agent
+fi
+if [ -n "$current$legacy" ]; then docker rm -f "$name"; fi
+docker run -d --name "$name" --restart unless-stopped --network host --cap-add NET_ADMIN \
+  -v "$data:$destination" -e FLYX_AGENT_DATA_DIR="$destination" \
+  -e FLYX_AGENT_ADDR=%s -e FLUX_AGENT_ADDR=%s \
+  -e FLYX_AGENT_SECRET=%s -e FLUX_AGENT_SECRET=%s "$image"`,
+		quote("ghcr.io/"+owner+"/flyx-agent:"+version), quote("ghcr.io/"+owner+"/flux-agent:"+version), quote(panelAddr), quote(panelAddr), quote(secret), quote(secret))
+	return "sh -c " + quote(script)
 }
 
 func (h *Handler) nodeUpdateOrder(w http.ResponseWriter, r *http.Request) {

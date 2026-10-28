@@ -84,8 +84,8 @@ body:
     attributes:
       label: 日志
       description: |
-        面板：`docker logs --tail 200 flux-panel-backend`
-        节点 agent：`journalctl -u flux_agent -n 200 --no-pager`
+        面板：`docker compose logs --tail 200 backend`
+        节点 agent：`journalctl -u flyx-agent -u flux_agent -n 200 --no-pager`
         内核日志：落地 → 内核 → 日志
       render: text
   - type: textarea

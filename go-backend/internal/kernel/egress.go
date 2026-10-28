@@ -13,8 +13,8 @@ const (
 	OutboundIPv6Only   = "ipv6_only"
 	OutboundPreferIPv4 = "prefer_ipv4"
 	OutboundPreferIPv6 = "prefer_ipv6"
-	ipv4ResolverTag    = "flvx-ipv4-resolver"
-	ipv6ResolverTag    = "flvx-ipv6-resolver"
+	ipv4ResolverTag    = "flyx-ipv4-resolver"
+	ipv6ResolverTag    = "flyx-ipv6-resolver"
 )
 
 // NormalizeOutboundIPStrategy keeps old configurations automatic and rejects

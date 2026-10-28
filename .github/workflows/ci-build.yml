@@ -14,7 +14,12 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Run installer regression tests
-        run: bash test-install-scripts-proxy.sh
+        run: |
+          bash test-install-scripts-proxy.sh
+          bash test-project-identity.sh
+
+      - name: Test agent container naming and persistent state
+        run: bash test-agent-container-identity.sh
 
       - name: Test Alpine bootstrap and OpenRC lifecycle
         run: docker run --rm -v "$PWD:/workspace:ro" alpine:3.22 sh /workspace/test-install-scripts-alpine.sh
@@ -32,6 +37,9 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: '22'
+
+      - name: Test API skill installer
+        run: node --test ../skills/flyx-api/install.test.cjs
 
       - name: Install pnpm
         run: npm install -g pnpm@10.28.1
@@ -89,13 +97,13 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_USER: flux_test
-          POSTGRES_PASSWORD: flux_test_pass
-          POSTGRES_DB: flux_test
+          POSTGRES_USER: flyx_test
+          POSTGRES_PASSWORD: flyx_test_pass
+          POSTGRES_DB: flyx_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U flux_test -d flux_test"
+          --health-cmd "pg_isready -U flyx_test -d flyx_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -116,7 +124,7 @@ jobs:
 
       - name: Run PostgreSQL contract test
         env:
-          FLVX_POSTGRES_TEST_DSN: 'postgres://flux_test:flux_test_pass@127.0.0.1:5432/flux_test?sslmode=disable'
+          FLYX_POSTGRES_TEST_DSN: 'postgres://flyx_test:flyx_test_pass@127.0.0.1:5432/flyx_test?sslmode=disable'
         run: go test ./tests/contract ./internal/store/repo -run 'TestPostgres(NodeCreateRepairsMissingIDDefaultContract|DailyRollPreservesConcurrentUsage)$' -count=1
 
   agent:
@@ -142,3 +150,8 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: Test agent and protocol modules
+        run: |
+          go test ./...
+          cd x && go test ./...

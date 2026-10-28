@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
+
 export type GroupBy = "node" | "kernel";
 
-const GROUP_BY_KEY = "flvx_inbound_group_by";
-const COLLAPSED_KEY = "flvx_inbound_collapsed";
+const GROUP_BY_KEY = "flyx_inbound_group_by";
+const COLLAPSED_KEY = "flyx_inbound_collapsed";
 
 function readStorage(key: string): string | null {
   try {
-    return localStorage.getItem(key);
+    return getStoredValue(localStorage, key);
   } catch {
     return null;
   }
@@ -16,7 +18,7 @@ function readStorage(key: string): string | null {
 
 function writeStorage(key: string, value: string) {
   try {
-    localStorage.setItem(key, value);
+    setStoredValue(localStorage, key, value);
   } catch {
     // Remembering the layout is only a convenience.
   }

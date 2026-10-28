@@ -14,14 +14,15 @@ import (
 	"strings"
 	"time"
 
+	"go-backend/internal/config"
 	"go-backend/internal/http/response"
 )
 
 const (
 	panelDeployDirEnv                 = "PANEL_DEPLOY_DIR"
 	panelBackendContainerEnv          = "PANEL_BACKEND_CONTAINER"
-	defaultPanelDeployDir             = "/opt/flvx-panel"
-	defaultPanelBackendName           = "flux-panel-backend"
+	defaultPanelDeployDir             = "/opt/flyx-panel"
+	defaultPanelBackendName           = "flyx-panel-backend"
 	dockerSocketPath                  = "/var/run/docker.sock"
 	maxSystemUpgradeComposeAssetBytes = 1 << 20
 	systemUpgradeMessage              = "升级 helper 已启动，面板服务将短暂重启"
@@ -151,7 +152,7 @@ func newSystemUpgradeExecutor() *systemUpgradeExecutor {
 }
 
 func currentPanelVersion() string {
-	version := strings.TrimSpace(os.Getenv("FLUX_VERSION"))
+	version := strings.TrimSpace(config.IdentityEnv("FLYX_VERSION", "FLUX_VERSION"))
 	if version == "" {
 		return "dev"
 	}
@@ -314,25 +315,20 @@ func (e *systemUpgradeExecutor) updateEnvVersion(envPath, version string) error 
 	if err != nil {
 		return err
 	}
-	lines := strings.Split(string(data), "\n")
-	replaced := false
-	for i, line := range lines {
-		if strings.HasPrefix(line, "FLUX_VERSION=") {
-			lines[i] = "FLUX_VERSION=" + version
-			replaced = true
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	for _, key := range []string{"FLYX_VERSION", "FLUX_VERSION"} {
+		found := false
+		for i, line := range lines {
+			if strings.HasPrefix(line, key+"=") {
+				lines[i] = key + "=" + version
+				found = true
+			}
+		}
+		if !found {
+			lines = append(lines, key+"="+version)
 		}
 	}
-	if !replaced {
-		trimmed := strings.TrimRight(strings.Join(lines, "\n"), "\n")
-		if trimmed == "" {
-			trimmed = "FLUX_VERSION=" + version
-		} else {
-			trimmed += "\nFLUX_VERSION=" + version
-		}
-		return writeFileWithMode(envPath, []byte(trimmed+"\n"), mode)
-	}
-	content := strings.TrimRight(strings.Join(lines, "\n"), "\n") + "\n"
-	return writeFileWithMode(envPath, []byte(content), mode)
+	return writeFileWithMode(envPath, []byte(strings.Join(lines, "\n")+"\n"), mode)
 }
 
 func (e *systemUpgradeExecutor) backupFile(path string) (string, error) {
@@ -711,7 +707,7 @@ func (h *Handler) systemUpgrade(w http.ResponseWriter, r *http.Request) {
 	}
 	exec.composeProject = exec.detectComposeProject(r.Context())
 	exec.hostDeployDir = exec.detectHostDeployDir(r.Context())
-	helperName := fmt.Sprintf("flvx-upgrade-helper-%d", time.Now().Unix())
+	helperName := fmt.Sprintf("flyx-upgrade-helper-%d", time.Now().Unix())
 	helperContainer, err := exec.startHelper(r.Context(), imageID, helperName)
 	if err != nil {
 		if restoreErr := exec.restoreUpgradeBackups(composePath, envPath); restoreErr != nil {

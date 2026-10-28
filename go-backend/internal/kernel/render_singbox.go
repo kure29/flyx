@@ -38,7 +38,7 @@ func renderSingbox(inbounds []Inbound, opts RenderOptions) (string, error) {
 		// The implicit resolver uses systemd-resolved over DBus. Servers
 		// without that service cannot resolve REALITY/ShadowTLS handshakes
 		// or outbound destinations; use the system DNS through Go instead.
-		const tag = "flvx-local-resolver"
+		const tag = "flyx-local-resolver"
 		cfg["dns"] = obj{"servers": []interface{}{obj{"type": "local", "tag": tag, "prefer_go": true}}}
 		cfg["route"] = obj{"default_domain_resolver": tag}
 	}

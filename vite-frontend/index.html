@@ -90,7 +90,7 @@
 
         // 立即检测主题并应用（优先读取 localStorage 中的用户偏好）
         var savedMode = '';
-        try { savedMode = localStorage.getItem('flvx:theme') || ''; } catch (_) {}
+        try { savedMode = localStorage.getItem('flyx:theme') ?? localStorage.getItem('flvx:theme') ?? ''; } catch (_) {}
 
         var useDark;
         if (savedMode === 'dark') {
@@ -116,7 +116,7 @@
           window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
             // 运行时可能已由 React 接管，这里仅做 fallback
             var currentMode = '';
-            try { currentMode = localStorage.getItem('flvx:theme') || ''; } catch (_) {}
+            try { currentMode = localStorage.getItem('flyx:theme') ?? localStorage.getItem('flvx:theme') ?? ''; } catch (_) {}
             if (currentMode && currentMode !== 'system') return; // 用户已手动选择，不干预
             if (e.matches) {
               document.documentElement.classList.add('dark');

@@ -170,7 +170,7 @@ func TestAgentUpgradeRestartScriptStopsLegacyGostService(t *testing.T) {
 	if !strings.Contains(script, "systemctl stop flux_agent") {
 		t.Fatalf("expected script to stop flux_agent, got %s", script)
 	}
-	if !strings.Contains(script, "mv /tmp/flux_agent.new /etc/flux_agent/flux_agent") {
+	if !strings.Contains(script, "mv '/tmp/flux_agent.new' '/etc/flux_agent/flux_agent'") {
 		t.Fatalf("expected script to replace the flux_agent binary, got %s", script)
 	}
 	if !strings.Contains(script, "systemctl stop gost") {

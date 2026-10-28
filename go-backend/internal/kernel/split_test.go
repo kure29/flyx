@@ -47,11 +47,11 @@ func TestSplitXray(t *testing.T) {
 		// ads (domains) and BT (protocol) → block.
 		"block(u)", "block", "block(u)", "block",
 		// custom domain / IP → direct, users through their counted outbound.
-		"flvx-u7(u)", "direct", "flvx-u7(u)", "direct",
+		"flyx-u7(u)", "direct", "flyx-u7(u)", "direct",
 		// target deleted → dropped.
 		"block(u)", "block",
 		// everything else: the users' direct rule.
-		"flvx-u7(u)",
+		"flyx-u7(u)",
 	}, ",")
 	if got != want {
 		t.Fatalf("rules:\n got %s\nwant %s", got, want)
@@ -90,10 +90,10 @@ func TestSplitSingboxWithChain(t *testing.T) {
 		"via-1-s1-u7(u)", "via-1-s1", // rule sets (netflix + cn)
 		"reject(u)", "reject", // ads rule set
 		"reject(u)", "reject", // bt
-		"flvx-u7(u)", "direct", "flvx-u7(u)", "direct", // custom domain, IP
+		"flyx-u7(u)", "direct", "flyx-u7(u)", "direct", // custom domain, IP
 		"reject(u)", "reject", // deleted target
 		"via-1-u7(u)", "via-1", // the chained default exit
-		"flvx-u7(u)",
+		"flyx-u7(u)",
 	}, ",")
 	if got != want {
 		t.Fatalf("rules:\n got %s\nwant %s", got, want)

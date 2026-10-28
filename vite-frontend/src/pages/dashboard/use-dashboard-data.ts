@@ -3,6 +3,7 @@ import type { ForwardApiItem, NodeApiItem } from "@/api/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 import {
   getAnnouncement,
   getDashboardNodeExpiryList,
@@ -353,8 +354,9 @@ export const useDashboardData = (): DashboardDataState => {
         setAnnouncement(res.data);
 
         try {
-          const storedTimeStr = localStorage.getItem(
-            "flvx_announcement_seen_time",
+          const storedTimeStr = getStoredValue(
+            localStorage,
+            "flyx_announcement_seen_time",
           );
           const storedTime = storedTimeStr ? parseInt(storedTimeStr, 10) : 0;
           const updateTime = res.data.update_time || 0;
@@ -379,8 +381,9 @@ export const useDashboardData = (): DashboardDataState => {
     setIsAnnouncementModalOpen(false);
     if (announcement && announcement.update_time) {
       try {
-        localStorage.setItem(
-          "flvx_announcement_seen_time",
+        setStoredValue(
+          localStorage,
+          "flyx_announcement_seen_time",
           announcement.update_time.toString(),
         );
       } catch {

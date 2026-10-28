@@ -19,7 +19,7 @@ func RenderTable(plan NodePlan) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("table inet flvx {\n")
+	b.WriteString("table inet flyx {\n")
 	b.WriteString("  chain prerouting {\n")
 	b.WriteString("    type nat hook prerouting priority dstnat; policy accept;\n")
 	for _, rule := range sortedRules(plan.Rules) {
@@ -42,7 +42,7 @@ func RenderTable(plan NodePlan) string {
 	b.WriteString("  chain postrouting {\n")
 	b.WriteString("    type nat hook postrouting priority srcnat; policy accept;\n")
 	if len(plan.Rules) > 0 {
-		b.WriteString("    masquerade comment \"flvx masquerade\"\n")
+		b.WriteString("    masquerade comment \"flyx masquerade\"\n")
 	}
 	b.WriteString("  }\n\n")
 	b.WriteString("  chain forward {\n")
@@ -80,7 +80,7 @@ func RenderTable(plan NodePlan) string {
 }
 
 func counterComment(forwardID int64, direction, protocol string) string {
-	return fmt.Sprintf("flvx forward:%d %s %s", forwardID, direction, protocol)
+	return fmt.Sprintf("flyx forward:%d %s %s", forwardID, direction, protocol)
 }
 
 func RuleHash(rule Rule) string {

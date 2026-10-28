@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/go-gost/x/identity"
 )
 
 // Node network tuning (节点调优). TuneStatus reports the current kernel
@@ -165,8 +167,8 @@ var (
 	tunePageSize   = int64(os.Getpagesize())
 	tuneProcRoot   = "/proc/sys"
 	tuneConfPath   = "/etc/sysctl.d/99-flyx-tuning.conf"
-	tuneBackupPath = "/etc/flux_agent/tuning-backup.json"
-	tuneParamsPath = "/etc/flux_agent/tuning-params.json"
+	tuneBackupPath = filepath.Join(identity.DataDir(), "tuning-backup.json")
+	tuneParamsPath = filepath.Join(identity.DataDir(), "tuning-params.json")
 	tuneMeminfo    = "/proc/meminfo"
 	// tuneBBRModule loads tcp_bbr at boot, before sysctl sets it.
 	tuneBBRModule = "/etc/modules-load.d/flyx-bbr.conf"

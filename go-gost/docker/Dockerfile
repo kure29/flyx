@@ -11,12 +11,13 @@ RUN apt-get update \
 ARG TARGETARCH
 ARG VERSION=dev
 # Artifacts lose the exec bit on upload.
-COPY --chmod=755 gost-${TARGETARCH} /usr/local/bin/flux_agent
-COPY --chmod=755 entrypoint.sh /usr/local/bin/flux-agent-entrypoint
+COPY --chmod=755 gost-${TARGETARCH} /usr/local/bin/flyx-agent
+COPY --chmod=755 entrypoint.sh /usr/local/bin/flyx-agent-entrypoint
 
-ENV FLUX_AGENT_CONTAINER=1 \
-    FLUX_AGENT_IMAGE_VERSION=${VERSION}
+ENV FLYX_AGENT_CONTAINER=1 \
+    FLUX_AGENT_CONTAINER=1 \
+    FLYX_AGENT_IMAGE_VERSION=${VERSION}
 
-VOLUME /etc/flux_agent
-WORKDIR /etc/flux_agent
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/flux-agent-entrypoint"]
+VOLUME /etc/flyx-agent
+WORKDIR /etc/flyx-agent
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/flyx-agent-entrypoint"]

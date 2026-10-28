@@ -2,6 +2,7 @@ import type { ErrorInfo, ReactNode } from "react";
 
 import { Component } from "react";
 
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 import { Button } from "@/shadcn-bridge/heroui/button";
 
 /** A page's code file that failed to download (gone after an upgrade). */
@@ -19,10 +20,12 @@ function isChunkLoadError(error: unknown): boolean {
  */
 export function reloadOnce(): boolean {
   try {
-    const last = Number(sessionStorage.getItem("flvx_chunk_reload") || 0);
+    const last = Number(
+      getStoredValue(sessionStorage, "flyx_chunk_reload") || 0,
+    );
 
     if (Date.now() - last < 60000) return false;
-    sessionStorage.setItem("flvx_chunk_reload", String(Date.now()));
+    setStoredValue(sessionStorage, "flyx_chunk_reload", String(Date.now()));
   } catch {
     return false;
   }

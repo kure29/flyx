@@ -11,9 +11,9 @@ Complete, runnable examples for various languages.
 set -e
 
 # Configuration
-BASE_URL="${FLVX_BASE_URL:?FLVX_BASE_URL not set}"
-USERNAME="${FLVX_USERNAME:?FLVX_USERNAME not set}"
-PASSWORD="${FLVX_PASSWORD:?FLVX_PASSWORD not set}"
+BASE_URL="${FLYX_BASE_URL:?FLYX_BASE_URL not set}"
+USERNAME="${FLYX_USERNAME:?FLYX_USERNAME not set}"
+PASSWORD="${FLYX_PASSWORD:?FLYX_PASSWORD not set}"
 
 # Login and get token
 echo "Logging in..."
@@ -56,8 +56,8 @@ api_call "/api/v1/forward/list" '{}' | jq '.data.list[] | {name, tunnel: .tunnel
 
 ```bash
 #!/bin/bash
-BASE_URL="${FLVX_BASE_URL}"
-TOKEN="${FLVX_TOKEN}"  # Pre-obtained token
+BASE_URL="${FLYX_BASE_URL}"
+TOKEN="${FLYX_TOKEN}"  # Pre-obtained token
 
 create_forward() {
   local name="$1"
@@ -87,21 +87,21 @@ create_forward "$@"
 
 ```python
 #!/usr/bin/env python3
-"""FLVX API Client"""
+"""FLYX API Client"""
 
 import os
 import requests
 from typing import Optional, Any, Dict, List
 
 class FlvxError(Exception):
-    """FLVX API Error"""
+    """FLYX API Error"""
     def __init__(self, code: int, message: str):
         self.code = code
         self.message = message
         super().__init__(message)
 
 class FlvxClient:
-    """FLVX API Client with auto-login"""
+    """FLYX API Client with auto-login"""
     
     def __init__(
         self, 
@@ -109,12 +109,12 @@ class FlvxClient:
         username: Optional[str] = None,
         password: Optional[str] = None
     ):
-        self.base_url = base_url or os.environ.get("FLVX_BASE_URL")
-        self.username = username or os.environ.get("FLVX_USERNAME")
-        self.password = password or os.environ.get("FLVX_PASSWORD")
+        self.base_url = base_url or os.environ.get("FLYX_BASE_URL")
+        self.username = username or os.environ.get("FLYX_USERNAME")
+        self.password = password or os.environ.get("FLYX_PASSWORD")
         
         if not all([self.base_url, self.username, self.password]):
-            raise ValueError("Missing credentials. Set FLVX_BASE_URL, FLVX_USERNAME, FLVX_PASSWORD")
+            raise ValueError("Missing credentials. Set FLYX_BASE_URL, FLYX_USERNAME, FLYX_PASSWORD")
         
         self.token: Optional[str] = None
     
@@ -230,7 +230,7 @@ if __name__ == "__main__":
 ### Complete Client Class
 
 ```typescript
-// flvx-client.ts
+// flyx-client.ts
 interface APIResponse<T = unknown> {
   code: number;
   msg: string;
@@ -284,12 +284,12 @@ class FlvxClient {
     username?: string;
     password?: string;
   }) {
-    this.baseUrl = options?.baseUrl ?? process.env.FLVX_BASE_URL ?? "";
-    this.username = options?.username ?? process.env.FLVX_USERNAME ?? "";
-    this.password = options?.password ?? process.env.FLVX_PASSWORD ?? "";
+    this.baseUrl = options?.baseUrl ?? process.env.FLYX_BASE_URL ?? "";
+    this.username = options?.username ?? process.env.FLYX_USERNAME ?? "";
+    this.password = options?.password ?? process.env.FLYX_PASSWORD ?? "";
 
     if (!this.baseUrl || !this.username || !this.password) {
-      throw new Error("Missing credentials. Set FLVX_BASE_URL, FLVX_USERNAME, FLVX_PASSWORD");
+      throw new Error("Missing credentials. Set FLYX_BASE_URL, FLYX_USERNAME, FLYX_PASSWORD");
     }
   }
 
@@ -423,8 +423,8 @@ main().catch(console.error);
 ### Complete Client Package
 
 ```go
-// flvx/client.go
-package flvx
+// flyx/client.go
+package flyx
 
 import (
 	"bytes"
@@ -455,14 +455,14 @@ type FlvxError struct {
 }
 
 func (e *FlvxError) Error() string {
-	return fmt.Sprintf("FLVX error %d: %s", e.Code, e.Message)
+	return fmt.Sprintf("FLYX error %d: %s", e.Code, e.Message)
 }
 
 func NewClient() *Client {
 	return &Client{
-		BaseURL:  os.Getenv("FLVX_BASE_URL"),
-		Username: os.Getenv("FLVX_USERNAME"),
-		Password: os.Getenv("FLVX_PASSWORD"),
+		BaseURL:  os.Getenv("FLYX_BASE_URL"),
+		Username: os.Getenv("FLYX_USERNAME"),
+		Password: os.Getenv("FLYX_PASSWORD"),
 	}
 }
 

@@ -281,7 +281,7 @@ func ghMirrorCacheDir() string {
 	if p := strings.TrimSpace(os.Getenv("DB_PATH")); p != "" {
 		return filepath.Join(filepath.Dir(p), "github-cache")
 	}
-	return filepath.Join(os.TempDir(), "flvx-github-cache")
+	return filepath.Join(os.TempDir(), "flyx-github-cache")
 }
 
 // ghMirrorFetch returns the cached file for up, downloading it when missing

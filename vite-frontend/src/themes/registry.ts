@@ -1,3 +1,12 @@
+import type {
+  ThemePackage,
+  ThemeTokens,
+  ComponentKey,
+  LayoutKey,
+  PageKey,
+} from "./types";
+
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 /**
  * Theme Registry
  * ==============
@@ -9,22 +18,14 @@
  * integration lives in `./context.tsx`.
  */
 
-import type {
-  ThemePackage,
-  ThemeTokens,
-  ComponentKey,
-  LayoutKey,
-  PageKey,
-} from "./types";
-
 // ─── internal state ──────────────────────────────────────────────────────────
 
 const installed = new Map<string, ThemePackage>();
 let activeId: string | null = null;
 let injectedStyleEl: HTMLStyleElement | null = null;
 
-const STORAGE_KEY = "flvx:active-theme";
-const MODE_KEY = "flvx:theme"; // backwards-compat with old use-theme
+const STORAGE_KEY = "flyx:active-theme";
+const MODE_KEY = "flyx:theme"; // backwards-compat with old use-theme
 
 type ChangeListener = () => void;
 const changeListeners = new Set<ChangeListener>();
@@ -85,7 +86,7 @@ export function resolveSystemMode(): "light" | "dark" {
 
 export function getSavedMode(): ThemeMode {
   if (typeof window === "undefined") return "system";
-  const raw = localStorage.getItem(MODE_KEY);
+  const raw = getStoredValue(localStorage, MODE_KEY);
 
   if (raw === "light" || raw === "dark" || raw === "system") return raw;
 
@@ -93,7 +94,7 @@ export function getSavedMode(): ThemeMode {
 }
 
 export function saveMode(mode: ThemeMode): void {
-  localStorage.setItem(MODE_KEY, mode);
+  setStoredValue(localStorage, MODE_KEY, mode);
   notify();
 }
 
@@ -134,7 +135,8 @@ export function activateTheme(id: string): void {
   // Inject custom CSS
   if (pkg.css) {
     injectedStyleEl = document.createElement("style");
-    injectedStyleEl.setAttribute("data-flvx-theme", id);
+    injectedStyleEl.setAttribute("data-flyx-theme", id);
+    injectedStyleEl.setAttribute("data-flvx-theme", id); // Existing theme packages.
     injectedStyleEl.textContent = pkg.css;
     document.head.appendChild(injectedStyleEl);
   }
@@ -149,7 +151,7 @@ export function activateTheme(id: string): void {
   pkg.onActivate?.();
 
   // Persist
-  localStorage.setItem(STORAGE_KEY, id);
+  setStoredValue(localStorage, STORAGE_KEY, id);
 
   notify();
 }
@@ -254,7 +256,7 @@ export function subscribe(listener: ChangeListener): () => void {
  * localStorage (if the theme is registered).
  */
 export function initThemeSystem(): void {
-  const savedId = localStorage.getItem(STORAGE_KEY);
+  const savedId = getStoredValue(localStorage, STORAGE_KEY);
 
   if (savedId && installed.has(savedId)) {
     activateTheme(savedId);

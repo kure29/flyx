@@ -5,14 +5,16 @@ import (
 	"os"
 	"syscall"
 	"time"
+
+	"github.com/go-gost/x/identity"
 )
 
 // InContainer reports whether the agent runs from the Docker image, which
-// sets FLUX_AGENT_CONTAINER=1. There is no systemd in the container: an
+// sets FLYX_AGENT_CONTAINER=1 (legacy FLUX_AGENT_CONTAINER is accepted). There is no systemd in the container: an
 // upgrade swaps the binary in the data volume and stops the agent, and the
 // restart policy brings the container back up on the new binary.
 func InContainer() bool {
-	return os.Getenv("FLUX_AGENT_CONTAINER") == "1"
+	return identity.Env("FLYX_AGENT_CONTAINER", "FLUX_AGENT_CONTAINER") == "1"
 }
 
 // installAndRestartInContainer moves src over the agent binary (rename

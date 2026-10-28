@@ -2,12 +2,12 @@
 
 通行证密钥登录默认关闭，需要管理员在部署环境中主动启用。它不依赖 Cloudflare Turnstile，但用户必须在验证码可用时先用密码登录并绑定密钥；未绑定的账号不能用此功能绕过验证码。原密码登录始终可用。
 
-**新部署与旧版本升级：**新安装生成的 `.env` 默认没有 `FLVX_WEBAUTHN_ORIGIN`。升级到支持通行证密钥的版本也**不会自动启用**：安装脚本保留已有 `.env`，不会向其中添加该变量。如果手动升级时保留了旧版 `docker-compose.yml`，还需检查 `backend.environment` 是否包含下文的变量传递项。未设置该变量时，仅更新镜像或版本号后看不到入口是预期行为。
+**新部署与旧版本升级：**新安装生成的 `.env` 默认没有 `FLYX_WEBAUTHN_ORIGIN`。升级到支持通行证密钥的版本也**不会自动启用**：安装脚本保留已有 `.env`，不会向其中添加该变量。如果手动升级时保留了旧版 `docker-compose.yml`，还需检查 `backend.environment` 是否包含下文的变量传递项。未设置该变量时，仅更新镜像或版本号后看不到入口是预期行为。
 
 1. 在实际部署目录的 `.env` 中添加浏览器访问面板时的公开前端 origin，将示例域名换成自己的域名：
 
    ```dotenv
-   FLVX_WEBAUTHN_ORIGIN=https://panel.example.com
+   FLYX_WEBAUTHN_ORIGIN=https://panel.example.com
    ```
 
    必须使用完整 HTTPS origin（协议、域名、必要时的端口），不能带路径、查询参数或尾部 `/`。仅本机开发可用 `http://localhost:3000` 或 `http://127.0.0.1:3000`。经反向代理访问时仍填浏览器地址栏中的**前端** origin，不填容器地址、后端监听地址或代理转发头；API 即使在另一个域名，也不改变此值。自行部署时将该变量传给 `paneld` 进程。
@@ -15,7 +15,7 @@
 2. 确认实际使用的 `docker-compose.yml` 在 `backend` 服务的 `environment` 下有以下传递项；新版 Compose 模板已包含，旧模板若缺失需补上：
 
    ```yaml
-   FLVX_WEBAUTHN_ORIGIN: ${FLVX_WEBAUTHN_ORIGIN:-}
+   FLYX_WEBAUTHN_ORIGIN: ${FLYX_WEBAUTHN_ORIGIN:-}
    ```
 
    在该部署目录运行 `docker compose up -d --force-recreate backend`，使新环境变量进入后端容器。后端重建期间，面板 API 会短暂中断。容器恢复后重新加载前端页面；如果 PWA 提示“发现新版本”，选择“刷新”，也可以用新的无痕窗口核对是否仍加载旧页面。
@@ -28,7 +28,7 @@
 
 **入口未显示时，按顺序检查：**
 
-1. 在部署目录运行 `docker compose exec backend printenv FLVX_WEBAUTHN_ORIGIN`，仅检查这一项是否为预期的公开前端 origin；不要贴出完整 `docker compose config` 或其他环境变量，以免泄露密码和密钥。若为空，检查 `.env` 和实际 Compose 模板的 `backend.environment`，然后按步骤 2 重建后端。
+1. 在部署目录运行 `docker compose exec backend printenv FLYX_WEBAUTHN_ORIGIN`，仅检查这一项是否为预期的公开前端 origin；不要贴出完整 `docker compose config` 或其他环境变量，以免泄露密码和密钥。若为空，检查 `.env` 和实际 Compose 模板的 `backend.environment`，然后按步骤 2 重建后端。
 2. 向浏览器实际调用的后端地址发送公开状态请求，例如将以下示例地址替换为自己的 API 地址后运行 `curl -sS -X POST 'https://api.example.com/api/v1/user/passkey/status' -H 'Content-Type: application/json' -d '{}'`。应返回 `code: 0` 且 `data.enabled: true`；若为 `false`，后端尚未接受有效配置。此接口无需登录或提供密码。
 3. 在访问面板的浏览器控制台检查 `window.isSecureContext` 为 `true`，且 `typeof window.PublicKeyCredential` 不是 `"undefined"`。普通公网 HTTP 页面或不支持 WebAuthn 的浏览器不会显示入口。确认后刷新页面，并查看 `/api/v1/user/passkey/status` 的实际网络响应。
 4. 若状态已启用且浏览器满足条件，检查 `docker compose images frontend` 中的前端镜像版本，并按步骤 2 的 PWA 提示刷新或使用无痕窗口。登录页按钮与个人资料页卡片均不存在时，通常是旧前端页面或状态请求未成功；只有其中一个缺失时，记录页面地址和该请求的响应再排查。
@@ -36,3 +36,5 @@
 **安全配置与恢复：**未设置或设置错误时，通行证密钥接口拒绝新的绑定和登录，登录页与个人资料页不显示对应入口；密码登录不受影响。不要把不可信的请求 `Host` / `X-Forwarded-Host` 当作可信 origin。域名变化会改变 RP ID，旧域名下绑定的密钥不能用于新域名；迁移时需保留原域名或可用的密码登录途径，再在新域名重新绑定。仅更改同一域名的端口也需同步更新此 origin。正在进行的密钥挑战只保存在后端内存中，重启后需重新开始；多副本部署需要共享会话方案，未实现前请保持单个后端实例。
 
 建议保留至少一种可用的密码恢复途径。数据库级备份会保留密钥记录；当前面板的 JSON 导出不包含通行证密钥，使用 JSON 导入迁移后，用户需要通过密码登录并重新绑定。
+
+旧的 `FLVX_WEBAUTHN_ORIGIN` 仍受支持；同时存在时优先使用 `FLYX_WEBAUTHN_ORIGIN`（显式空值表示停用）。迁移变量名称不需要重新注册密钥，公开 origin 应保持不变。

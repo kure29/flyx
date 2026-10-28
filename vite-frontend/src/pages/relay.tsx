@@ -3,6 +3,7 @@ import type { InboundApiItem, InboundRelayApiItem } from "@/api/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 import {
   markPageCached,
   pageCached,
@@ -33,11 +34,11 @@ import { Chip } from "@/shadcn-bridge/heroui/chip";
 
 type RelayTab = "lines" | "tunnels" | "rules" | "quality";
 
-const TAB_KEY = "flvx_relay_tab";
+const TAB_KEY = "flyx_relay_tab";
 
 function readTab(): RelayTab {
   try {
-    const v = localStorage.getItem(TAB_KEY);
+    const v = getStoredValue(localStorage, TAB_KEY);
 
     if (v === "lines" || v === "tunnels" || v === "rules" || v === "quality")
       return v;
@@ -420,7 +421,7 @@ export default function RelayPage() {
   const setTab = (t: RelayTab) => {
     setTabState(t);
     try {
-      localStorage.setItem(TAB_KEY, t);
+      setStoredValue(localStorage, TAB_KEY, t);
     } catch {
       // ignore
     }

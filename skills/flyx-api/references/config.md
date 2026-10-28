@@ -17,7 +17,7 @@ Get a single configuration by name. This endpoint is public (no auth required).
   "code": 0,
   "data": {
     "name": "site_name",
-    "value": "My FLVX Panel",
+    "value": "My FLYX Panel",
     "time": 1706659200000
   }
 }
@@ -34,7 +34,7 @@ List all configurations (requires authentication).
 {
   "code": 0,
   "data": {
-    "site_name": "My FLVX Panel",
+    "site_name": "My FLYX Panel",
     "site_logo": "https://example.com/logo.png",
     "site_announcement": "System maintenance scheduled",
     "captcha_enabled": "true",
@@ -109,7 +109,7 @@ Update the site announcement (admin only).
 
 | Key | Description | Example |
 |-----|-------------|---------|
-| `site_name` | Panel display name | `"My FLVX Panel"` |
+| `site_name` | Panel display name | `"My FLYX Panel"` |
 | `site_logo` | Logo URL | `"https://example.com/logo.png"` |
 | `site_announcement` | Announcement HTML | `"<p>Notice...</p>"` |
 | `captcha_enabled` | Enable captcha | `"true"` or `"false"` |
@@ -125,7 +125,7 @@ Update the site announcement (admin only).
 ## Example: Update Panel Name and Announcement
 
 ```bash
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/config/update" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/config/update" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -137,7 +137,7 @@ curl -s -X POST "${FLVX_BASE_URL}/api/v1/config/update" \
 ## Example: Enable Cloudflare Turnstile Captcha
 
 ```bash
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/config/update" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/config/update" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{

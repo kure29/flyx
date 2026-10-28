@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"go-backend/internal/auth"
+	"go-backend/internal/config"
 	"go-backend/internal/http/response"
 	"go-backend/internal/security"
 	"go-backend/internal/store/model"
@@ -46,7 +46,7 @@ func (u passkeyUser) WebAuthnDisplayName() string                { return u.name
 func (u passkeyUser) WebAuthnCredentials() []webauthn.Credential { return u.credentials }
 
 func passkeyConfig() (*webauthn.WebAuthn, string) {
-	raw := strings.TrimSpace(os.Getenv("FLVX_WEBAUTHN_ORIGIN"))
+	raw := strings.TrimSpace(config.IdentityEnv("FLYX_WEBAUTHN_ORIGIN", "FLVX_WEBAUTHN_ORIGIN"))
 	u, err := url.Parse(raw)
 	if err != nil || u == nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return nil, ""

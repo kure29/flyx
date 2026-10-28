@@ -2,10 +2,10 @@ package repo
 
 import (
 	"database/sql"
+	"go-backend/internal/config"
 	"go-backend/internal/store/model"
 	"gorm.io/gorm"
 	"net/url"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -113,7 +113,7 @@ func TestPostgresQuotaRollDoesNotLockUnchangedUsers(t *testing.T) {
 
 func openQuotaMaintenancePostgresTest(t *testing.T) *Repository {
 	t.Helper()
-	dsn := os.Getenv("FLVX_POSTGRES_TEST_DSN")
+	dsn := config.IdentityEnv("FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("requires temporary PostgreSQL")
 	}

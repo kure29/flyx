@@ -18,7 +18,8 @@ import (
 	"time"
 )
 
-const nftTable = "flvx_kernel"
+const nftTable = "flyx_kernel"
+const legacyNftTable = "flvx_kernel"
 
 // nftRunner executes `nft` with a script on stdin (or arguments). It is a
 // variable so tests can capture scripts without root.
@@ -232,11 +233,12 @@ func nftScript(rules []counterRule, guards map[int64]allowGuard, hops []hopRule,
 }
 
 type nftState struct {
+	Table     string `json:"table,omitempty"`
 	Signature string `json:"signature"`
 	Epoch     string `json:"epoch"`
 }
 
-// nftCounters owns the flvx_kernel table. The epoch changes whenever the
+// nftCounters owns the FLYX kernel table (or an existing legacy table). The epoch changes whenever the
 // table is rebuilt so the panel knows the counters restarted from zero.
 type nftCounters struct {
 	mu        sync.Mutex
@@ -246,16 +248,62 @@ type nftCounters struct {
 }
 
 func newNftCounters(baseDir string) *nftCounters {
-	n := &nftCounters{statePath: filepath.Join(baseDir, "nft.json")}
+	n := &nftCounters{statePath: filepath.Join(baseDir, "nft.json"), state: nftState{Table: nftTable}}
 	if b, err := os.ReadFile(n.statePath); err == nil {
-		_ = json.Unmarshal(b, &n.state)
+		// Missing table identifies a state written by a pre-migration agent.
+		var state nftState
+		if json.Unmarshal(b, &state) == nil {
+			if state.Table == "" {
+				state.Table = legacyNftTable
+			}
+			if state.Table == nftTable || state.Table == legacyNftTable {
+				n.state = state
+			}
+		}
 	}
 	return n
 }
 
-func (n *nftCounters) tableExists(ctx context.Context) bool {
-	_, err := nftRunner(ctx, "", "list", "table", "inet", nftTable)
-	return err == nil
+// Inspect live tables as well as disk state: nft.json can be lost while the
+// rules remain installed. Never create a second ruleset beside the old one.
+func (n *nftCounters) resolveTable(ctx context.Context) (string, bool, error) {
+	out, err := nftRunner(ctx, "", "-j", "list", "tables")
+	if err != nil {
+		return "", false, err
+	}
+	var listed struct {
+		Nftables []struct {
+			Table *struct {
+				Family string `json:"family"`
+				Name   string `json:"name"`
+			} `json:"table"`
+		} `json:"nftables"`
+	}
+	if err := json.Unmarshal(out, &listed); err != nil {
+		return "", false, fmt.Errorf("解析 nft 表失败: %w", err)
+	}
+	current, legacy := false, false
+	for _, item := range listed.Nftables {
+		if item.Table == nil || item.Table.Family != "inet" {
+			continue
+		}
+		switch item.Table.Name {
+		case nftTable:
+			current = true
+		case legacyNftTable:
+			legacy = true
+		}
+	}
+	if current && legacy {
+		return "", false, fmt.Errorf("同时发现新旧节点 nftables 表，请先确认要保留的安装")
+	}
+	table := n.state.Table
+	if legacy {
+		table = legacyNftTable
+	} else if current || table == "" {
+		table = nftTable
+	}
+	return table, current || legacy, nil
 }
 
 func (n *nftCounters) sync(ports []Port, users []int64) error {
@@ -265,14 +313,22 @@ func (n *nftCounters) sync(ports []Port, users []int64) error {
 		n.lastErr = "未安装 nftables，无法统计流量"
 		return fmt.Errorf("未安装 nftables: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	table, exists, err := n.resolveTable(ctx)
+	if err != nil {
+		n.lastErr = err.Error()
+		return err
+	}
 	rules := expandPorts(ports)
 	users = sortedUsers(users)
 	script := nftScript(rules, expandGuards(ports), expandHops(ports), users)
+	if table == legacyNftTable {
+		script = strings.ReplaceAll(script, nftTable, legacyNftTable)
+	}
 	sig := hashString(script)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if sig == n.state.Signature && ((len(rules) == 0 && len(users) == 0) || n.tableExists(ctx)) {
+	if sig == n.state.Signature && ((len(rules) == 0 && len(users) == 0) || exists) {
 		n.lastErr = ""
 		return nil
 	}
@@ -281,7 +337,7 @@ func (n *nftCounters) sync(ports []Port, users []int64) error {
 		return err
 	}
 	n.lastErr = ""
-	n.state = nftState{Signature: sig, Epoch: newEpoch()}
+	n.state = nftState{Table: table, Signature: sig, Epoch: newEpoch()}
 	if b, err := json.Marshal(n.state); err == nil {
 		_ = writeFileAtomic(n.statePath, b, 0o600)
 	}
@@ -307,7 +363,7 @@ func (n *nftCounters) read() ([]Counter, []UserCounter, string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := nftRunner(ctx, "", "-j", "list", "counters", "table", "inet", nftTable)
+	out, err := nftRunner(ctx, "", "-j", "list", "counters", "table", "inet", n.state.Table)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -324,7 +380,7 @@ func parseCounters(raw []byte) ([]Counter, []UserCounter, error) {
 	var users []UserCounter
 	for _, item := range parsed.Nftables {
 		c := item.Counter
-		if c == nil || c.Table != nftTable {
+		if c == nil || (c.Table != nftTable && c.Table != legacyNftTable) {
 			continue
 		}
 		parts := strings.Split(c.Name, "_")

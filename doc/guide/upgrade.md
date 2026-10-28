@@ -1,5 +1,19 @@
 # 升级
 
+## FLYX 命名兼容
+
+新安装使用 `flyx-panel-backend`、`flyx-panel-frontend`、`flyx-panel-postgres` 容器，以及 `flyx-sqlite-data`、`flyx-postgres-data` 数据卷和 `flyx-network` 网络。安装脚本会把这些名称写入 `.env`。
+
+旧部署升级时继续使用原容器、数据卷和数据库账号，不搬动已有数据。Compose 中保留的旧默认值用于兼容旧版面板直接下载新版配置的升级方式。手动部署如需使用新名称，应显式配置 `PANEL_BACKEND_CONTAINER`、`PANEL_FRONTEND_CONTAINER`、`PANEL_POSTGRES_CONTAINER`、`FLYX_SQLITE_VOLUME`、`FLYX_POSTGRES_VOLUME` 和 `FLYX_NETWORK`；已有部署请填写实际使用的名称，不能将数据卷改成一个空的新卷。自定义部署应在升级前核对这些参数。
+
+版本变量统一为 `FLYX_VERSION`，升级脚本同时更新旧的 `FLUX_VERSION`，供旧模板或回退使用。其他配置优先读取 `FLYX_*`，未设置时兼容对应的 `FLUX_*` / `FLVX_*` 旧名称。通行证密钥的公开 origin 保持原值，浏览器的主题和列表偏好自动兼容旧键。
+
+节点新安装使用 `flyx-agent` 服务及 `/etc/flyx-agent`。旧节点继续在 `/etc/flux_agent` 中运行 `flux_agent`，保留配置、内核状态、待上报流量及调优备份。新版程序按自身安装位置执行升级和回退。Docker 重装命令会识别已有容器的数据挂载，镜像拉取成功后才替换容器；发现新旧容器同时存在或挂载不明确时停止。
+
+已有 nftables 表和计数 epoch 继续沿用，新建状态使用 FLYX 名称，避免仅因项目改名重置统计。内部的用户凭据、数字标记及 API 数据字段保持兼容。旧镜像名作为过渡别名继续发布。
+
+回退前保留部署目录中的 `.env`、`docker-compose.yml` 及备份，使用该安装对应的原配置恢复；新安装回到不识别新资源参数的历史版本时，需要显式保留原数据卷挂载。API Skill 的迁移见 [AI Skill](../ai-skill.md)。
+
 ## 面板内升级
 
 **设置** → **系统与升级** → **面板自升级** → **检查更新** → **立即升级**。

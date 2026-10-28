@@ -110,8 +110,9 @@ export function InstallCommandModal({
                     {commandBox}
                     <ul className="list-disc space-y-1 pl-5 text-xs text-default-500">
                       <li>
-                        使用 host 网络，数据保存在宿主机 /etc/flux_agent；
-                        不要和一键脚本装的 agent 同时运行。
+                        使用 host 网络，数据保存在宿主机
+                        /etc/flyx-agent（旧安装沿用原目录）； 不要和一键脚本装的
+                        agent 同时运行。
                       </li>
                       <li>
                         面板一键升级会替换数据目录里的程序并自动重启容器；

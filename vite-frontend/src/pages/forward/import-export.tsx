@@ -255,7 +255,7 @@ export function ImportModal({
       <ModalContent>
         <ModalHeader className="flex flex-col gap-1">
           <h2 className="text-xl font-bold">导入规则数据</h2>
-          {importFormat === "flvx" ? (
+          {importFormat === "flyx" ? (
             <>
               <p className="text-small text-default-500">
                 格式：目标地址|规则名称|入口端口，每行一个，入口端口留空将自动分配可用端口
@@ -295,8 +295,8 @@ export function ImportModal({
                 }
               }}
             >
-              <SelectItem key="flvx" textValue="flvx格式">
-                flvx格式（管道分隔）
+              <SelectItem key="flyx" textValue="FLYX 格式">
+                FLYX 格式（管道分隔）
               </SelectItem>
               <SelectItem key="ny" textValue="ny格式">
                 ny格式（JSON）
@@ -338,7 +338,7 @@ export function ImportModal({
               maxRows={12}
               minRows={8}
               placeholder={
-                importFormat === "flvx"
+                importFormat === "flyx"
                   ? "请输入要导入的规则数据，格式：目标地址|规则名称|入口端口"
                   : '请输入ny格式数据，每行一个JSON对象，如：{"dest":["1.2.3.4:80"],"listen_port":8080,"name":"规则1"}；listen_port可省略自动分配'
               }

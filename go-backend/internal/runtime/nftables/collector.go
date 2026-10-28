@@ -17,7 +17,7 @@ type CounterSample struct {
 
 func ParseCounterComment(comment string) (CounterSample, bool) {
 	parts := strings.Split(comment, " ")
-	if (len(parts) < 4 || len(parts) > 5) || parts[0] != "flvx" {
+	if (len(parts) < 4 || len(parts) > 5) || (parts[0] != "flyx" && parts[0] != "flvx") {
 		return CounterSample{}, false
 	}
 	if !strings.HasPrefix(parts[1], "forward:") {
@@ -64,7 +64,7 @@ func ParseCounterSamples(raw []byte) ([]CounterSample, error) {
 		if err := json.Unmarshal(ruleRaw, &rule); err != nil {
 			return nil, err
 		}
-		if rule.Table != "flvx" || rule.Chain != "forward" {
+		if (rule.Table != "flyx" && rule.Table != "flvx") || rule.Chain != "forward" {
 			continue
 		}
 

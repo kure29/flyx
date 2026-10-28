@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Keep quota filtering outside the NAT table: changing a block must neither
 // reset traffic counters nor leave established conntrack flows forwarding.
-const quotaTable = `table inet flvx_quota {
+const quotaTable = `table inet flyx_quota {
     set blocked_ports { type inet_service; }
     chain incoming {
         type filter hook prerouting priority -110; policy accept;
@@ -32,9 +33,10 @@ func (r *SSHRunner) SetBlocked(ctx context.Context, cfg SSHConfig, port int, blo
 }
 
 func buildSetBlockedCommand(nft string, port int, blocked bool) string {
-	command := "set -eu\nif ! " + nft + " list table inet flvx_quota >/dev/null 2>&1; then\n" +
-		nft + " -f - <<'EOF'\n" + quotaTable + "\nEOF\nfi\n"
-	element := fmt.Sprintf(" element inet flvx_quota blocked_ports '{ %d }'", port)
+	command := "set -eu\n" + selectTableCommand(nft, "flyx_quota", "flvx_quota") +
+		"if ! " + nft + " list table inet \"$table\" >/dev/null 2>&1; then\n" +
+		nft + " -f - <<EOF\n" + strings.ReplaceAll(quotaTable, "flyx_quota", "$table") + "\nEOF\nfi\n"
+	element := fmt.Sprintf(" element inet \"$table\" blocked_ports '{ %d }'", port)
 	if blocked {
 		return command + nft + " add" + element
 	}
@@ -57,5 +59,5 @@ func (m *Manager) SetBlocked(ctx context.Context, cfg SSHConfig, port int, block
 // Clearing nftables also removes quota filters so those ports can be reused.
 func (r *SSHRunner) ClearBlocks(ctx context.Context, cfg SSHConfig) error {
 	nft := nftBinary(cfg)
-	return r.run(ctx, cfg, "set -eu\n"+nft+" list tables >/dev/null\nif "+nft+" list table inet flvx_quota >/dev/null 2>&1; then\n"+nft+" delete table inet flvx_quota\nfi")
+	return r.run(ctx, cfg, "set -eu\n"+selectTableCommand(nft, "flyx_quota", "flvx_quota")+"if "+nft+" list table inet \"$table\" >/dev/null 2>&1; then\n"+nft+" delete table inet \"$table\"\nfi")
 }

@@ -14,7 +14,7 @@ type User struct {
 }
 
 // Email tags the user in Xray configs (must be unique per inbound).
-func (u User) Email() string { return fmt.Sprintf("u%d@flvx", u.ID) }
+func (u User) Email() string { return fmt.Sprintf("u%d@flyx", u.ID) }
 
 // Name tags the user in sing-box configs and is the NaïveProxy, SOCKS and
 // HTTP username.
@@ -173,4 +173,4 @@ func markedUsers(inbounds []Inbound) []int64 {
 	return ids
 }
 
-func userOutboundTag(id int64) string { return fmt.Sprintf("flvx-u%d", id) }
+func userOutboundTag(id int64) string { return fmt.Sprintf("flyx-u%d", id) }

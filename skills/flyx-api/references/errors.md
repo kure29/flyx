@@ -97,7 +97,7 @@ call_api() {
   local data="$2"
   
   local response
-  response=$(curl -s -X POST "${FLVX_BASE_URL}${endpoint}" \
+  response=$(curl -s -X POST "${FLYX_BASE_URL}${endpoint}" \
     -H "Authorization: ${TOKEN}" \
     -H "Content-Type: application/json" \
     -d "$data")

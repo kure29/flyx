@@ -205,33 +205,33 @@ Remove a permission.
 
 ```bash
 # 1. Create user group
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/group/user/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/group/user/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"Standard-Users"}'
 # Response: {"data":{"id":1}}
 
 # 2. Create tunnel group
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/group/tunnel/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/group/tunnel/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"Standard-Tunnels"}'
 # Response: {"data":{"id":1}}
 
 # 3. Add tunnels to tunnel group
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/group/tunnel/assign" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/group/tunnel/assign" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"groupId":1,"tunnelIds":[1,2,3]}'
 
 # 4. Add users to user group
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/group/user/assign" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/group/user/assign" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"groupId":1,"userIds":[2,3,4]}'
 
 # 5. Grant permission (user group -> tunnel group)
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/group/permission/assign" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/group/permission/assign" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"userGroupId":1,"tunnelGroupId":1}'

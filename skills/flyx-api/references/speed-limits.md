@@ -89,7 +89,7 @@ Speed limits can be applied at two levels:
 Set `speedId` when creating or updating a forward:
 
 ```bash
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/forward/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/forward/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -105,7 +105,7 @@ curl -s -X POST "${FLVX_BASE_URL}/api/v1/forward/create" \
 Set `speedId` when assigning a tunnel to a user:
 
 ```bash
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/tunnel/user/assign" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/tunnel/user/assign" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -120,23 +120,23 @@ curl -s -X POST "${FLVX_BASE_URL}/api/v1/tunnel/user/assign" \
 
 ```bash
 # Create speed limit tiers
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/speed-limit/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/speed-limit/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"Basic-10Mbps","speed":10}'
 
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/speed-limit/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/speed-limit/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"Standard-50Mbps","speed":50}'
 
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/speed-limit/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/speed-limit/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"Premium-Unlimited","speed":1000}'
 
 # List all rules
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/speed-limit/list" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/speed-limit/list" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}' | jq '.data'

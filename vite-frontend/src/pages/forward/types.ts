@@ -109,4 +109,4 @@ export const EMPTY_BATCH_RESULT_MODAL_STATE: BatchResultModalState = {
 export type ForwardGroupOrderMap = Record<string, string[]>;
 export type ForwardGroupCollapsedMap = Record<string, boolean>;
 
-export type ImportFormat = "flvx" | "ny";
+export type ImportFormat = "flyx" | "ny";
