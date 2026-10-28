@@ -173,10 +173,28 @@ func (s *defaultService) Serve() error {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	var observerDone chan struct{}
+	// wg.Wait below runs first: handlers must finish before stopping the
+	// sampler and handing off the final, otherwise stranded, byte counters.
+	defer func() {
+		cancel()
+		if observerDone != nil {
+			<-observerDone
+		}
+		if st, ok := s.status.Stats().(*xstats.Stats); ok && s.options.observer != nil {
+			// This retired service has no remaining writers or sampler. Reading
+			// its residual counters cannot overlap a periodic handoff.
+			GetGlobalTrafficManager().addServiceTraffic(s.name,
+				int64(st.Get(stats.KindOutputBytes)), int64(st.Get(stats.KindInputBytes)))
+		}
+	}()
 
 	if s.status.Stats() != nil {
-		go s.observeStats(ctx)
+		observerDone = make(chan struct{})
+		go func() {
+			defer close(observerDone)
+			s.observeStats(ctx)
+		}()
 	}
 
 	if v := xmetrics.GetGauge(
@@ -390,6 +408,9 @@ func (s *defaultService) observeStats(ctx context.Context) {
 			if isUpdated {
 				inputBytes := st.Get(stats.KindInputBytes)
 				outputBytes := st.Get(stats.KindOutputBytes)
+				if localStats, ok := st.(*xstats.Stats); ok {
+					inputBytes, outputBytes = localStats.TakeTraffic()
+				}
 
 				evs := []observer.Event{
 					xstats.StatsEvent{
@@ -406,12 +427,7 @@ func (s *defaultService) observeStats(ctx context.Context) {
 				// 将流量累积到全局管理器，而不是立即上报
 				if outputBytes > 0 || inputBytes > 0 {
 					globalManager := GetGlobalTrafficManager()
-					globalManager.AddTraffic(s.name, int64(outputBytes), int64(inputBytes))
-
-					// 立即重置流量计数（因为已经记录到全局管理器中）
-					if xstats, ok := st.(*xstats.Stats); ok {
-						xstats.ResetTraffic(st.Get(stats.KindInputBytes)-inputBytes, st.Get(stats.KindOutputBytes)-outputBytes)
-					}
+					globalManager.addServiceTraffic(s.name, int64(outputBytes), int64(inputBytes))
 				}
 
 				if err := s.options.observer.Observe(ctx, evs); err != nil {

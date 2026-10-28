@@ -305,8 +305,31 @@ func (h *Handler) userDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Remove all of this user's realm endpoints in one apply per node while
+	// the port bindings still exist. A rejected apply leaves the user intact
+	// so deletion can be retried; offline nodes reconcile on reconnect.
+	ports, err := h.repo.ListRealmForwardPortsByUser(id)
+	if err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	nodeIDs := make([]int64, 0, len(ports))
+	override := make(map[int64]bool, len(ports))
+	for _, port := range ports {
+		nodeIDs = append(nodeIDs, port.NodeID)
+		override[port.ForwardID] = false
+	}
+	warnings, err := h.syncRealmNodes(nodeIDs, override)
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
 	if err := h.repo.DeleteUserCascade(id); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	if len(warnings) > 0 {
+		response.WriteJSON(w, response.OK(map[string]interface{}{"warnings": warnings}))
 		return
 	}
 	response.WriteJSON(w, response.OKEmpty())

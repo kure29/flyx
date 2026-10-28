@@ -199,6 +199,10 @@ func (m *Manager) swapGeoFiles(job geoJob, staged []string) {
 	m.mu.Unlock()
 	if enabled {
 		m.stopProcesses(inst)
+		if err := m.syncNft(); err != nil {
+			m.logGeo(job.kernelType, "分流数据已替换，但内核未启动: "+err.Error())
+			return
+		}
 		m.startProcesses(inst)
 		time.Sleep(startupProbeIn)
 		if !m.state(job.kernelType, false).Running {
@@ -207,6 +211,10 @@ func (m *Manager) swapGeoFiles(job geoJob, staged []string) {
 				_ = os.Rename(path+".bak", path)
 			}
 			m.stopProcesses(inst)
+			if err := m.syncNft(); err != nil {
+				m.logGeo(job.kernelType, "已恢复分流数据，但内核未启动: "+err.Error())
+				return
+			}
 			m.startProcesses(inst)
 			m.logGeo(job.kernelType, "新的分流数据无法启动内核，已恢复原来的文件")
 			return

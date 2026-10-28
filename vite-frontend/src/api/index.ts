@@ -153,7 +153,8 @@ export const getAllUsers = (pageData: UserListQuery = {}) =>
   Network.post<UserApiItem[]>("/user/list", pageData);
 export const updateUser = (data: UserMutationPayload) =>
   Network.post("/user/update", data);
-export const deleteUser = (id: number) => Network.post("/user/delete", { id });
+export const deleteUser = (id: number) =>
+  Network.post<{ warnings?: string[] }>("/user/delete", { id });
 export const getUserPackageInfo = () =>
   Network.post<UserPackageInfoApiData>("/user/package");
 

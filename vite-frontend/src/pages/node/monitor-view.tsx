@@ -6,7 +6,13 @@ import type {
   ServiceMonitorLimitsApiData,
 } from "@/api/types";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 import {
   LineChart,
   Line,
@@ -30,6 +36,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { formatTraffic } from "@/utils/traffic";
 import { EmptyHint, ListGroup, ListRow } from "@/components/page-kit";
 import {
@@ -43,6 +50,7 @@ import {
   deleteServiceMonitor,
   runServiceMonitor,
 } from "@/api";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import {
   Modal,
@@ -68,6 +76,11 @@ import {
   getDistroColor,
   parseDistroFromVersion,
 } from "@/components/distro-icon";
+import {
+  mergeMonitorResults,
+  storeMonitorHistory,
+  type MonitorResultsCache,
+} from "@/pages/node/monitor-results";
 import { useNodeRealtime } from "@/pages/node/use-node-realtime";
 
 interface MonitorViewProps {
@@ -639,6 +652,10 @@ export function MonitorView({
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(
     focusNodeId,
   );
+  const loadMetricsPending = useRef(0);
+  const loadServiceMonitorsPending = useRef(0);
+  const loadLatestMonitorResultsPending = useRef(0);
+
   const [metrics, setMetrics] = useState<NodeMetricApiItem[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsTruncated, setMetricsTruncated] = useState(false);
@@ -653,9 +670,12 @@ export function MonitorView({
   const [monitorsLoading, setMonitorsLoading] = useState(false);
   const [, setMonitorsError] = useState<string | null>(null);
   const [, setLatestResultsError] = useState<string | null>(null);
-  const [monitorResults, setMonitorResults] = useState<
-    Record<number, ServiceMonitorResultApiItem[]>
-  >({});
+  const [resultCache, setResultCache] = useState<MonitorResultsCache>({
+    latest: {},
+    chart: null,
+    modal: null,
+  });
+  const historyRequests = useRef({ chart: 0, modal: 0 });
 
   const [serviceMonitorLimits, setServiceMonitorLimits] =
     useState<ServiceMonitorLimitsApiData | null>(null);
@@ -679,6 +699,20 @@ export function MonitorView({
   const [serviceMonitorRangeMs, setServiceMonitorRangeMs] = useState(
     60 * 60 * 1000,
   );
+
+  const chartMonitorId =
+    detailNodeId == null
+      ? null
+      : ((
+          serviceMonitors.find(
+            (m) =>
+              m.id === activeServiceMonitorId &&
+              (m.nodeId === detailNodeId || m.nodeId === 0),
+          ) ??
+          serviceMonitors.find(
+            (m) => m.nodeId === detailNodeId || m.nodeId === 0,
+          )
+        )?.id ?? null);
 
   const [accessDenied, setAccessDenied] = useState<string | null>(null);
   const [resultsModalOpen, setResultsModalOpen] = useState(false);
@@ -808,15 +842,28 @@ export function MonitorView({
     }
   }, [preferredNodeId, selectedNodeId]);
 
+  const beginMetricsRequest = useLatestRequest(
+    `${selectedNodeId}:${metricsRangeMs}`,
+  );
+
   const loadMetrics = useCallback(
     async (nodeId: number, options?: { silent?: boolean }) => {
+      if (options?.silent && loadMetricsPending.current > 0) return;
+      loadMetricsPending.current += 1;
       const silent = options?.silent ?? false;
+      const isCurrent = beginMetricsRequest();
 
       if (!silent) setMetricsLoading(true);
       try {
         const end = Date.now();
         const start = end - metricsRangeMs;
-        const response = await getNodeMetrics(nodeId, start, end);
+        const response = await getNodeMetrics(nodeId, start, end).finally(
+          () => {
+            loadMetricsPending.current -= 1;
+          },
+        );
+
+        if (!isCurrent()) return;
 
         if (response.code === 0 && Array.isArray(response.data)) {
           setAccessDenied(null);
@@ -847,17 +894,27 @@ export function MonitorView({
         setMetricsError(friendlyMsg);
         if (!silent) toast.error(friendlyMsg);
       } catch {
+        if (!isCurrent()) return;
         setMetricsTruncated(false);
         if (!silent) setMetricsError("加载指标失败");
       } finally {
-        if (!silent) setMetricsLoading(false);
+        if (isCurrent()) setMetricsLoading(false);
       }
     },
-    [metricsRangeMs],
+    [metricsRangeMs, beginMetricsRequest],
   );
+
+  useEffect(() => {
+    setMetrics([]);
+    setMetricsError(null);
+    setMetricsTruncated(false);
+    setMetricsLoading(false);
+  }, [selectedNodeId, metricsRangeMs]);
 
   const loadServiceMonitors = useCallback(
     async (options?: { silent?: boolean }) => {
+      if (options?.silent && loadServiceMonitorsPending.current > 0) return;
+      loadServiceMonitorsPending.current += 1;
       const silent = options?.silent ?? false;
 
       if (!silent) setMonitorsLoading(true);
@@ -883,6 +940,7 @@ export function MonitorView({
         if (!silent) setMonitorsError("加载服务监控失败");
       } finally {
         if (!silent) setMonitorsLoading(false);
+        loadServiceMonitorsPending.current -= 1;
       }
     },
     [],
@@ -913,18 +971,31 @@ export function MonitorView({
       monitorId: number,
       options?: { rangeMs?: number; limit?: number },
     ) => {
-      try {
-        const apiOptions =
-          options?.rangeMs != null
-            ? { start: Date.now() - options.rangeMs, end: Date.now() }
-            : { limit: options?.limit ?? 100 };
-        const response = await getServiceMonitorResults(monitorId, apiOptions);
+      const target = options?.rangeMs != null ? "chart" : "modal";
+      const request = ++historyRequests.current[target];
+      const current = () => request === historyRequests.current[target];
+      const end = Date.now();
 
+      if (target === "modal") setResultsLoading(true);
+      try {
+        const response = await getServiceMonitorResults(
+          monitorId,
+          options?.rangeMs != null
+            ? { start: end - options.rangeMs, end }
+            : { limit: options?.limit ?? 100 },
+        );
+
+        if (!current()) return;
         if (response.code === 0 && response.data) {
-          setMonitorResults((prev) => ({
-            ...prev,
-            [monitorId]: response.data,
-          }));
+          setResultCache((prev) =>
+            storeMonitorHistory(
+              prev,
+              target,
+              { monitorId, ...options },
+              response.data,
+              Date.now(),
+            ),
+          );
 
           return;
         }
@@ -932,44 +1003,27 @@ export function MonitorView({
           setAccessDenied(response.msg || "暂无监控权限，请联系管理员授权");
         }
       } catch {
-        toast.error("加载监控记录失败");
+        if (current()) toast.error("加载监控记录失败");
+      } finally {
+        if (target === "modal" && current()) setResultsLoading(false);
       }
     },
     [],
   );
 
-  const loadLatestMonitorResults = useCallback(async () => {
+  const loadLatestMonitorResults = useCallback(async (silent = false) => {
+    if (silent && loadLatestMonitorResultsPending.current > 0) return;
+    loadLatestMonitorResultsPending.current += 1;
+
     try {
       const response = await getServiceMonitorLatestResults();
 
       if (response.code === 0 && Array.isArray(response.data)) {
         setAccessDenied(null);
         setLatestResultsError(null);
-        setMonitorResults((prev) => {
-          const next: Record<number, ServiceMonitorResultApiItem[]> = {
-            ...prev,
-          };
-
-          response.data.forEach((r) => {
-            const monitorId = Number(r?.monitorId ?? 0);
-
-            if (monitorId <= 0) return;
-
-            const existing = next[monitorId];
-
-            if (existing && existing.length > 1) {
-              const rest = existing.filter((x) => x.id !== r.id);
-
-              next[monitorId] = [r, ...rest];
-
-              return;
-            }
-
-            next[monitorId] = [r];
-          });
-
-          return next;
-        });
+        setResultCache((prev) =>
+          mergeMonitorResults(prev, response.data, Date.now(), true),
+        );
 
         return;
       }
@@ -983,17 +1037,14 @@ export function MonitorView({
       setLatestResultsError(response.msg || "加载最新监控结果失败");
     } catch {
       setLatestResultsError("加载最新监控结果失败");
+    } finally {
+      loadLatestMonitorResultsPending.current -= 1;
     }
   }, []);
 
   const loadResultsForModal = useCallback(async () => {
     if (!resultsMonitorId) return;
-    setResultsLoading(true);
-    try {
-      await loadMonitorResults(resultsMonitorId, { limit: resultsLimit });
-    } finally {
-      setResultsLoading(false);
-    }
+    await loadMonitorResults(resultsMonitorId, { limit: resultsLimit });
   }, [loadMonitorResults, resultsLimit, resultsMonitorId]);
 
   useEffect(() => {
@@ -1002,14 +1053,15 @@ export function MonitorView({
     void loadLatestMonitorResults();
   }, [loadLatestMonitorResults, loadServiceMonitorLimits, loadServiceMonitors]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void loadServiceMonitors({ silent: true });
-      void loadLatestMonitorResults();
-    }, 5_000);
-
-    return () => window.clearInterval(timer);
-  }, [loadLatestMonitorResults, loadServiceMonitors]);
+  useVisiblePolling(
+    useCallback(async () => {
+      await Promise.all([
+        loadServiceMonitors({ silent: true }),
+        loadLatestMonitorResults(true),
+      ]);
+    }, [loadLatestMonitorResults, loadServiceMonitors]),
+    5_000,
+  );
 
   useEffect(() => {
     if (selectedNodeId) {
@@ -1017,47 +1069,33 @@ export function MonitorView({
     }
   }, [selectedNodeId, loadMetrics]);
 
-  useEffect(() => {
-    if (!selectedNodeId) return;
-    const timer = window.setInterval(() => {
-      void loadMetrics(selectedNodeId, { silent: true });
-    }, 15_000);
-
-    return () => window.clearInterval(timer);
-  }, [selectedNodeId, loadMetrics]);
+  useVisiblePolling(
+    useCallback(async () => {
+      if (selectedNodeId) await loadMetrics(selectedNodeId, { silent: true });
+    }, [selectedNodeId, loadMetrics]),
+    15_000,
+  );
 
   useEffect(() => {
-    if (!resultsModalOpen || !resultsMonitorId) return;
-    void loadResultsForModal();
+    if (resultsModalOpen && resultsMonitorId) void loadResultsForModal();
+    else setResultsLoading(false);
+
+    return () => {
+      historyRequests.current.modal += 1;
+    };
   }, [resultsModalOpen, resultsMonitorId, resultsLimit, loadResultsForModal]);
 
-  // Auto-load results for the resolved default monitor when entering detail view
   useEffect(() => {
-    if (!detailNodeId) return;
-    if (activeServiceMonitorId) return; // user already selected one
-    // Find the first monitor belonging to this node (or panel-level)
-    const firstMonitor = serviceMonitors.find(
-      (m) => m.nodeId === detailNodeId || m.nodeId === 0,
-    );
-
-    if (
-      firstMonitor &&
-      (!monitorResults[firstMonitor.id] ||
-        monitorResults[firstMonitor.id].length <= 1)
-    ) {
-      void loadMonitorResults(firstMonitor.id, {
+    setResultCache((prev) => ({ ...prev, chart: null }));
+    if (chartMonitorId)
+      void loadMonitorResults(chartMonitorId, {
         rangeMs: serviceMonitorRangeMs,
       });
-    }
-  }, [detailNodeId, serviceMonitors]);
 
-  // Reload results for the active service monitor chart when time range changes
-  useEffect(() => {
-    if (!activeServiceMonitorId) return;
-    void loadMonitorResults(activeServiceMonitorId, {
-      rangeMs: serviceMonitorRangeMs,
-    });
-  }, [activeServiceMonitorId, serviceMonitorRangeMs, loadMonitorResults]);
+    return () => {
+      historyRequests.current.chart += 1;
+    };
+  }, [chartMonitorId, serviceMonitorRangeMs, loadMonitorResults]);
 
   const chartData = useMemo(
     () =>
@@ -1220,21 +1258,9 @@ export function MonitorView({
         if (response.data) {
           const latest = response.data;
 
-          setMonitorResults((prev) => {
-            const next = { ...prev };
-            const existing = next[id];
-
-            if (existing && existing.length > 1) {
-              next[id] = [
-                latest,
-                ...existing.filter((x) => x.id !== latest.id),
-              ];
-            } else {
-              next[id] = [latest];
-            }
-
-            return next;
-          });
+          setResultCache((prev) =>
+            mergeMonitorResults(prev, [latest], Date.now()),
+          );
         }
 
         void loadLatestMonitorResults();
@@ -1259,9 +1285,7 @@ export function MonitorView({
   const getLatestResult = (
     monitorId: number,
   ): ServiceMonitorResultApiItem | null => {
-    const results = monitorResults[monitorId];
-
-    return results && results.length > 0 ? results[0] : null;
+    return resultCache.latest[monitorId] ?? null;
   };
 
   const resultsMonitor =
@@ -1269,7 +1293,10 @@ export function MonitorView({
       ? serviceMonitors.find((m) => m.id === resultsMonitorId) || null
       : null;
   const modalResults =
-    resultsMonitorId != null ? monitorResults[resultsMonitorId] || [] : [];
+    resultCache.modal?.monitorId === resultsMonitorId &&
+    resultCache.modal?.limit === resultsLimit
+      ? resultCache.modal.results
+      : [];
 
   const resolveMonitorIntervalSec = useCallback(
     (monitor: ServiceMonitorApiItem) => {
@@ -1617,10 +1644,11 @@ export function MonitorView({
               ? isResultStale(resolvedActiveMonitor, activeLatestResult)
               : false;
             const activeResults =
-              resolvedActiveMonitorId != null
-                ? monitorResults[resolvedActiveMonitorId] || []
+              resultCache.chart?.monitorId === resolvedActiveMonitorId &&
+              resultCache.chart?.rangeMs === serviceMonitorRangeMs
+                ? resultCache.chart.results
                 : [];
-            const activeLatencyData = [...activeResults].map((r) => ({
+            const activeLatencyData = [...activeResults].reverse().map((r) => ({
               time: formatTimestamp(r.timestamp, serviceMonitorRangeMs),
               latency: r.success === 1 ? r.latencyMs : null,
               success: r.success,
@@ -1697,15 +1725,6 @@ export function MonitorView({
                               variant={isActive ? "solid" : "flat"}
                               onPress={() => {
                                 setActiveServiceMonitorId(monitor.id);
-                                // Load results for this monitor if not loaded
-                                if (
-                                  !monitorResults[monitor.id] ||
-                                  monitorResults[monitor.id].length <= 1
-                                ) {
-                                  void loadMonitorResults(monitor.id, {
-                                    rangeMs: serviceMonitorRangeMs,
-                                  });
-                                }
                               }}
                             >
                               <div

@@ -96,17 +96,19 @@ func TestCaptchaVerifyLoginContract(t *testing.T) {
 		assertCodeMsg(t, resp, -1, "验证码校验失败")
 	})
 
-	t.Run("whmcs api client bypasses captcha", func(t *testing.T) {
-		body := bytes.NewBufferString(`{"username":"admin_user","password":"admin_user","captchaId":""}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/login", body)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-FLVX-API-Client", "whmcs")
-		resp := httptest.NewRecorder()
+	for _, client := range []string{"whmcs", "whmcs-module", " WHMCS ", "unknown-client"} {
+		t.Run("client header cannot bypass captcha/"+client, func(t *testing.T) {
+			body := bytes.NewBufferString(`{"username":"admin_user","password":"admin_user","captchaId":""}`)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/user/login", body)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-FLVX-API-Client", client)
+			resp := httptest.NewRecorder()
 
-		router.ServeHTTP(resp, req)
+			router.ServeHTTP(resp, req)
 
-		assertCode(t, resp, 0)
-	})
+			assertCodeMsg(t, resp, -1, "验证码校验失败")
+		})
+	}
 
 	t.Run("captcha token is one-time and consumed by login", func(t *testing.T) {
 		if strings.TrimSpace(verifiedToken) == "" {
@@ -116,6 +118,7 @@ func TestCaptchaVerifyLoginContract(t *testing.T) {
 		loginBody := bytes.NewBufferString(`{"username":"admin_user","password":"admin_user","captchaId":"` + verifiedToken + `"}`)
 		loginReq := httptest.NewRequest(http.MethodPost, "/api/v1/user/login", loginBody)
 		loginReq.Header.Set("Content-Type", "application/json")
+		loginReq.Header.Set("X-FLVX-API-Client", "whmcs")
 		loginResp := httptest.NewRecorder()
 		router.ServeHTTP(loginResp, loginReq)
 		assertCode(t, loginResp, 0)
@@ -123,6 +126,7 @@ func TestCaptchaVerifyLoginContract(t *testing.T) {
 		replayBody := bytes.NewBufferString(`{"username":"admin_user","password":"admin_user","captchaId":"` + verifiedToken + `"}`)
 		replayReq := httptest.NewRequest(http.MethodPost, "/api/v1/user/login", replayBody)
 		replayReq.Header.Set("Content-Type", "application/json")
+		replayReq.Header.Set("X-FLVX-API-Client", "whmcs")
 		replayResp := httptest.NewRecorder()
 		router.ServeHTTP(replayResp, replayReq)
 		assertCodeMsg(t, replayResp, -1, "验证码校验失败")

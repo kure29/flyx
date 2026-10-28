@@ -39,6 +39,11 @@ type cleanupAgent struct {
 
 func newCleanupAgent(t *testing.T) *cleanupAgent {
 	t.Helper()
+	return newCleanupAgentWithReply(t, nil)
+}
+
+func newCleanupAgentWithReply(t *testing.T, reply func(cleanupAgentCommand) ws.CommandResult) *cleanupAgent {
+	t.Helper()
 	r, err := repo.Open(filepath.Join(t.TempDir(), "cleanup.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +102,11 @@ func newCleanupAgent(t *testing.T) *cleanupAgent {
 			a.mu.Lock()
 			a.commands = append(a.commands, command)
 			a.mu.Unlock()
-			if err := conn.WriteJSON(map[string]interface{}{"type": command.Type, "requestId": command.RequestID, "success": true}); err != nil {
+			result := ws.CommandResult{Success: true}
+			if reply != nil {
+				result = reply(command)
+			}
+			if err := conn.WriteJSON(map[string]interface{}{"type": command.Type, "requestId": command.RequestID, "success": result.Success, "message": result.Message, "data": result.Data}); err != nil {
 				return
 			}
 		}
