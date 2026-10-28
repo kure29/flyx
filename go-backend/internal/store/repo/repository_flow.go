@@ -73,7 +73,7 @@ func (r *Repository) GetFlowUploadForwardMetas(forwardIDs []int64) (map[int64]Fl
 	for _, chunk := range chunkFlowUploadForwardIDs(ids) {
 		var rows []row
 		err := r.db.Table("forward AS f").
-			Select("f.id AS forward_id, f.user_id AS user_id, COALESCE(ut.id, 0) AS user_tunnel_id, f.tunnel_id AS tunnel_id, t.traffic_ratio AS traffic_ratio, t.flow AS tunnel_flow").
+			Select("f.id AS forward_id, f.user_id AS user_id, COALESCE(ut.id, 0) AS user_tunnel_id, f.tunnel_id AS tunnel_id, COALESCE(t.traffic_ratio, 1) AS traffic_ratio, COALESCE(t.flow, 1) AS tunnel_flow").
 			Joins("LEFT JOIN tunnel t ON t.id = f.tunnel_id").
 			Joins("LEFT JOIN user_tunnel ut ON ut.user_id = f.user_id AND ut.tunnel_id = f.tunnel_id").
 			Where("f.id IN ?", chunk).
@@ -82,12 +82,6 @@ func (r *Repository) GetFlowUploadForwardMetas(forwardIDs []int64) (map[int64]Fl
 			return nil, err
 		}
 		for _, row := range rows {
-			if row.TunnelFlow <= 0 {
-				row.TunnelFlow = 1
-			}
-			if row.TrafficRatio <= 0 {
-				row.TrafficRatio = 1
-			}
 			out[row.ForwardID] = FlowUploadForwardMeta{
 				ForwardID:    row.ForwardID,
 				UserID:       row.UserID,

@@ -75,6 +75,11 @@ func (h *Handler) buildFlowUploadBatch(items []flowItem, metas map[int64]repo.Fl
 		raw.bytesOut += item.U
 		batch.forwardTraffic[forwardID] = raw
 
+		if !validTunnelBilling(meta.TunnelFlow, meta.TrafficRatio) {
+			log.Printf("flow billing skipped forward_id=%d: invalid tunnel billing configuration", forwardID)
+			continue
+		}
+
 		// flow selects the billable directions; traffic_ratio is the multiplier.
 		scaledIn := int64(float64(item.D) * meta.TrafficRatio)
 		var scaledOut int64
