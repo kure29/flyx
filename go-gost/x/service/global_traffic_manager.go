@@ -49,10 +49,16 @@ func GetGlobalTrafficManager() *GlobalTrafficManager {
 
 // AddTraffic 添加流量到指定服务（由各服务调用）
 func (m *GlobalTrafficManager) AddTraffic(serviceName string, upBytes, downBytes int64) {
-	if upBytes == 0 && downBytes == 0 {
+	if !registry.ServiceRegistry().IsRegistered(serviceName) {
 		return
 	}
-	if !registry.ServiceRegistry().IsRegistered(serviceName) {
+	m.addServiceTraffic(serviceName, upBytes, downBytes)
+}
+
+// addServiceTraffic accepts samples from a service's own lifetime, including
+// connections draining after its listener has been unregistered.
+func (m *GlobalTrafficManager) addServiceTraffic(serviceName string, upBytes, downBytes int64) {
+	if upBytes == 0 && downBytes == 0 {
 		return
 	}
 

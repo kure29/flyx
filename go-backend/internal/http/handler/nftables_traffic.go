@@ -109,8 +109,27 @@ func (h *Handler) accountForwardCounterSamples(nodeID int64, samples []runtimenf
 			log.Printf("forward counter accounting failed op=load_flow_metas node_id=%d err=%v", nodeID, err)
 			return
 		}
-		if missingForwardID, ok := firstNftDeltaMissingMeta(deltas, metas); ok {
-			log.Printf("forward counter accounting skipped state advance op=missing_flow_meta node_id=%d forward_id=%d", nodeID, missingForwardID)
+		// A deleted rule can remain on the node after a failed cleanup. Keep
+		// its baseline for a later retry without blocking unrelated forwards.
+		missing := make(map[int64]struct{})
+		keptDeltas := deltas[:0]
+		for _, delta := range deltas {
+			if _, exists := metas[delta.ForwardID]; !exists {
+				missing[delta.ForwardID] = struct{}{}
+				log.Printf("forward counter accounting skipped state advance op=missing_flow_meta node_id=%d forward_id=%d", nodeID, delta.ForwardID)
+				continue
+			}
+			keptDeltas = append(keptDeltas, delta)
+		}
+		deltas = keptDeltas
+		keptStates := newStates[:0]
+		for _, state := range newStates {
+			if _, absent := missing[state.ForwardID]; !absent {
+				keptStates = append(keptStates, state)
+			}
+		}
+		newStates = keptStates
+		if len(newStates) == 0 {
 			return
 		}
 	}
@@ -176,18 +195,6 @@ func firstNftBatchMissingDelta(deltas []nftTrafficDelta, batch flowUploadBatch) 
 			if _, ok := flowSeen[forwardID]; !ok {
 				return forwardID, true
 			}
-		}
-	}
-	return 0, false
-}
-
-func firstNftDeltaMissingMeta(deltas []nftTrafficDelta, metas map[int64]repo.FlowUploadForwardMeta) (int64, bool) {
-	for _, delta := range deltas {
-		if delta.ForwardID <= 0 {
-			continue
-		}
-		if _, ok := metas[delta.ForwardID]; !ok {
-			return delta.ForwardID, true
 		}
 	}
 	return 0, false
@@ -328,13 +335,16 @@ func buildNftFlowUploadBatch(deltas []nftTrafficDelta, metas map[int64]repo.Flow
 			continue
 		}
 
-		scaledIn, ok := scaleNftTrafficBytes(delta.BytesIn, meta.TrafficRatio, meta.TunnelFlow)
+		scaledIn, ok := scaleNftTrafficBytes(delta.BytesIn, meta.TrafficRatio)
 		if !ok {
 			continue
 		}
-		scaledOut, ok := scaleNftTrafficBytes(delta.BytesOut, meta.TrafficRatio, meta.TunnelFlow)
-		if !ok {
-			continue
+		var scaledOut int64
+		if meta.TunnelFlow != 1 {
+			scaledOut, ok = scaleNftTrafficBytes(delta.BytesOut, meta.TrafficRatio)
+			if !ok {
+				continue
+			}
 		}
 		if scaledIn > math.MaxInt64-scaledOut {
 			continue
@@ -385,8 +395,8 @@ func buildNftFlowUploadBatch(deltas []nftTrafficDelta, metas map[int64]repo.Flow
 	return batch
 }
 
-func scaleNftTrafficBytes(bytes int64, ratio float64, tunnelFlow int64) (int64, bool) {
-	if bytes < 0 || ratio < 0 || tunnelFlow < 0 {
+func scaleNftTrafficBytes(bytes int64, ratio float64) (int64, bool) {
+	if bytes < 0 || ratio < 0 {
 		return 0, false
 	}
 	var scaled int64
@@ -399,8 +409,5 @@ func scaleNftTrafficBytes(bytes int64, ratio float64, tunnelFlow int64) (int64, 
 		}
 		scaled = int64(scaledFloat)
 	}
-	if tunnelFlow != 0 && scaled > math.MaxInt64/tunnelFlow {
-		return 0, false
-	}
-	return scaled * tunnelFlow, true
+	return scaled, true
 }

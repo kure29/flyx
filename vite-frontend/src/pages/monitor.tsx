@@ -1,9 +1,10 @@
 import type { MonitorNodeApiItem } from "@/api/types";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Navigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { AnimatedPage } from "@/components/animated-page";
 import { PageHeader, PageTabs, PageToolbar } from "@/components/page-kit";
 import { useViewMode } from "@/components/view-mode";
@@ -104,8 +105,13 @@ function MonitorOverview() {
     enabled: true,
   });
 
+  const loadNodesPending = useRef(0);
+
   const loadNodes = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
+
+    if (silent && loadNodesPending.current > 0) return;
+    loadNodesPending.current += 1;
 
     if (!silent) setNodesLoading(true);
     try {
@@ -129,6 +135,7 @@ function MonitorOverview() {
     } catch {
       if (!silent) toast.error("加载服务器失败");
     } finally {
+      loadNodesPending.current -= 1;
       if (!silent) setNodesLoading(false);
     }
   }, []);
@@ -137,13 +144,10 @@ function MonitorOverview() {
     void loadNodes();
   }, [loadNodes]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void loadNodes({ silent: true });
-    }, 30_000);
-
-    return () => window.clearInterval(timer);
-  }, [loadNodes]);
+  useVisiblePolling(
+    useCallback(() => loadNodes({ silent: true }), [loadNodes]),
+    30_000,
+  );
 
   const nodeMap = useMemo(() => {
     const list: MonitorNode[] = nodes

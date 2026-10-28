@@ -18,7 +18,7 @@ func TestBuildFlowUploadBatchAggregatesForwardQuotaPeerShareAndCleanupTargets(t 
 			UserTunnelID: 10,
 			TunnelID:     1,
 			TrafficRatio: 2,
-			TunnelFlow:   3,
+			TunnelFlow:   2,
 		},
 	}
 
@@ -36,11 +36,11 @@ func TestBuildFlowUploadBatchAggregatesForwardQuotaPeerShareAndCleanupTargets(t 
 	if delta.ForwardID != 20 || delta.UserID != 2 || delta.UserTunnelID != 10 {
 		t.Fatalf("unexpected flow delta identity: %#v", delta)
 	}
-	if delta.InFlow != 480 || delta.OutFlow != 660 {
-		t.Fatalf("expected scaled flow in=480 out=660, got in=%d out=%d", delta.InFlow, delta.OutFlow)
+	if delta.InFlow != 160 || delta.OutFlow != 220 {
+		t.Fatalf("expected scaled flow in=160 out=220, got in=%d out=%d", delta.InFlow, delta.OutFlow)
 	}
-	if batch.quotaUsage[2] != 1140 {
-		t.Fatalf("expected quota usage 1140, got %d", batch.quotaUsage[2])
+	if batch.quotaUsage[2] != 380 {
+		t.Fatalf("expected quota usage 380, got %d", batch.quotaUsage[2])
 	}
 	if len(batch.policyTargets) != 1 {
 		t.Fatalf("expected 1 policy target, got %d", len(batch.policyTargets))

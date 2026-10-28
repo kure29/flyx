@@ -24,11 +24,11 @@ func TestRunStatisticsFlowJobTracksIncrementAndPrunes(t *testing.T) {
 		t.Fatalf("seed user flow: %v", err)
 	}
 
-	if err := r.DB().Exec(`INSERT INTO statistics_flow(user_id, flow, total_flow, time, created_time) VALUES(1, 250, 250, '11:00', ?)`, now.Add(-time.Hour).UnixMilli()).Error; err != nil {
-		t.Fatalf("seed recent statistics row: %v", err)
-	}
 	if err := r.DB().Exec(`INSERT INTO statistics_flow(user_id, flow, total_flow, time, created_time) VALUES(1, 10, 10, '00:00', ?)`, now.Add(-49*time.Hour).UnixMilli()).Error; err != nil {
 		t.Fatalf("seed stale statistics row: %v", err)
+	}
+	if err := r.DB().Exec(`INSERT INTO statistics_flow(user_id, flow, total_flow, time, created_time) VALUES(1, 250, 250, '11:00', ?)`, now.Add(-time.Hour).UnixMilli()).Error; err != nil {
+		t.Fatalf("seed recent statistics row: %v", err)
 	}
 
 	h.runStatisticsFlowJob(now)

@@ -364,7 +364,13 @@ func (h *Handler) applyKernelsForInbounds(ids []int64) error {
 	var firstErr error
 	for _, id := range ids {
 		row, err := h.repo.GetNodeInbound(id)
-		if err != nil || row == nil || isExternalInbound(row) || seen[row.KernelID] {
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if row == nil || isExternalInbound(row) || seen[row.KernelID] {
 			continue
 		}
 		seen[row.KernelID] = true
@@ -406,6 +412,9 @@ func (h *Handler) syncSubscriptions(now time.Time) {
 		}
 		if err := h.applyKernelsForInbounds(c.inboundIDs(s)); err != nil {
 			log.Printf("subscription %d kernel push failed: %v", s.ID, err)
+			// Keep the last acknowledged state so the next sync retries every
+			// affected kernel, including a partially successful multi-node apply.
+			continue
 		}
 		_ = h.repo.UpdateSubscriptionApplied(s.ID, active)
 	}
