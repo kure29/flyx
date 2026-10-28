@@ -39,11 +39,12 @@ docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent \
 
 ## 用 Docker Compose 安装
 
-服务器已安装 Docker Compose 时，在安装窗口切到 **Docker Compose**。生成的命令会检查并创建 `/opt/docker`，把配置写到 `/opt/docker/docker-compose.yaml`，然后执行 `docker compose` 启动容器。
+服务器已安装 Docker Compose 时，在安装窗口切到 **Docker Compose**。生成的命令会检查并创建 `/opt/docker/flyx-agent`，把配置写到 `/opt/docker/flyx-agent/docker-compose.yaml` 并设置为 `600` 权限，然后执行 `docker compose` 启动容器。
 
 - 重复执行安装命令会更新 Compose 配置并重建容器
+- 启动前会检查并移除已存在的 `flyx-agent` 容器，避免容器名冲突
 - 需要服务器调优时，在安装窗口打开 **服务器调优**，Compose 配置会加入 `privileged: true`
-- Docker 与 Docker Compose 使用相同的容器名和数据目录，不要同时运行两套，也不要和脚本安装的 agent 同时运行
+- Docker Compose 使用 `flyx-agent` 容器名和 `/etc/flux_agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
 
 ## 服务器调优
 

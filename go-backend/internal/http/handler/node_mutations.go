@@ -421,12 +421,12 @@ func dockerComposeInstallCommand(version, panelAddr, secret string, privileged b
 	if privileged {
 		privilegedLine = "    privileged: true\n"
 	}
-	return fmt.Sprintf(`[ -d /opt/docker ] || mkdir -p /opt/docker
-cat > /opt/docker/docker-compose.yaml <<'EOF'
+	return fmt.Sprintf(`[ -d /opt/docker/flyx-agent ] || mkdir -p /opt/docker/flyx-agent
+cat > /opt/docker/flyx-agent/docker-compose.yaml <<'EOF'
 services:
   flux-agent:
     image: ghcr.io/%s/flux-agent:%s
-    container_name: flux_agent
+    container_name: flyx-agent
     restart: unless-stopped
     network_mode: host
     cap_add:
@@ -437,7 +437,11 @@ services:
       FLUX_AGENT_ADDR: %q
       FLUX_AGENT_SECRET: %q
 EOF
-docker compose -f /opt/docker/docker-compose.yaml up -d`,
+chmod 600 /opt/docker/flyx-agent/docker-compose.yaml
+if docker container inspect flyx-agent >/dev/null 2>&1; then
+  docker rm -f flyx-agent >/dev/null
+fi
+docker compose -f /opt/docker/flyx-agent/docker-compose.yaml up -d`,
 		owner, version, privilegedLine, panelAddr, secret)
 }
 

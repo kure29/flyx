@@ -151,7 +151,8 @@ export function InstallCommandModal({
                         拉取新镜像后重建容器也会升级。
                       </li>
                       <li>
-                        NET_ADMIN 用于 nftables 流量统计和白名单；开启服务器调优会额外加入
+                        NET_ADMIN 用于 nftables
+                        流量统计和白名单；开启服务器调优会额外加入
                         --privileged。
                       </li>
                     </ul>
@@ -161,22 +162,22 @@ export function InstallCommandModal({
                   <div className="space-y-3 pt-2">
                     <p className="text-sm text-default-600">
                       在已安装 Docker Compose 的服务器上执行，会写入
-                      /opt/docker/docker-compose.yaml：
+                      /opt/docker/flyx-agent/docker-compose.yaml：
                     </p>
                     {privilegedControl}
                     {commandBox}
                     <ul className="list-disc space-y-1 pl-5 text-xs text-default-500">
                       <li>
-                        自动检查并创建 /opt/docker，然后执行 docker
-                        compose；重复执行会更新配置并重建容器。
+                        自动检查并创建 /opt/docker/flyx-agent，配置写入后设置
+                        600 权限；启动前会检查并移除已存在的 flyx-agent 容器。
                       </li>
                       <li>
                         使用 host 网络，数据保存在宿主机 /etc/flux_agent；
-                        不要和一键脚本装的 agent 同时运行。
+                        不要和 Docker 模式或一键脚本装的 agent 同时运行。
                       </li>
                       <li>
-                        Compose 文件包含节点密钥；开启服务器调优会写入 privileged:
-                        true。
+                        Compose 文件包含节点密钥；开启服务器调优会写入
+                        privileged: true。
                       </li>
                     </ul>
                   </div>
