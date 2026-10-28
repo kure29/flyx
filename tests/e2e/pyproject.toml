@@ -1,5 +1,5 @@
 [project]
-name = "flvx-e2e-tests"
+name = "flyx-e2e-tests"
 version = "0.1.0"
 description = "E2E tests for FLYX Panel"
 requires-python = ">=3.11"

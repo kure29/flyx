@@ -15,19 +15,19 @@ agent 装在要搭节点或当中转的服务器上：连接面板，负责转�
 
 ## 用 Docker 安装
 
-服务器已装好 Docker 时，可以用容器运行 agent。在安装窗口切到 **Docker**，复制的命令形如：
+服务器已装好 Docker 时，可以用容器运行 agent。在安装窗口切到 **Docker**，使用面板生成的命令可识别旧容器并保留其挂载。以下命令仅用于全新安装：
 
 ```bash
-docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent \
+docker run -d --name flyx-agent \
   --restart unless-stopped --network host --cap-add NET_ADMIN \
-  -v /etc/flux_agent:/etc/flux_agent \
-  -e FLUX_AGENT_ADDR=<面板地址> -e FLUX_AGENT_SECRET=<密钥> \
-  ghcr.io/kure29/flux-agent:<版本>
+  -v /etc/flyx-agent:/etc/flyx-agent \
+  -e FLYX_AGENT_ADDR=<面板地址> -e FLYX_AGENT_SECRET=<密钥> \
+  ghcr.io/kure29/flyx-agent:<版本>
 ```
 
 - `--network host`：转发和入站要按需监听任意端口，必须用宿主机网络
 - `--cap-add NET_ADMIN`：入站流量统计和白名单要用 nftables
-- `/etc/flux_agent`：配置、下载的内核和 agent 程序都在这里，删掉容器重建不会丢
+- `/etc/flyx-agent`：配置、下载的内核和 agent 程序都在这里，删掉容器重建不会丢
 - `--restart unless-stopped`：不能去掉，面板一键升级靠它把容器拉起来
 - 不要和一键脚本安装的 agent 同时运行，二者会抢端口；换成 Docker 前先在原机器上卸载脚本版
 
@@ -35,7 +35,7 @@ docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent \
 
 **调优**：容器默认改不了宿主机内核参数。在安装窗口的 Docker 页打开 **服务器调优** 开关，命令会额外加入 `--privileged`；宿主机重启后需要在面板重新应用一次。
 
-**查看日志**：`docker logs -f flux_agent`
+**查看日志**：新安装使用 `docker logs -f flyx-agent`；旧安装继续使用 `docker logs -f flux_agent`。旧目录 `/etc/flux_agent` 和服务名在升级后仍会保留，详见 [命名兼容](./upgrade.md#flyx-命名兼容)。
 
 ## 用 Docker Compose 安装
 
@@ -43,8 +43,9 @@ docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent \
 
 - 重复执行安装命令会更新 Compose 配置并重建容器
 - 启动前会检查并移除已存在的 `flyx-agent` 容器，避免容器名冲突
+- 检测到旧版 `flux_agent` 容器时会停止，请先通过 Docker 安装方式完成迁移，避免新旧 agent 同时占用 host 网络
 - 需要服务器调优时，在安装窗口打开 **服务器调优**，Compose 配置会加入 `privileged: true`
-- Docker Compose 使用 `flyx-agent` 容器名和 `/etc/flux_agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
+- Docker Compose 使用 `flyx-agent` 容器名和 `/etc/flyx-agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
 
 ## 服务器调优
 
@@ -110,7 +111,7 @@ Alpine Linux 最小化安装若未包含 `curl`，可使用系统自带的 `wget
 wget -O install.sh https://github.com/kure29/flyx/releases/latest/download/install.sh && chmod +x install.sh && ./install.sh
 ```
 
-脚本会在 Alpine 上自动安装 Bash、`curl` 和 CA 证书，并使用 OpenRC 注册、启动和管理 `flux_agent` 服务；其他受支持的 Linux 发行版继续使用 systemd。
+脚本会在 Alpine 上自动安装 Bash、`curl` 和 CA 证书，并使用 OpenRC 注册、启动和管理 `flyx-agent` 服务；其他受支持的 Linux 发行版继续使用 systemd。
 
 **安装过程中会提示输入：**
 - **服务器地址**: 面板端的通信地址（通常是 `http://<面板IP>:<后端端口>`，例如 `http://1.2.3.4:6365`）。
@@ -125,9 +126,9 @@ wget -O install.sh https://github.com/kure29/flyx/releases/latest/download/insta
 
 ## 验证安装
 安装完成后，服务会自动启动。
-- systemd 查看状态: `systemctl status flux_agent`
-- Alpine/OpenRC 查看状态: `rc-service flux_agent status`
-- Docker 查看状态: `docker ps -f name=flux_agent`
+- systemd 查看状态: `systemctl status flyx-agent`
+- Alpine/OpenRC 查看状态: `rc-service flyx-agent status`
+- Docker 查看状态: `docker ps -f name=flyx-agent`
 - 回到面板 **服务器** 页，该服务器状态应显示为 **在线**
 
 服务器离线的排查见 [常见问题](./faq.md#服务器显示离线)。

@@ -46,7 +46,7 @@ func TestAutomaticSingboxDNSWithoutRouteRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := renderJSONString(t, r.Files[0].Content)
-	if cfg["route"].(map[string]interface{})["default_domain_resolver"] != "flvx-local-resolver" {
+	if cfg["route"].(map[string]interface{})["default_domain_resolver"] != "flyx-local-resolver" {
 		t.Fatal("an unmarked direct outbound still needs the explicit resolver")
 	}
 }

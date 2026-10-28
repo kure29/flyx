@@ -61,7 +61,7 @@ func TestChainSingboxImportedProxy(t *testing.T) {
 	}
 	route := cfg["route"].(map[string]interface{})
 	got := strings.Join(ruleOutbounds(route["rules"].([]interface{}), "outbound"), ",")
-	if got != "via-1-u7,via-1,flvx-u7" || route["final"] != "direct" {
+	if got != "via-1-u7,via-1,flyx-u7" || route["final"] != "direct" {
 		t.Fatalf("rule order: %s", got)
 	}
 }
@@ -106,7 +106,7 @@ func TestChainXraySelfBuiltTargets(t *testing.T) {
 		t.Fatalf("reality target: %v", r)
 	}
 	rules := cfg["routing"].(map[string]interface{})["rules"].([]interface{})
-	if got := strings.Join(ruleOutbounds(rules, "outboundTag"), ","); got != "via-1-u7,via-1,via-2,flvx-u7" {
+	if got := strings.Join(ruleOutbounds(rules, "outboundTag"), ","); got != "via-1-u7,via-1,via-2,flyx-u7" {
 		t.Fatalf("rule order: %s", got)
 	}
 }

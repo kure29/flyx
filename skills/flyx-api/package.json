@@ -1,0 +1,46 @@
+{
+  "name": "@flyx/skill-api",
+  "version": "2.1.9-rc4",
+  "description": "Skill for AI assistants to operate FLYX panel via REST API. Supports OpenCode, OpenClaw, Claude Code.",
+  "keywords": [
+    "opencode",
+    "openclaw",
+    "claude-code",
+    "skill",
+    "flyx",
+    "api",
+    "traffic-forwarding",
+    "gost"
+  ],
+  "license": "MIT",
+  "author": "FLVX Team",
+  "files": [
+    "SKILL.md",
+    "references/**/*",
+    "install.cjs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kure29/flyx.git",
+    "directory": "skills/flyx-api"
+  },
+  "bugs": {
+    "url": "https://github.com/kure29/flyx/issues"
+  },
+  "homepage": "https://github.com/kure29/flyx/tree/main/skills/flyx-api#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "opencode": {
+    "skill": true,
+    "installTo": "~/.agents/skills/flyx-api"
+  },
+  "scripts": {
+    "postinstall": "node install.cjs link",
+    "preuninstall": "node install.cjs unlink",
+    "link": "node install.cjs link",
+    "unlink": "node install.cjs unlink",
+    "test": "node --test install.test.cjs"
+  }
+}

@@ -315,7 +315,7 @@ export default function ForwardPage({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importData, setImportData] = useState("");
   const [importLoading, setImportLoading] = useState(false);
-  const [importFormat, setImportFormat] = useState<ImportFormat>("flvx");
+  const [importFormat, setImportFormat] = useState<ImportFormat>("flyx");
   const [selectedTunnelForImport, setSelectedTunnelForImport] = useState<
     number | null
   >(null);

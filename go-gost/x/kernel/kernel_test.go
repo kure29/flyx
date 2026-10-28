@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,12 +66,16 @@ func stubNft(t *testing.T) *nftRecorder {
 		case joined == "-f -":
 			rec.scripts = append(rec.scripts, stdin)
 			return nil, nil
-		case strings.HasPrefix(joined, "list table"):
+		case joined == "list tables":
 			if len(rec.scripts) == 0 {
-				return nil, errors.New("no table")
+				return nil, nil
 			}
-			return nil, nil
-		case strings.HasPrefix(joined, "-j list counters"):
+			table := nftTable
+			if strings.Contains(rec.scripts[len(rec.scripts)-1], legacyNftTable) {
+				table = legacyNftTable
+			}
+			return []byte("table inet " + table + "\n"), nil
+		case strings.HasPrefix(joined, "list counters"):
 			return []byte(rec.listOut), nil
 		}
 		return nil, fmt.Errorf("unexpected nft call %q", joined)
@@ -204,7 +207,20 @@ func TestManagerLifecycle(t *testing.T) {
 		t.Fatalf("disabled kernel still running: %+v %v", st, err)
 	}
 
-	rec.listOut = `{"nftables":[{"metainfo":{}},{"counter":{"family":"inet","name":"in_7_tcp","table":"flvx_kernel","packets":3,"bytes":1200}},{"counter":{"family":"inet","name":"out_7_tcp","table":"flvx_kernel","bytes":99}},{"counter":{"name":"in_9_tcp","table":"other","bytes":5}}]}`
+	rec.listOut = `table inet flvx_kernel {
+	counter in_7_tcp {
+		packets 3 bytes 1200
+	}
+	counter out_7_tcp {
+		packets 1 bytes 99
+	}
+}
+table inet other {
+	counter in_9_tcp {
+		packets 1 bytes 5
+	}
+}
+`
 	status := m.Status("xray")
 	if !status.NftAvailable || len(status.Counters) != 2 || status.Epoch == "" {
 		t.Fatalf("status counters: %+v", status)
@@ -310,7 +326,7 @@ func TestNftScriptOnlyCounts(t *testing.T) {
 	if strings.Index(script, "in_1_tcp") > strings.Index(script, "in_2_tcp") {
 		t.Fatal("rules must be sorted for a stable signature")
 	}
-	if !strings.HasPrefix(script, "table inet flvx_kernel {}\ndelete table inet flvx_kernel\n") {
+	if !strings.HasPrefix(script, "table inet flyx_kernel {}\ndelete table inet flyx_kernel\n") {
 		t.Fatalf("script must recreate the table atomically: %s", script)
 	}
 }
@@ -575,9 +591,18 @@ func TestNftScriptUserMarks(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, script)
 		}
 	}
-	raw := `{"nftables":[{"counter":{"name":"uup_7","table":"flvx_kernel","bytes":10}},
-		{"counter":{"name":"udown_7","table":"flvx_kernel","bytes":20}},
-		{"counter":{"name":"in_1_tcp","table":"flvx_kernel","bytes":5}}]}`
+	raw := `table inet flvx_kernel {
+	counter uup_7 {
+		packets 1 bytes 10
+	}
+	counter udown_7 {
+		packets 2 bytes 20
+	}
+	counter in_1_tcp {
+		packets 1 bytes 5
+	}
+}
+`
 	counters, us, err := parseCounters([]byte(raw))
 	if err != nil || len(counters) != 1 || len(us) != 2 || us[0] != (UserCounter{ID: 7, Dir: "up", Bytes: 10}) || us[1].Dir != "down" {
 		t.Fatalf("parse: %v %v %v", counters, us, err)

@@ -35,6 +35,8 @@ import {
   type ThemeMode,
 } from "./registry";
 
+import { removeStoredValue } from "@/utils/identity-storage";
+
 // ─── context value ───────────────────────────────────────────────────────────
 
 interface ThemeContextValue {
@@ -120,7 +122,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const resetTheme = useCallback(() => {
     deactivateTheme();
     reapplyActiveTheme();
-    localStorage.removeItem("flvx:active-theme");
+    removeStoredValue(localStorage, "flyx:active-theme");
   }, []);
   const setMode = useCallback((m: ThemeMode) => {
     saveMode(m);

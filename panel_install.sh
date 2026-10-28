@@ -16,8 +16,8 @@ PINNED_VERSION=""
 # 镜像加速配置（可由面板传入或交互式询问）
 PROXY_ENABLED="${PROXY_ENABLED:-}"
 PROXY_URL="${PROXY_URL:-}"
-DEFAULT_PANEL_BACKEND_CONTAINER="flux-panel-backend"
-DEFAULT_PANEL_POSTGRES_CONTAINER="flux-panel-postgres"
+DEFAULT_PANEL_BACKEND_CONTAINER="flyx-panel-backend"
+DEFAULT_PANEL_POSTGRES_CONTAINER="flyx-panel-postgres"
 PANEL_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
 # 镜像加速
@@ -99,6 +99,10 @@ resolve_latest_release_tag() {
 resolve_version() {
   if [[ -n "${VERSION:-}" ]]; then
     echo "$VERSION"
+    return 0
+  fi
+  if [[ -n "${FLYX_VERSION:-}" ]]; then
+    echo "$FLYX_VERSION"
     return 0
   fi
   if [[ -n "${FLUX_VERSION:-}" ]]; then
@@ -331,8 +335,42 @@ get_container_compose_label() {
   printf '%s' "$value"
 }
 
+detect_panel_backend() {
+  local configured="${PANEL_BACKEND_CONTAINER:-}" current="" legacy=""
+  if [[ -z "$configured" ]]; then
+    configured=$(get_env_var PANEL_BACKEND_CONTAINER "${PANEL_DEPLOY_DIR:-.}/.env" || true)
+  fi
+  if [[ -n "$configured" ]]; then printf '%s' "$configured"; return; fi
+  current=$(docker inspect -f '{{.Name}}' flyx-panel-backend 2>/dev/null || true)
+  legacy=$(docker inspect -f '{{.Name}}' flux-panel-backend 2>/dev/null || true)
+  if [[ -n "$current" && -n "$legacy" ]]; then
+    echo "❌ 同时发现新旧面板，请通过 PANEL_BACKEND_CONTAINER 指定要管理的实例。" >&2
+    return 1
+  fi
+  if [[ -n "$legacy" ]]; then printf '%s' flux-panel-backend; else printf '%s' "$DEFAULT_PANEL_BACKEND_CONTAINER"; fi
+}
+
+write_new_panel_identity() {
+  local backend=flyx-panel-backend frontend=flyx-panel-frontend postgres=flyx-panel-postgres
+  local sqlite_volume=flyx-sqlite-data postgres_volume=flyx-postgres-data network=flyx-network
+  # Installing an older release must use names its Compose file understands.
+  if [[ -f docker-compose.yml ]] && ! grep -Fq 'FLYX_SQLITE_VOLUME' docker-compose.yml; then
+    backend=flux-panel-backend frontend=vite-frontend postgres=flux-panel-postgres
+    sqlite_volume=sqlite_data postgres_volume=postgres_data network=gost-network
+  fi
+  upsert_env_var .env PANEL_BACKEND_CONTAINER "$backend"
+  upsert_env_var .env PANEL_FRONTEND_CONTAINER "$frontend"
+  upsert_env_var .env PANEL_POSTGRES_CONTAINER "$postgres"
+  upsert_env_var .env FLYX_SQLITE_VOLUME "$sqlite_volume"
+  upsert_env_var .env FLYX_POSTGRES_VOLUME "$postgres_volume"
+  upsert_env_var .env FLYX_NETWORK "$network"
+  PANEL_BACKEND_CONTAINER="$backend"
+  PANEL_POSTGRES_CONTAINER="$postgres"
+}
+
 resolve_panel_deployment() {
-  local backend_container="${PANEL_BACKEND_CONTAINER:-$DEFAULT_PANEL_BACKEND_CONTAINER}"
+  local backend_container
+  backend_container=$(detect_panel_backend) || return 1
   local requested_dir="${PANEL_DEPLOY_DIR:-}"
   local label_dir label_project deploy_dir project_name
 
@@ -382,7 +420,10 @@ resolve_panel_deployment() {
 
   PANEL_DEPLOY_DIR="$deploy_dir"
   PANEL_BACKEND_CONTAINER="$backend_container"
-  PANEL_POSTGRES_CONTAINER="${PANEL_POSTGRES_CONTAINER:-$DEFAULT_PANEL_POSTGRES_CONTAINER}"
+  local postgres_default="$DEFAULT_PANEL_POSTGRES_CONTAINER"
+  [[ "$backend_container" != flux-panel-backend ]] || postgres_default=flux-panel-postgres
+  PANEL_POSTGRES_CONTAINER="${PANEL_POSTGRES_CONTAINER:-$(get_env_var PANEL_POSTGRES_CONTAINER "$deploy_dir/.env" || true)}"
+  PANEL_POSTGRES_CONTAINER="${PANEL_POSTGRES_CONTAINER:-$postgres_default}"
   PANEL_COMPOSE_PROJECT="$project_name"
   export PANEL_DEPLOY_DIR PANEL_BACKEND_CONTAINER PANEL_POSTGRES_CONTAINER PANEL_COMPOSE_PROJECT
   if [[ -n "$project_name" ]]; then
@@ -472,7 +513,7 @@ download_panel_update_compose() {
 }
 
 validate_panel_update_compose() {
-  if ! FLUX_VERSION="$LATEST_VERSION" run_panel_compose -f "$UPDATE_COMPOSE_CANDIDATE" config -q; then
+  if ! FLYX_VERSION="$LATEST_VERSION" FLUX_VERSION="$LATEST_VERSION" run_panel_compose -f "$UPDATE_COMPOSE_CANDIDATE" config -q; then
     echo "❌ 新 Compose 配置校验失败，更新终止"
     return 1
   fi
@@ -557,9 +598,9 @@ pull_panel_update_images() {
   local db_type="$1"
 
   if [[ "$db_type" == "postgres" ]]; then
-    FLUX_VERSION="$LATEST_VERSION" run_panel_compose -f "$UPDATE_COMPOSE_CANDIDATE" pull backend frontend postgres
+    FLYX_VERSION="$LATEST_VERSION" FLUX_VERSION="$LATEST_VERSION" run_panel_compose -f "$UPDATE_COMPOSE_CANDIDATE" pull backend frontend postgres
   else
-    FLUX_VERSION="$LATEST_VERSION" run_panel_compose -f "$UPDATE_COMPOSE_CANDIDATE" pull backend frontend
+    FLYX_VERSION="$LATEST_VERSION" FLUX_VERSION="$LATEST_VERSION" run_panel_compose -f "$UPDATE_COMPOSE_CANDIDATE" pull backend frontend
   fi
 }
 
@@ -569,7 +610,7 @@ activate_panel_update_files() {
     return 1
   fi
   UPDATE_COMPOSE_CANDIDATE=""
-  if ! upsert_env_var ".env" "FLUX_VERSION" "$LATEST_VERSION"; then
+  if ! upsert_env_var ".env" "FLYX_VERSION" "$LATEST_VERSION" || ! upsert_env_var ".env" "FLUX_VERSION" "$LATEST_VERSION"; then
     echo "❌ 更新版本配置失败"
     return 1
   fi
@@ -701,8 +742,8 @@ get_config_params() {
       ;;
   esac
 
-  POSTGRES_DB="flux_panel"
-  POSTGRES_USER="flux_panel"
+  POSTGRES_DB="flyx_panel"
+  POSTGRES_USER="flyx_panel"
   POSTGRES_PASSWORD=$(generate_random)
 
   if [[ "$DB_TYPE" == "postgres" ]]; then
@@ -741,6 +782,7 @@ install_panel() {
 JWT_SECRET=$JWT_SECRET
 FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
+FLYX_VERSION=$RESOLVED_VERSION
 FLUX_VERSION=$RESOLVED_VERSION
 
 DB_TYPE=$DB_TYPE
@@ -751,6 +793,7 @@ POSTGRES_USER=$POSTGRES_USER
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 EOF
 
+  write_new_panel_identity
   echo "🚀 启动 docker 服务..."
   if [[ "$DB_TYPE" == "postgres" ]]; then
     $DOCKER_CMD up -d postgres
@@ -763,7 +806,7 @@ EOF
   echo "🎉 部署完成"
   echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
   echo "📖 部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
-  echo "📚 文档地址: https://tes.cc/guide.html"
+  echo "📚 文档地址: https://kure29.github.io/flyx/guide/getting-started"
   echo "💡 默认管理员账号: admin_user / admin_user"
   echo "⚠️  登录后请立即修改默认密码！"
 
@@ -835,7 +878,7 @@ update_panel() {
 
 
 migrate_to_postgres() {
-  local current_db_type postgres_db postgres_user postgres_password database_url
+  local current_db_type postgres_db postgres_user postgres_password database_url sqlite_volume network frontend_container
 
   echo "🔄 开始迁移 SQLite -> PostgreSQL..."
   check_docker
@@ -874,14 +917,21 @@ migrate_to_postgres() {
   upsert_env_var ".env" "POSTGRES_PASSWORD" "$postgres_password"
 
   echo "🛑 停止当前服务..."
-  docker stop -t 30 flux-panel-backend 2>/dev/null || true
-  docker stop -t 10 vite-frontend 2>/dev/null || true
+  resolve_panel_deployment || return 1
+  sqlite_volume=$(get_env_var FLYX_SQLITE_VOLUME)
+  sqlite_volume=${sqlite_volume:-sqlite_data}
+  network=$(get_env_var FLYX_NETWORK)
+  network=${network:-gost-network}
+  frontend_container=$(get_env_var PANEL_FRONTEND_CONTAINER)
+  frontend_container=${frontend_container:-vite-frontend}
+  docker stop -t 30 "$PANEL_BACKEND_CONTAINER" 2>/dev/null || true
+  docker stop -t 10 "$frontend_container" 2>/dev/null || true
   echo "⏳ 等待数据同步..."
   sleep 5
   $DOCKER_CMD down
 
   echo "💾 备份 SQLite 数据到当前目录..."
-  if ! docker run --rm -v sqlite_data:/data -v "$(pwd)":/backup alpine sh -c "cp /data/gost.db /backup/gost.db.bak"; then
+  if ! docker run --rm -v "$sqlite_volume:/data" -v "$(pwd)":/backup alpine sh -c "cp /data/gost.db /backup/gost.db.bak"; then
     echo "❌ SQLite 备份失败，迁移终止"
     return 1
   fi
@@ -894,7 +944,7 @@ migrate_to_postgres() {
   fi
 
   echo "🔄 执行 pgloader 迁移..."
-  if ! docker run --rm --network gost-network -v sqlite_data:/sqlite dimitri/pgloader:latest pgloader /sqlite/gost.db "postgresql://${postgres_user}:${postgres_password}@postgres:5432/${postgres_db}"; then
+  if ! docker run --rm --network "$network" -v "$sqlite_volume:/sqlite" dimitri/pgloader:latest pgloader /sqlite/gost.db "postgresql://${postgres_user}:${postgres_password}@postgres:5432/${postgres_db}"; then
     echo "❌ pgloader 迁移失败，迁移终止（如报 28P01，可执行 docker volume rm postgres_data 后重试）"
     return 1
   fi

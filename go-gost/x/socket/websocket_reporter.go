@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-gost/x/config"
+	"github.com/go-gost/x/identity"
 	"github.com/go-gost/x/internal/util/crypto"
 	"github.com/go-gost/x/service"
 	"github.com/gorilla/websocket"
@@ -1405,7 +1407,7 @@ func (w *WebSocketReporter) handleUpgradeAgent(data interface{}) error {
 	fmt.Printf("📦 开始下载升级包: %s\n", downloadURL)
 
 	// 下载新版本二进制
-	const binaryPath = "/etc/flux_agent/flux_agent"
+	binaryPath := identity.BinaryPath()
 	tmpPath := binaryPath + ".new"
 	backupPath := binaryPath + ".old"
 
@@ -1523,7 +1525,7 @@ func (w *WebSocketReporter) handleUpgradeAgent(data interface{}) error {
 	// 使用 systemd-run 在独立的 transient unit 中运行重启脚本，
 	// 避免 systemctl stop 杀死 flux_agent cgroup 内所有进程（包括此脚本自身）导致 mv 未执行。
 	script := buildAgentRestartScript(tmpPath, binaryPath)
-	cmd := exec.Command("systemd-run", "--quiet", "/bin/sh", "-c", script)
+	cmd := agentRestartCommand(script)
 	if err := cmd.Start(); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("启动重启脚本失败: %v", err)
@@ -1535,7 +1537,7 @@ func (w *WebSocketReporter) handleUpgradeAgent(data interface{}) error {
 }
 
 func (w *WebSocketReporter) handleRollbackAgent(data interface{}) error {
-	const binaryPath = "/etc/flux_agent/flux_agent"
+	binaryPath := identity.BinaryPath()
 	backupPath := binaryPath + ".old"
 
 	// 检查备份文件是否存在
@@ -1565,8 +1567,8 @@ func (w *WebSocketReporter) handleRollbackAgent(data interface{}) error {
 	}
 
 	// 执行回退脚本（同升级逻辑，使用 systemd-run 避免 cgroup 问题）
-	script := fmt.Sprintf("sleep 1 && systemctl stop flux_agent && cp %s %s && systemctl start flux_agent", backupPath, binaryPath)
-	cmd := exec.Command("systemd-run", "--quiet", "/bin/sh", "-c", script)
+	script := buildAgentServiceScript(binaryPath, "cp "+tuneShellQuote(backupPath)+" "+tuneShellQuote(binaryPath))
+	cmd := agentRestartCommand(script)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动回退脚本失败: %v", err)
 	}
@@ -1577,10 +1579,34 @@ func (w *WebSocketReporter) handleRollbackAgent(data interface{}) error {
 
 func buildAgentRestartScript(tmpPath, binaryPath string) string {
 	return fmt.Sprintf(
-		"sleep 1 && systemctl stop flux_agent && legacy_service='' && for service_file in /etc/systemd/system/gost.service /lib/systemd/system/gost.service /usr/lib/systemd/system/gost.service; do if [ -f \"$service_file\" ] && grep -Fq \"WorkingDirectory=/etc/gost\" \"$service_file\" && (grep -Fq \"ExecStart=/etc/gost/gost\" \"$service_file\" || (grep -Fq \"ExecStart=/usr/local/bin/gost\" \"$service_file\" && [ -f /etc/gost/config.json ] && [ -f /etc/gost/gost.json ])); then legacy_service=\"$service_file\"; break; fi; done && if [ -n \"$legacy_service\" ]; then (systemctl stop gost 2>/dev/null || true) && (systemctl disable gost 2>/dev/null || true) && rm -f /usr/local/bin/gost /etc/gost/gost \"$legacy_service\" && (systemctl daemon-reload 2>/dev/null || true); fi && mv %s %s && systemctl start flux_agent",
-		tmpPath,
-		binaryPath,
+		"sleep 1 && %s && legacy_service='' && for service_file in /etc/systemd/system/gost.service /lib/systemd/system/gost.service /usr/lib/systemd/system/gost.service; do if [ -f \"$service_file\" ] && grep -Fq \"WorkingDirectory=/etc/gost\" \"$service_file\" && (grep -Fq \"ExecStart=/etc/gost/gost\" \"$service_file\" || (grep -Fq \"ExecStart=/usr/local/bin/gost\" \"$service_file\" && [ -f /etc/gost/config.json ] && [ -f /etc/gost/gost.json ])); then legacy_service=\"$service_file\"; break; fi; done && if [ -n \"$legacy_service\" ]; then (systemctl stop gost 2>/dev/null || true) && (systemctl disable gost 2>/dev/null || true) && rm -f /usr/local/bin/gost /etc/gost/gost \"$legacy_service\" && (systemctl daemon-reload 2>/dev/null || true); fi && mv %s %s && %s",
+		agentServiceCommand(binaryPath, "stop"),
+		tuneShellQuote(tmpPath),
+		tuneShellQuote(binaryPath),
+		agentServiceCommand(binaryPath, "start"),
 	)
+}
+
+// Both native service managers use the name of the installed executable.
+func agentServiceCommand(binaryPath, action string) string {
+	name := identity.AgentName
+	if filepath.Base(binaryPath) == "flux_agent" {
+		name = "flux_agent"
+	}
+	return "(if command -v rc-service >/dev/null 2>&1 && [ -f /etc/alpine-release ]; then rc-service " + name + " " + action + "; else systemctl " + action + " " + name + "; fi)"
+}
+
+func buildAgentServiceScript(binaryPath, replacement string) string {
+	return "sleep 1 && " + agentServiceCommand(binaryPath, "stop") + " && " + replacement + " && " + agentServiceCommand(binaryPath, "start")
+}
+
+func agentRestartCommand(script string) *exec.Cmd {
+	if _, err := os.Stat("/etc/alpine-release"); err == nil {
+		// OpenRC stops the supervised process, while this detached child completes
+		// the replacement and restart. It must not inherit the agent's log pipes.
+		return exec.Command("sh", "-c", "nohup sh -c "+tuneShellQuote(script)+" </dev/null >/dev/null 2>&1 &")
+	}
+	return exec.Command("systemd-run", "--quiet", "/bin/sh", "-c", script)
 }
 
 // updateLocalConfigJSON 将 http/tls/socks 写入工作目录下的 config.json
@@ -2132,7 +2158,7 @@ func icmpPing(target string, timeout time.Duration) (time.Duration, error) {
 		Body: &icmp.Echo{
 			ID:   id,
 			Seq:  seq,
-			Data: []byte("FLVX-PING"),
+			Data: []byte("FLYX-PING"),
 		},
 	}
 	wb, err := wm.Marshal(nil)

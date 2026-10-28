@@ -3,6 +3,7 @@ import type { InstallRequest } from "@/pages/inbound/kernel-panel";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 import { AnimatedPage } from "@/components/animated-page";
 import { PageHeader, PageTabs } from "@/components/page-kit";
 import NodePage from "@/pages/node";
@@ -17,11 +18,11 @@ export interface NodeHubState {
   install?: InstallRequest;
 }
 
-const TAB_KEY = "flvx_node_tab";
+const TAB_KEY = "flyx_node_tab";
 
 function readTab(): NodeTab {
   try {
-    const t = localStorage.getItem(TAB_KEY);
+    const t = getStoredValue(localStorage, TAB_KEY);
 
     return t === "kernels" ? t : "nodes";
   } catch {
@@ -48,7 +49,7 @@ export default function NodeHubPage() {
     setTabState(t);
     setMonitorNode(null);
     try {
-      localStorage.setItem(TAB_KEY, t);
+      setStoredValue(localStorage, TAB_KEY, t);
     } catch {
       // ignore
     }

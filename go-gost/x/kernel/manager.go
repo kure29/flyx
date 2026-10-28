@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-)
 
-const defaultBaseDir = "/etc/flux_agent/kernels"
+	"github.com/go-gost/x/identity"
+)
 
 type instance struct {
 	req     ApplyRequest
@@ -44,13 +44,13 @@ var (
 	defaultManagerOnce sync.Once
 )
 
-// Default returns the process-wide manager rooted at FLVX_KERNEL_DIR or
-// /etc/flux_agent/kernels.
+// Default uses FLYX_KERNEL_DIR (legacy FLVX_KERNEL_DIR is accepted), or
+// the kernels directory alongside the running agent.
 func Default() *Manager {
 	defaultManagerOnce.Do(func() {
-		dir := strings.TrimSpace(os.Getenv("FLVX_KERNEL_DIR"))
+		dir := strings.TrimSpace(identity.Env("FLYX_KERNEL_DIR", "FLVX_KERNEL_DIR"))
 		if dir == "" {
-			dir = defaultBaseDir
+			dir = filepath.Join(identity.DataDir(), "kernels")
 		}
 		defaultManager = NewManager(dir)
 	})

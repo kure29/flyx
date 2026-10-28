@@ -241,7 +241,7 @@ Convert to GB: `in_flow / 1073741824`
 
 ```bash
 # Create forward with 3 backend servers
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/forward/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/forward/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -255,7 +255,7 @@ curl -s -X POST "${FLVX_BASE_URL}/api/v1/forward/create" \
 ## Example: Check Forward Status and Traffic
 
 ```bash
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/forward/list" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/forward/list" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}' | jq '.data.list[] | {

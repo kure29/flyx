@@ -171,7 +171,7 @@ Get groups a user belongs to.
 ## Example: Create User with 50GB Quota
 
 ```bash
-curl -X POST "${FLVX_BASE_URL}/api/v1/user/create" \
+curl -X POST "${FLYX_BASE_URL}/api/v1/user/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{

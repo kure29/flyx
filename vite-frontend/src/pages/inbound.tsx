@@ -11,6 +11,7 @@ import toast from "react-hot-toast";
 import { ChevronDown, Copy } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 import {
   batchDeleteInbounds,
   batchToggleInbounds,
@@ -88,13 +89,13 @@ type ConfirmAction = "delete" | "regenerate" | "reset";
 
 type PageTab = "inbounds" | "sources";
 
-const TAB_KEY = "flvx_inbound_tab";
+const TAB_KEY = "flyx_inbound_tab";
 
 /** Remembers the selected tab; a convenience only, so storage errors are ignored. */
 function usePageTab(): [PageTab, (t: PageTab) => void] {
   const [tab, setTabState] = useState<PageTab>(() => {
     try {
-      const v = localStorage.getItem(TAB_KEY);
+      const v = getStoredValue(localStorage, TAB_KEY);
 
       return v === "sources" ? v : "inbounds";
     } catch {
@@ -104,7 +105,7 @@ function usePageTab(): [PageTab, (t: PageTab) => void] {
   const setTab = useCallback((t: PageTab) => {
     setTabState(t);
     try {
-      localStorage.setItem(TAB_KEY, t);
+      setStoredValue(localStorage, TAB_KEY, t);
     } catch {
       // Ignored.
     }

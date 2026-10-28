@@ -7,10 +7,10 @@
 ### 方式 1: npm (推荐)
 
 ```bash
-npm install -g @flvx/skill-api
+npm install -g @flyx/skill-api
 ```
 
-postinstall 脚本会自动链接到 `~/.agents/skills/flvx-api/`。
+postinstall 脚本会自动链接到 `~/.agents/skills/flyx-api/`。
 
 ### 方式 2: 手动链接
 
@@ -18,12 +18,12 @@ postinstall 脚本会自动链接到 `~/.agents/skills/flvx-api/`。
 # 从 FLYX 源码
 cd /path/to/flyx
 mkdir -p ~/.agents/skills
-ln -sf $(pwd)/skills/flvx-api ~/.agents/skills/
+ln -sf $(pwd)/skills/flyx-api ~/.agents/skills/
 
 # 或从 GitHub
 git clone https://github.com/kure29/flyx.git
 cd flyx
-ln -sf $(pwd)/skills/flvx-api ~/.agents/skills/
+ln -sf $(pwd)/skills/flyx-api ~/.agents/skills/
 ```
 
 ## 配置
@@ -31,22 +31,22 @@ ln -sf $(pwd)/skills/flvx-api ~/.agents/skills/
 设置环境变量：
 
 ```bash
-export FLVX_BASE_URL="https://your-panel.example.com"
-export FLVX_USERNAME="admin"
-export FLVX_PASSWORD="your-password"
+export FLYX_BASE_URL="https://your-panel.example.com"
+export FLYX_USERNAME="admin"
+export FLYX_PASSWORD="your-password"
 ```
 
 或使用凭证文件：
 
 ```bash
-mkdir -p ~/.flvx
-cat > ~/.flvx/.env << 'EOF'
-export FLVX_BASE_URL="https://panel.example.com"
-export FLVX_USERNAME="admin"
-export FLVX_PASSWORD="your-password"
+mkdir -p ~/.flyx
+cat > ~/.flyx/.env << 'EOF'
+export FLYX_BASE_URL="https://panel.example.com"
+export FLYX_USERNAME="admin"
+export FLYX_PASSWORD="your-password"
 EOF
-chmod 600 ~/.flvx/.env
-source ~/.flvx/.env
+chmod 600 ~/.flyx/.env
+source ~/.flyx/.env
 ```
 
 ---
@@ -59,14 +59,14 @@ OpenCode 是命令行 AI 编程助手，支持通过 skills 扩展能力。
 
 **安装 skill:**
 ```bash
-npm install -g @flvx/skill-api
+npm install -g @flyx/skill-api
 ```
 
 **使用:**
 ```bash
-export FLVX_BASE_URL="https://panel.example.com"
-export FLVX_USERNAME="admin"
-export FLVX_PASSWORD="your-password"
+export FLYX_BASE_URL="https://panel.example.com"
+export FLYX_USERNAME="admin"
+export FLYX_PASSWORD="your-password"
 
 opencode
 ```
@@ -87,11 +87,11 @@ OpenClaw 同样支持 skills 机制。
 
 **安装 skill:**
 ```bash
-npm install -g @flvx/skill-api
+npm install -g @flyx/skill-api
 
 # 或手动链接
 mkdir -p ~/.openclaw/skills
-ln -sf /path/to/flyx/skills/flvx-api ~/.openclaw/skills/flvx-api
+ln -sf /path/to/flyx/skills/flyx-api ~/.openclaw/skills/flyx-api
 ```
 
 **使用:**
@@ -119,9 +119,9 @@ Claude Code 是 Anthropic 官方的命令行工具，支持通过 CLAUDE.md 扩�
 你可以通过 REST API 操作 FLYX 面板。
 
 ## 环境变量
-- FLVX_BASE_URL: 面板地址
-- FLVX_USERNAME: 用户名
-- FLVX_PASSWORD: 密码
+- FLYX_BASE_URL: 面板地址
+- FLYX_USERNAME: 用户名
+- FLYX_PASSWORD: 密码
 
 ## 认证规则
 - Authorization 头使用原始 JWT token，不加 "Bearer " 前缀
@@ -162,8 +162,8 @@ cat > ~/.claude/CLAUDE.md << 'EOF'
 
 使用 FLYX REST API 操作流量转发面板。
 
-环境变量: FLVX_BASE_URL, FLVX_USERNAME, FLVX_PASSWORD
-调用方式: curl -X POST "$FLVX_BASE_URL/api/v1/..." -H "Authorization: $TOKEN"
+环境变量: FLYX_BASE_URL, FLYX_USERNAME, FLYX_PASSWORD
+调用方式: curl -X POST "$FLYX_BASE_URL/api/v1/..." -H "Authorization: $TOKEN"
 注意: Authorization 不要加 Bearer 前缀
 EOF
 ```
@@ -171,7 +171,7 @@ EOF
 #### 方式 3: 复制 SKILL.md
 
 ```bash
-cat ~/.agents/skills/flvx-api/SKILL.md >> ~/.claude/CLAUDE.md
+cat ~/.agents/skills/flyx-api/SKILL.md >> ~/.claude/CLAUDE.md
 ```
 
 **示例对话:**
@@ -200,8 +200,8 @@ cat ~/.agents/skills/flvx-api/SKILL.md >> ~/.claude/CLAUDE.md
 ## 安全提示
 
 - ⚠️ 环境变量在进程列表中可见
-- 使用 `~/.flvx/.env` 文件并设置 `chmod 600`
-- 添加 `export HISTIGNORE="*FLVX_PASSWORD*"` 防止密码进入历史记录
+- 使用 `~/.flyx/.env` 文件并设置 `chmod 600`
+- 添加 `export HISTIGNORE="*FLYX_PASSWORD*"` 防止密码进入历史记录
 - Token 仅在会话内存中缓存，不写入磁盘
 
 ## 发布
@@ -218,3 +218,11 @@ git push --tags
 ```
 
 需要在 GitHub 仓库设置 `NPM_TOKEN` secret。
+
+## 从旧命名迁移
+
+新包为 `@flyx/skill-api`，安装目录为 `~/.agents/skills/flyx-api`。旧仓库路径 `skills/flvx-api` 保留为兼容链接；新包安装程序只清理能确认属于本项目的旧链接，保留用户创建的目录和其他 Skill。
+
+配置建议改为 `FLYX_BASE_URL`、`FLYX_USERNAME`、`FLYX_PASSWORD`；Skill 仍接受对应的 `FLVX_*` 变量作为回退。已有 `~/.flvx/.env` 可以继续使用，不会被安装程序移动或删除。
+
+发布新包前，维护者需确认 npm 账号有 `@flyx` scope 的发布权限，并在旧包页面提供迁移说明。

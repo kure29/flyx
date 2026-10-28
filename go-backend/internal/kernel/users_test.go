@@ -20,7 +20,7 @@ func TestRenderUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := r.Files[0].Content
-	if !strings.Contains(cfg, `"00000000-0000-4000-8000-000000000000"`) || !strings.Contains(cfg, `"u7@flvx"`) ||
+	if !strings.Contains(cfg, `"00000000-0000-4000-8000-000000000000"`) || !strings.Contains(cfg, `"u7@flyx"`) ||
 		strings.Count(cfg, `"flow": "xtls-rprx-vision"`) != 2 {
 		t.Fatalf("xray must keep the owner and add the user with the same flow:\n%s", cfg)
 	}
@@ -77,7 +77,7 @@ func TestRenderUserMarks(t *testing.T) {
 	}
 	cfg := r.Files[0].Content
 	if len(r.UserMarks) != 1 || r.UserMarks[0] != 7 || !strings.Contains(cfg, `"mark": 1180041223`) ||
-		!strings.Contains(cfg, `"u7@flvx"`) || !strings.Contains(cfg, `"outboundTag": "flvx-u7"`) {
+		!strings.Contains(cfg, `"u7@flyx"`) || !strings.Contains(cfg, `"outboundTag": "flyx-u7"`) {
 		t.Fatalf("xray must route the user through its marked outbound (%v):\n%s", r.UserMarks, cfg)
 	}
 
@@ -87,7 +87,7 @@ func TestRenderUserMarks(t *testing.T) {
 	}
 	cfg = r.Files[0].Content
 	if len(r.UserMarks) != 1 || !strings.Contains(cfg, `"routing_mark": 1180041223`) ||
-		!strings.Contains(cfg, `"outbound": "flvx-u7"`) || !strings.Contains(cfg, `"final": "direct"`) {
+		!strings.Contains(cfg, `"outbound": "flyx-u7"`) || !strings.Contains(cfg, `"final": "direct"`) {
 		t.Fatalf("sing-box must route the user through its marked outbound:\n%s", cfg)
 	}
 

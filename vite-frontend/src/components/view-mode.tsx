@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { LayoutGrid, List } from "lucide-react";
 
+import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
+
 /** How a page shows its items: one per row, or as cards in a grid. */
 export type ViewMode = "list" | "card";
 
-const storageKey = (page: string) => `flvx_view_${page}`;
+const storageKey = (page: string) => `flyx_view_${page}`;
 
 function readMode(page: string): ViewMode {
   try {
-    return localStorage.getItem(storageKey(page)) === "card" ? "card" : "list";
+    return getStoredValue(localStorage, storageKey(page)) === "card"
+      ? "card"
+      : "list";
   } catch {
     return "list";
   }
@@ -20,7 +24,7 @@ export function useViewMode(page: string): [ViewMode, (m: ViewMode) => void] {
   const setMode = (m: ViewMode) => {
     setModeState(m);
     try {
-      localStorage.setItem(storageKey(page), m);
+      setStoredValue(localStorage, storageKey(page), m);
     } catch {
       // ignore: the choice just isn't remembered
     }

@@ -36,7 +36,7 @@ Client Secret 只有管理员能看到，也不会写进 JSON 备份。
 GitHub 访问不了、OAuth App 配错等原因导致管理员登录不了时，在面板服务器上执行下面的命令，重新允许管理员使用密码登录（无需重启面板）：
 
 ```bash
-docker exec flux-panel-backend /app/paneld enable-password-login
+docker compose exec backend /app/paneld enable-password-login
 ```
 
 不是用 Docker 部署时，在后端所在机器上，用和面板相同的环境变量（`DB_TYPE`、`DB_PATH` 或 `DATABASE_URL`）运行 `paneld enable-password-login`。

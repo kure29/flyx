@@ -62,11 +62,11 @@ FLYX — traffic forwarding panel: Go admin API + Vite/React UI + Go agent.
 
 - Backend: `(cd go-backend && go test ./...)` — includes contract tests in `tests/contract/`.
 - Frontend: no test infrastructure.
-- CI runs `gofmt -l`, `go vet` and `go test ./...` on `go-backend`, `eslint .` on the frontend, plus one PostgreSQL contract test (env var `FLVX_POSTGRES_TEST_DSN`).
+- CI runs `gofmt -l`, `go vet` and `go test ./...` on `go-backend`, `eslint .` on the frontend, plus one PostgreSQL contract test (env var `FLYX_POSTGRES_TEST_DSN`, legacy `FLVX_POSTGRES_TEST_DSN` accepted).
 
 ## Build quirks
 
 - `vite-frontend` uses `rolldown-vite` (Rust bundler), not standard Vite.
 - `vite.config.ts`: PWA via `vite-plugin-pwa`; build uses default minify and treeshake, no sourcemaps.
 - CI builds `go-gost` with `CGO_ENABLED=0` then compresses with UPX `--best --lzma`.
-- The release also pushes the node agent image `ghcr.io/<owner>/flux-agent` from `go-gost/docker/` (same UPX binaries). In the container (`FLUX_AGENT_CONTAINER=1`) there is no systemd: upgrade/rollback swap `/etc/flux_agent/flux_agent` and stop the agent so the restart policy brings it back.
+- The release also pushes the node agent image `ghcr.io/<owner>/flyx-agent` from `go-gost/docker/` (same UPX binaries). In the container (`FLYX_AGENT_CONTAINER=1` (legacy `FLUX_AGENT_CONTAINER` accepted)) there is no systemd: upgrade/rollback swap the running agent binary (`/etc/flyx-agent/flyx-agent` for new installs, legacy path retained for upgrades) and stop the agent so the restart policy brings it back.

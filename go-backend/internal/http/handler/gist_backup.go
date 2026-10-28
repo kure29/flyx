@@ -15,7 +15,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +22,7 @@ import (
 
 	"golang.org/x/crypto/scrypt"
 
+	"go-backend/internal/config"
 	"go-backend/internal/http/response"
 	"go-backend/internal/store/model"
 )
@@ -62,9 +62,9 @@ var (
 	gistMu            sync.Mutex
 )
 
-// gistAPIBase is GitHub's API; FLVX_GIST_API_BASE points tests elsewhere.
+// gistAPIBase is GitHub's API; FLYX_GIST_API_BASE points tests elsewhere.
 func gistAPIBase() string {
-	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("FLVX_GIST_API_BASE")), "/"); v != "" {
+	if v := strings.TrimRight(strings.TrimSpace(config.IdentityEnv("FLYX_GIST_API_BASE", "FLVX_GIST_API_BASE")), "/"); v != "" {
 		return v
 	}
 	return "https://api.github.com"

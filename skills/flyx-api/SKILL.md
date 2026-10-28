@@ -1,24 +1,26 @@
 ---
-name: flvx-api
-description: Operate FLVX traffic forwarding management system via REST API. Supports user/node/tunnel/forward management, federation clustering, and traffic monitoring. Use when user wants to manage FLVX panel programmatically or via natural language.
+name: flyx-api
+description: Operate FLYX traffic forwarding management system via REST API. Supports user/node/tunnel/forward management, federation clustering, and traffic monitoring. Use when user wants to manage FLYX panel programmatically or via natural language.
 metadata:
   author: FLVX Team
   version: "2.1.5"
   requires_env:
-    - FLVX_BASE_URL
-    - FLVX_USERNAME
-    - FLVX_PASSWORD
+    - FLYX_BASE_URL
+    - FLYX_USERNAME
+    - FLYX_PASSWORD
 ---
 
-# FLVX API Operations
+# FLYX API Operations
 
-Operate FLVX panel through REST API. All endpoints use POST method and return JSON with `{code, msg, data, ts}` envelope.
+For existing installations, read `FLYX_BASE_URL`, `FLYX_USERNAME` and `FLYX_PASSWORD` first; when a variable is unset, accept its corresponding `FLVX_` legacy alias. An explicitly supplied new value takes precedence.
+
+Operate FLYX panel through REST API. All endpoints use POST method and return JSON with `{code, msg, data, ts}` envelope.
 
 ## Supported AI Tools
 
 | Tool | Installation | Notes |
 |------|--------------|-------|
-| **OpenCode** | `npm i -g @flvx/skill-api` or `ln -s . ~/.agents/skills/flvx-api` | Auto-loads from `~/.agents/skills/` |
+| **OpenCode** | `npm i -g @flyx/skill-api` or `ln -s . ~/.agents/skills/flyx-api` | Auto-loads from `~/.agents/skills/` |
 | **OpenClaw** | Same as OpenCode | Compatible skill format |
 | **Claude Code** | Copy SKILL.md to CLAUDE.md or `~/.claude/CLAUDE.md` | Uses context file instead of skills |
 
@@ -27,20 +29,20 @@ Operate FLVX panel through REST API. All endpoints use POST method and return JS
 Set environment variables before starting:
 
 ```bash
-export FLVX_BASE_URL="https://your-panel.example.com"
-export FLVX_USERNAME="admin"
-export FLVX_PASSWORD="your-password"
+export FLYX_BASE_URL="https://your-panel.example.com"
+export FLYX_USERNAME="admin"
+export FLYX_PASSWORD="your-password"
 ```
 
-**Security tip:** Add to `~/.flvx/.env` and source on demand:
+**Security tip:** Add to `~/.flyx/.env` and source on demand:
 ```bash
-mkdir -p ~/.flvx && cat > ~/.flvx/.env << 'EOF'
-export FLVX_BASE_URL="https://panel.example.com"
-export FLVX_USERNAME="admin"
-export FLVX_PASSWORD="your-password"
+mkdir -p ~/.flyx && cat > ~/.flyx/.env << 'EOF'
+export FLYX_BASE_URL="https://panel.example.com"
+export FLYX_USERNAME="admin"
+export FLYX_PASSWORD="your-password"
 EOF
-chmod 600 ~/.flvx/.env
-source ~/.flvx/.env
+chmod 600 ~/.flyx/.env
+source ~/.flyx/.env
 ```
 
 ## Authentication Flow
@@ -58,7 +60,7 @@ Before ANY API call:
 1. Check if TOKEN is cached in current session
    ├─ Yes → Use cached token, proceed
    └─ No → 
-       1. Read FLVX_USERNAME and FLVX_PASSWORD from environment
+       1. Read FLYX_USERNAME and FLYX_PASSWORD from environment
        2. POST /api/v1/user/login with credentials
        3. Cache response.data.token in session memory
        4. Proceed with original request
@@ -67,9 +69,9 @@ Before ANY API call:
 ### Login Request
 
 ```bash
-curl -X POST "${FLVX_BASE_URL}/api/v1/user/login" \
+curl -X POST "${FLYX_BASE_URL}/api/v1/user/login" \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"${FLVX_USERNAME}\",\"password\":\"${FLVX_PASSWORD}\"}"
+  -d "{\"username\":\"${FLYX_USERNAME}\",\"password\":\"${FLYX_PASSWORD}\"}"
 ```
 
 **Response:**
@@ -132,9 +134,9 @@ User request → Check env vars → Auto-login if needed → Call API → Return
 
 ```bash
 #!/bin/bash
-BASE_URL="${FLVX_BASE_URL}"
-USERNAME="${FLVX_USERNAME}"
-PASSWORD="${FLVX_PASSWORD}"
+BASE_URL="${FLYX_BASE_URL}"
+USERNAME="${FLYX_USERNAME}"
+PASSWORD="${FLYX_PASSWORD}"
 
 # Login and get token
 TOKEN=$(curl -s -X POST "${BASE_URL}/api/v1/user/login" \
@@ -159,9 +161,9 @@ curl -s -X POST "${BASE_URL}/api/v1/node/list" \
 import os
 import requests
 
-BASE_URL = os.environ.get("FLVX_BASE_URL")
-USERNAME = os.environ.get("FLVX_USERNAME")
-PASSWORD = os.environ.get("FLVX_PASSWORD")
+BASE_URL = os.environ.get("FLYX_BASE_URL")
+USERNAME = os.environ.get("FLYX_USERNAME")
+PASSWORD = os.environ.get("FLYX_PASSWORD")
 
 # Login
 resp = requests.post(f"{BASE_URL}/api/v1/user/login", 
@@ -185,9 +187,9 @@ print(resp.json())
 ### Node.js (fetch)
 
 ```javascript
-const BASE_URL = process.env.FLVX_BASE_URL;
-const USERNAME = process.env.FLVX_USERNAME;
-const PASSWORD = process.env.FLVX_PASSWORD;
+const BASE_URL = process.env.FLYX_BASE_URL;
+const USERNAME = process.env.FLYX_USERNAME;
+const PASSWORD = process.env.FLYX_PASSWORD;
 
 // Login
 const loginRes = await fetch(`${BASE_URL}/api/v1/user/login`, {

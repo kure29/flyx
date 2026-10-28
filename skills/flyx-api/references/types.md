@@ -281,9 +281,9 @@ class FlvxClient {
   private token?: string;
 
   constructor(baseUrl?: string, username?: string, password?: string) {
-    this.baseUrl = baseUrl ?? process.env.FLVX_BASE_URL ?? "";
-    this.username = username ?? process.env.FLVX_USERNAME ?? "";
-    this.password = password ?? process.env.FLVX_PASSWORD ?? "";
+    this.baseUrl = baseUrl ?? process.env.FLYX_BASE_URL ?? "";
+    this.username = username ?? process.env.FLYX_USERNAME ?? "";
+    this.password = password ?? process.env.FLYX_PASSWORD ?? "";
   }
 
   private async ensureToken(): Promise<void> {

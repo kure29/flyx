@@ -108,10 +108,10 @@ try:
         result = json.loads(reader.readline())
         assert result == [expected] * 4, (command, result)
     probe("before", True)
-    before = json.loads(subprocess.check_output(["nft", "-j", "list", "table", "inet", "flvx"]))
+    before = json.loads(subprocess.check_output(["nft", "-j", "list", "table", "inet", "flyx"]))
     run("sh", sys.argv[2]); run("sh", sys.argv[2])
     probe("blocked", False)
-    after = json.loads(subprocess.check_output(["nft", "-j", "list", "table", "inet", "flvx"]))
+    after = json.loads(subprocess.check_output(["nft", "-j", "list", "table", "inet", "flyx"]))
     def counters(doc):
         result = {}
         for item in doc["nftables"]:

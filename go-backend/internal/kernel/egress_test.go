@@ -21,7 +21,7 @@ func TestIPv4OnlyMixedInbounds(t *testing.T) {
 				routeKey, obKey = "routing", "outboundTag"
 			}
 			rules := cfg[routeKey].(map[string]interface{})["rules"].([]interface{})
-			want := []string{"reject", "ipv4-in-1-flvx-u7", "ipv4-in-1-direct", "flvx-u7"}
+			want := []string{"reject", "ipv4-in-1-flyx-u7", "ipv4-in-1-direct", "flyx-u7"}
 			if kt == TypeXray {
 				want[0] = "block"
 			}
@@ -36,14 +36,14 @@ func TestIPv4OnlyMixedInbounds(t *testing.T) {
 			} else if first["ip_version"] != float64(6) {
 				t.Fatalf("IPv6 destinations must be rejected: %v", first)
 			}
-			for _, tag := range []string{"ipv4-in-1-direct", "ipv4-in-1-flvx-u7"} {
-				assertIPv4Dialer(t, kt, outboundByTag(cfg, tag), tag == "ipv4-in-1-flvx-u7")
+			for _, tag := range []string{"ipv4-in-1-direct", "ipv4-in-1-flyx-u7"} {
+				assertIPv4Dialer(t, kt, outboundByTag(cfg, tag), tag == "ipv4-in-1-flyx-u7")
 			}
 			// The IPv6 listener and the other inbound's shared dialers remain automatic.
 			if cfg["inbounds"].([]interface{})[0].(map[string]interface{})["listen"] != "::" {
 				t.Fatal("IPv4 egress must preserve the IPv6 listener")
 			}
-			shared := outboundByTag(cfg, "flvx-u7")
+			shared := outboundByTag(cfg, "flyx-u7")
 			if shared["domain_resolver"] != nil || shared["sendThrough"] != nil || shared["inet4_bind_address"] != nil {
 				t.Fatalf("shared outbound was modified: %v", shared)
 			}
@@ -112,7 +112,7 @@ func TestIPv6OnlyAlongsideIPv4AndAutomatic(t *testing.T) {
 			rules := cfg[routeKey].(map[string]interface{})["rules"].([]interface{})
 			// Each strict inbound rejects the other family right before
 			// its direct rules.
-			want := []string{"reject", "ipv6-in-1-flvx-u7", "ipv6-in-1-direct", "reject", "ipv4-in-2-flvx-u7", "ipv4-in-2-direct", "flvx-u7"}
+			want := []string{"reject", "ipv6-in-1-flyx-u7", "ipv6-in-1-direct", "reject", "ipv4-in-2-flyx-u7", "ipv4-in-2-direct", "flyx-u7"}
 			if kt == TypeXray {
 				want[0], want[3] = "block", "block"
 			}
@@ -130,11 +130,11 @@ func TestIPv6OnlyAlongsideIPv4AndAutomatic(t *testing.T) {
 			} else if first["ip_version"] != float64(4) {
 				t.Fatalf("IPv4 literal destinations must be rejected: %v", first)
 			}
-			for _, suffix := range []string{"direct", "flvx-u7"} {
-				assertIPDialer(t, kt, outboundByTag(cfg, "ipv6-in-1-"+suffix), suffix == "flvx-u7", OutboundIPv6Only)
-				assertIPv4Dialer(t, kt, outboundByTag(cfg, "ipv4-in-2-"+suffix), suffix == "flvx-u7")
+			for _, suffix := range []string{"direct", "flyx-u7"} {
+				assertIPDialer(t, kt, outboundByTag(cfg, "ipv6-in-1-"+suffix), suffix == "flyx-u7", OutboundIPv6Only)
+				assertIPv4Dialer(t, kt, outboundByTag(cfg, "ipv4-in-2-"+suffix), suffix == "flyx-u7")
 			}
-			shared := outboundByTag(cfg, "flvx-u7")
+			shared := outboundByTag(cfg, "flyx-u7")
 			for _, key := range []string{"domain_resolver", "sendThrough", "inet4_bind_address", "inet6_bind_address"} {
 				if shared[key] != nil {
 					t.Fatalf("automatic inbound's dialer was modified: %v", shared)
@@ -162,7 +162,7 @@ func TestIPv6OnlySplitChainAndAdvancedConfiguration(t *testing.T) {
 			in.Split[0].Via.Proxy["server"] = "2001:db8::2"
 			in.Via = &Endpoint{Host: "exit.example.com", Port: 443, Proxy: Proxy{"type": "trojan", "server": "exit.example.com", "port": 443, "password": "x"}}
 			cfg := renderJSON(t, kt, []Inbound{in})
-			for _, tag := range []string{"via-1", "via-1-u7", "via-1-s1", "via-1-s1-u7", "ipv6-in-1-flvx-u7", "ipv6-in-1-direct"} {
+			for _, tag := range []string{"via-1", "via-1-u7", "via-1-s1", "via-1-s1-u7", "ipv6-in-1-flyx-u7", "ipv6-in-1-direct"} {
 				assertIPDialer(t, kt, outboundByTag(cfg, tag), strings.HasSuffix(tag, "u7"), OutboundIPv6Only)
 			}
 			for _, address := range []string{"192.0.2.1", "::ffff:192.0.2.1"} {
@@ -205,7 +205,7 @@ func TestIPv4OnlySplitAndChain(t *testing.T) {
 			in.OutboundIPStrategy = OutboundIPv4Only
 			in.Via = &Endpoint{Host: "exit.example.com", Port: 443, Proxy: Proxy{"type": "trojan", "server": "exit.example.com", "port": 443, "password": "x"}}
 			cfg := renderJSON(t, kt, []Inbound{in})
-			for _, tag := range []string{"via-1", "via-1-u7", "via-1-s1", "via-1-s1-u7", "ipv4-in-1-flvx-u7", "ipv4-in-1-direct"} {
+			for _, tag := range []string{"via-1", "via-1-u7", "via-1-s1", "via-1-s1-u7", "ipv4-in-1-flyx-u7", "ipv4-in-1-direct"} {
 				assertIPv4Dialer(t, kt, outboundByTag(cfg, tag), strings.HasSuffix(tag, "u7"))
 			}
 			routeKey, obKey := "route", "outbound"
@@ -218,7 +218,7 @@ func TestIPv4OnlySplitAndChain(t *testing.T) {
 			}
 			assertFamilyBlocksOnlyDirect(t, kt, rules, obKey, "ipv4-in-1-")
 			targets := strings.Join(ruleOutbounds(rules, obKey), ",")
-			if strings.Contains(targets, ",direct,") || !strings.HasSuffix(targets, "via-1-u7,via-1,flvx-u7") {
+			if strings.Contains(targets, ",direct,") || !strings.HasSuffix(targets, "via-1-u7,via-1,flyx-u7") {
 				t.Fatalf("split direct must use scoped dialer and default must retain chain: %s", targets)
 			}
 			in.Via = &Endpoint{Host: "2001:db8::1", Port: 8388, Proxy: Proxy{"type": "ss", "server": "2001:db8::1", "port": 8388, "cipher": "aes-128-gcm", "password": "x"}}
@@ -302,8 +302,8 @@ func TestPreferredEgressRoutingAndFallback(t *testing.T) {
 				if policy == OutboundPreferIPv6 {
 					prefix = "prefer-ipv6-in-1-"
 				}
-				for _, suffix := range []string{"direct", "flvx-u7"} {
-					assertPreferredDialer(t, kt, outboundByTag(cfg, prefix+suffix), policy, suffix == "flvx-u7")
+				for _, suffix := range []string{"direct", "flyx-u7"} {
+					assertPreferredDialer(t, kt, outboundByTag(cfg, prefix+suffix), policy, suffix == "flyx-u7")
 					if kt == TypeXray {
 						udp := outboundByTag(cfg, prefix+suffix+"-udp")
 						want := "ForceIPv4v6"
@@ -313,7 +313,7 @@ func TestPreferredEgressRoutingAndFallback(t *testing.T) {
 						if udp == nil || udp["settings"].(map[string]interface{})["domainStrategy"] != want {
 							t.Fatalf("UDP packet writer needs its own DNS preference: %v", udp)
 						}
-						if sock := udp["streamSettings"].(map[string]interface{})["sockopt"].(map[string]interface{}); sock["happyEyeballs"] != nil || sock["domainStrategy"] != want || (suffix == "flvx-u7" && sock["mark"] != float64(UserMark(7))) {
+						if sock := udp["streamSettings"].(map[string]interface{})["sockopt"].(map[string]interface{}); sock["happyEyeballs"] != nil || sock["domainStrategy"] != want || (suffix == "flyx-u7" && sock["mark"] != float64(UserMark(7))) {
 							t.Fatalf("UDP preference lost policy or accounting: %v", sock)
 						}
 					}
@@ -329,10 +329,10 @@ func TestPreferredEgressRoutingAndFallback(t *testing.T) {
 						t.Fatalf("preference must not reject the other family: %v", rule)
 					}
 				}
-				if last := rules[len(rules)-1].(map[string]interface{}); last[outKey] != "flvx-u7" {
+				if last := rules[len(rules)-1].(map[string]interface{}); last[outKey] != "flyx-u7" {
 					t.Fatalf("global user routing must follow inbound-scoped preference: %v", last)
 				}
-				shared := outboundByTag(cfg, "flvx-u7")
+				shared := outboundByTag(cfg, "flyx-u7")
 				if shared["domain_resolver"] != nil || shared["sendThrough"] != nil {
 					t.Fatalf("automatic inbound was modified: %v", shared)
 				}
@@ -456,10 +456,10 @@ func TestOutboundIPPolicyKeepsLocalResolver(t *testing.T) {
 		t.Fatal(err)
 	}
 	servers := cfg["dns"].(map[string]interface{})["servers"].([]interface{})
-	if len(servers) != 2 || servers[0].(map[string]interface{})["tag"] != "flvx-local-resolver" || servers[1].(map[string]interface{})["tag"] != ipv4ResolverTag {
+	if len(servers) != 2 || servers[0].(map[string]interface{})["tag"] != "flyx-local-resolver" || servers[1].(map[string]interface{})["tag"] != ipv4ResolverTag {
 		t.Fatalf("policy resolvers must be added to the local one: %v", servers)
 	}
-	if cfg["route"].(map[string]interface{})["default_domain_resolver"] != "flvx-local-resolver" {
+	if cfg["route"].(map[string]interface{})["default_domain_resolver"] != "flyx-local-resolver" {
 		t.Fatal("automatic dialers must keep the local default resolver")
 	}
 }

@@ -64,7 +64,7 @@ func main() {
 
 // enablePasswordLogin lets admins log in with their password again, for an
 // admin locked out after turning it off (e.g. GitHub unreachable):
-// docker exec flux-panel-backend /app/paneld enable-password-login
+// docker compose exec backend /app/paneld enable-password-login
 func enablePasswordLogin(cfg config.Config) {
 	r, err := app.OpenRepository(cfg)
 	if err != nil {

@@ -93,7 +93,7 @@ Alias for `/api/v1/backup/import`.
 
 ```bash
 # Export all data
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/backup/export" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/backup/export" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}' > backup-$(date +%Y%m%d).json
@@ -105,7 +105,7 @@ echo "Backup saved to backup-$(date +%Y%m%d).json"
 
 ```bash
 # Export only users and tunnels
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/backup/export" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/backup/export" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"types":["users","tunnels"]}' > partial-backup.json
@@ -115,7 +115,7 @@ curl -s -X POST "${FLVX_BASE_URL}/api/v1/backup/export" \
 
 ```bash
 # Import from backup file
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/backup/import" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/backup/import" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d @backup-20260226.json | jq '.'

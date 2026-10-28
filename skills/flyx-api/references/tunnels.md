@@ -298,7 +298,7 @@ Update user-tunnel assignment settings.
 
 ```bash
 # 1. Create tunnel
-TUNNEL_RESP=$(curl -s -X POST "${FLVX_BASE_URL}/api/v1/tunnel/create" \
+TUNNEL_RESP=$(curl -s -X POST "${FLYX_BASE_URL}/api/v1/tunnel/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"Test-Tunnel","type":1,"inNodeId":[1],"outNodeId":[2]}')
@@ -306,7 +306,7 @@ TUNNEL_RESP=$(curl -s -X POST "${FLVX_BASE_URL}/api/v1/tunnel/create" \
 TUNNEL_ID=$(echo "$TUNNEL_RESP" | jq -r '.data.id')
 
 # 2. Assign to user with 30GB quota
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/tunnel/user/assign" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/tunnel/user/assign" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{\"userId\":2,\"tunnelId\":${TUNNEL_ID},\"flow\":30}"

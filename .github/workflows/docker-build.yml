@@ -198,7 +198,9 @@ jobs:
             --build-arg VERSION=${VERSION} \
             --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
             --push \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-agent:latest \
             -t ${{ env.REGISTRY }}/${OWNER}/flux-agent:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-agent:${VERSION} \
             -t ${{ env.REGISTRY }}/${OWNER}/flux-agent:${VERSION} \
             ./go-gost/docker
 
@@ -239,7 +241,9 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:latest \
             -t ${{ env.REGISTRY }}/${OWNER}/vite-frontend:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:${VERSION} \
             -t ${{ env.REGISTRY }}/${OWNER}/vite-frontend:${VERSION} \
             ./vite-frontend
 
@@ -291,7 +295,9 @@ jobs:
             --platform linux/amd64,linux/arm64 \
             --build-arg GITHUB_REPO=${{ github.repository }} \
             --push \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:latest \
             -t ${{ env.REGISTRY }}/${OWNER}/flux-panel-backend:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:${VERSION} \
             -t ${{ env.REGISTRY }}/${OWNER}/flux-panel-backend:${VERSION} \
             ./go-backend
 
@@ -349,10 +355,10 @@ jobs:
           cp docker-compose-v6.yml ./artifacts/docker-compose-v6.yml
 
           # 替换镜像地址为 GHCR
-          sed -i "s|image: .*flux-panel-backend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flux-panel-backend:${VERSION}|g" ./artifacts/docker-compose-v4.yml
-          sed -i "s|image: .*vite-frontend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/vite-frontend:${VERSION}|g" ./artifacts/docker-compose-v4.yml
-          sed -i "s|image: .*flux-panel-backend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flux-panel-backend:${VERSION}|g" ./artifacts/docker-compose-v6.yml
-          sed -i "s|image: .*vite-frontend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/vite-frontend:${VERSION}|g" ./artifacts/docker-compose-v6.yml
+          sed -i "s|image: .*flyx-panel-backend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:${VERSION}|g" ./artifacts/docker-compose-v4.yml
+          sed -i "s|image: .*flyx-panel-frontend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:${VERSION}|g" ./artifacts/docker-compose-v4.yml
+          sed -i "s|image: .*flyx-panel-backend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:${VERSION}|g" ./artifacts/docker-compose-v6.yml
+          sed -i "s|image: .*flyx-panel-frontend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:${VERSION}|g" ./artifacts/docker-compose-v6.yml
 
           # 复制并修改安装脚本
           cp install.sh ./artifacts/install.sh

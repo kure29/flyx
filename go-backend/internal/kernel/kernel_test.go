@@ -447,7 +447,7 @@ func TestNormalizePhase3Rules(t *testing.T) {
 func TestSingboxACMEAndNaive(t *testing.T) {
 	acme := Security{Type: SecurityTLS, CertMode: CertModeACME, SNI: "hk.example.com", ACMEEmail: "me@example.com"}
 	list := []Inbound{
-		{ID: 1, Protocol: ProtocolNaive, Port: 443, Settings: Settings{Username: "flvx", Password: "naive-secret"}, Security: acme},
+		{ID: 1, Protocol: ProtocolNaive, Port: 443, Settings: Settings{Username: "flyx", Password: "naive-secret"}, Security: acme},
 		{ID: 2, Protocol: ProtocolHysteria2, Port: 443, Transport: Transport{Type: TransportQUIC}, Settings: Settings{Password: "hy2-secret"}, Security: acme},
 		{ID: 3, Protocol: ProtocolTrojan, Port: 8443, Settings: Settings{Password: "trojan-secret"},
 			Security: Security{Type: SecurityTLS, CertMode: CertModeACME, SNI: "cf.example.com", ACMEDNS: ACMEDNSCloudflare, ACMEDNSKey: "cf-token"}},
@@ -509,7 +509,7 @@ func TestSingboxACMEAndNaive(t *testing.T) {
 	naive := list[0]
 	direct := Endpoint{Name: "naive", Host: "hk.example.com", Port: 443, Inbound: naive, Direct: true}
 	relay := Endpoint{Name: "relay", Host: "198.51.100.7", Port: 31000, Inbound: naive}
-	if uri, _ := ShareURI(direct); uri != "naive+https://flvx:naive-secret@hk.example.com:443#naive" {
+	if uri, _ := ShareURI(direct); uri != "naive+https://flyx:naive-secret@hk.example.com:443#naive" {
 		t.Fatalf("naive uri: %s", uri)
 	}
 	if uri, _ := ShareURI(relay); !strings.Contains(uri, "@198.51.100.7:31000?sni=hk.example.com#") {

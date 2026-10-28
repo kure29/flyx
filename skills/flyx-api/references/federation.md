@@ -1,6 +1,6 @@
 # Federation / Clustering API
 
-Federation allows sharing nodes between FLVX panels. One panel can share nodes, and another panel can use them as remote nodes.
+Federation allows sharing nodes between FLYX panels. One panel can share nodes, and another panel can use them as remote nodes.
 
 ## Share Management (Admin)
 
@@ -239,7 +239,7 @@ This creates a node with `is_remote: 1`.
 
 ```bash
 # 1. Create a share
-SHARE_RESP=$(curl -s -X POST "${FLVX_BASE_URL}/api/v1/federation/share/create" \
+SHARE_RESP=$(curl -s -X POST "${FLYX_BASE_URL}/api/v1/federation/share/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -252,14 +252,14 @@ SHARE_RESP=$(curl -s -X POST "${FLVX_BASE_URL}/api/v1/federation/share/create" \
 
 SHARE_TOKEN=$(echo "$SHARE_RESP" | jq -r '.data.token')
 echo "Share Token: $SHARE_TOKEN"
-echo "Panel URL: ${FLVX_BASE_URL}"
+echo "Panel URL: ${FLYX_BASE_URL}"
 ```
 
 **On the receiving panel (Panel B):**
 
 ```bash
 # 2. Import the remote node
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/federation/node/import" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/federation/node/import" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -269,7 +269,7 @@ curl -s -X POST "${FLVX_BASE_URL}/api/v1/federation/node/import" \
   }'
 
 # 3. Use the remote node in tunnels like a local node
-curl -s -X POST "${FLVX_BASE_URL}/api/v1/tunnel/create" \
+curl -s -X POST "${FLYX_BASE_URL}/api/v1/tunnel/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
