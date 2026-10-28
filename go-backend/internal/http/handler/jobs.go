@@ -238,7 +238,6 @@ func (h *Handler) runStatisticsFlowJob(now time.Time) {
 
 	nowMs := now.UnixMilli()
 	cutoffMs := nowMs - int64((48*time.Hour)/time.Millisecond)
-	_ = h.repo.PurgeOldStatisticsFlows(cutoffMs)
 	_ = h.repo.PurgeSubscriptionTraffic(now.Add(-subTrafficRetention).UnixMilli())
 
 	hourMark := now.Truncate(time.Hour)
@@ -250,19 +249,35 @@ func (h *Handler) runStatisticsFlowJob(now time.Time) {
 		return
 	}
 
+	allSaved := true
 	for _, user := range users {
 		currentTotal := user.InFlow + user.OutFlow
 		increment := currentTotal
 
 		lastTotal, err := h.repo.GetLastStatisticsFlowTotal(user.UserID)
-		if err == nil && lastTotal.Valid {
+		if err != nil {
+			log.Printf("statistics flow baseline lookup failed user_id=%d err=%v", user.UserID, err)
+			allSaved = false
+			continue
+		}
+		if lastTotal.Valid {
 			increment = currentTotal - lastTotal.Int64
 			if increment < 0 {
 				increment = currentTotal
 			}
 		}
 
-		_ = h.repo.CreateStatisticsFlow(user.UserID, increment, currentTotal, hourText, createdTime)
+		if err := h.repo.CreateStatisticsFlow(user.UserID, increment, currentTotal, hourText, createdTime); err != nil {
+			log.Printf("statistics flow write failed user_id=%d err=%v", user.UserID, err)
+			allSaved = false
+		}
+	}
+	// Old rows may still be the only cumulative baseline after downtime. Do
+	// not remove them until every user has a successfully saved replacement.
+	if allSaved {
+		if err := h.repo.PurgeOldStatisticsFlows(cutoffMs); err != nil {
+			log.Printf("statistics flow cleanup failed err=%v", err)
+		}
 	}
 }
 

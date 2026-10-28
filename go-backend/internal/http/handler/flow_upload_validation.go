@@ -24,14 +24,16 @@ func validateFlowUploadItems(items []flowItem, metas map[int64]repo.FlowUploadFo
 		if !ok || !exists {
 			continue
 		}
-		if meta.TunnelFlow <= 0 || meta.TrafficRatio <= 0 || math.IsNaN(meta.TrafficRatio) || math.IsInf(meta.TrafficRatio, 0) {
-			return fmt.Errorf("item %d: invalid billing configuration", i)
+		if !validTunnelBilling(meta.TunnelFlow, meta.TrafficRatio) {
+			// Stored configuration is not an upload error. The batch builder
+			// logs and skips local billing for this forward, preserving peers.
+			continue
 		}
-		billable := []int64{item.D}
-		if meta.TunnelFlow != 1 {
-			billable = append(billable, item.U)
+		values := []int64{item.D}
+		if meta.TunnelFlow == 2 {
+			values = append(values, item.U)
 		}
-		for _, value := range billable {
+		for _, value := range values {
 			scaled := float64(value) * meta.TrafficRatio
 			// float64(MaxInt64) rounds up to 2^63. Reject that boundary before
 			// converting, as an out-of-range float-to-int conversion can wrap.

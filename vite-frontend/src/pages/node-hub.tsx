@@ -104,6 +104,7 @@ export default function NodeHubPage() {
           <div className={monitorNode !== null ? "hidden" : ""}>
             <NodePage
               embedded
+              active={monitorNode === null}
               addRequest={addNode}
               onOpenMonitor={setMonitorNode}
             />

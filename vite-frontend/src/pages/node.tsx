@@ -15,13 +15,7 @@ import {
   rectSortingStrategy,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { GripVertical } from "lucide-react";
 
-import { formatTraffic } from "@/utils/traffic";
-import { Button } from "@/shadcn-bridge/heroui/button";
-import { Card, CardBody, CardHeader } from "@/shadcn-bridge/heroui/card";
-import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
-import { Chip } from "@/shadcn-bridge/heroui/chip";
 import { Alert } from "@/shadcn-bridge/heroui/alert";
 import { Progress } from "@/shadcn-bridge/heroui/progress";
 import {
@@ -42,7 +36,6 @@ import {
   getNodeMonthTraffic,
   type ReleaseChannel,
 } from "@/api";
-import { LatencyCell, probePoints } from "@/components/latency-cell";
 import { RouteModal } from "@/components/route-modal";
 import { LatencyTrendModal } from "@/components/lazy-charts";
 import { LatencyTargetsModal } from "@/pages/node/latency-targets-modal";
@@ -50,7 +43,6 @@ import { PageLoadingState } from "@/components/page-state";
 import { ActionSheet } from "@/components/action-sheet";
 import {
   EmptyHint,
-  ListRow,
   PageHeader,
   PageShell,
   PageTabs,
@@ -60,19 +52,19 @@ import {
 } from "@/components/page-kit";
 import { CARD_GRID } from "@/components/info-card";
 import { useViewMode } from "@/components/view-mode";
-import {
-  getConnectionStatusMeta,
-  getRemoteSyncErrorMessage,
-} from "@/pages/node/display";
+import { getRemoteSyncErrorMessage } from "@/pages/node/display";
 import { NodeTuneModal } from "@/pages/node/tune-modal";
 import { copyWithToast } from "@/utils/clipboard";
 import {
   formatNodeRenewalTime,
   getNodeRenewalCycleLabel,
 } from "@/pages/node/renewal";
-import { buildNodeSystemInfo } from "@/pages/node/system-info";
 import { useNodeOfflineTimers } from "@/pages/node/use-node-offline-timers";
-import { useNodeRealtime } from "@/pages/node/use-node-realtime";
+import { applyNodeRealtimeBatch } from "@/pages/node/realtime-state";
+import {
+  useNodeRealtime,
+  type NodeRealtimeMessage,
+} from "@/pages/node/use-node-realtime";
 import {
   markPageCached,
   pageCached,
@@ -93,7 +85,6 @@ import {
   getNodeReminderEnabled,
   getNodeExpiryMeta,
   mergeNodeRealtimeState,
-  SortableItem,
 } from "@/pages/node/helpers";
 import { NodeFormModal } from "@/pages/node/node-form-modal";
 import {
@@ -107,16 +98,41 @@ import {
   UpgradeNodeModal,
 } from "@/pages/node/agent-modals";
 import { NodeFilterModal } from "@/pages/node/filter-modal";
-import { NodeLiveStats } from "@/pages/node/node-live-stats";
+import { NodeRow } from "@/pages/node/node-row";
+import { formatSpeed, formatUptime, formatFlow } from "@/pages/node/format";
+import { useWideNodeLayout } from "@/pages/node/use-wide-node-layout";
+
+// IPv4/IPv6 格式验证（仅用于判定地址族）
+const ipv4Regex =
+  /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+const ipv6Regex =
+  /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
+
+const validateIpv4Literal = (ip: string): boolean => ipv4Regex.test(ip.trim());
+const validateIpv6Literal = (ip: string): boolean => ipv6Regex.test(ip.trim());
+
+// Hostname/domain validation (no scheme/port)
+const hostnameRegex =
+  /^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/;
 
 const PAGE = "node";
+const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 8 } };
+const TOUCH_SENSOR_OPTIONS = {
+  activationConstraint: { delay: 250, tolerance: 8 },
+};
+const KEYBOARD_SENSOR_OPTIONS = {
+  coordinateGetter: sortableKeyboardCoordinates,
+};
 
 export default function NodePage({
   embedded = false,
+  active = true,
   addRequest = 0,
   onOpenMonitor,
 }: {
   embedded?: boolean;
+  /** Pause work while the mounted list is hidden behind monitor details. */
+  active?: boolean;
   /** Bumped by the 节点 page header's 新建节点 when embedded. */
   addRequest?: number;
   /** Opens a node's history charts and service monitors. */
@@ -202,41 +218,6 @@ export default function NodePage({
   const [selectMode, setSelectMode] = useState(false);
   const [viewMode, setViewMode] = useViewMode("node");
   const card = viewMode === "card";
-  const [infoPopoverPlacement, setInfoPopoverPlacement] = useState<
-    Record<number, "left" | "bottom">
-  >({});
-
-  const updateInfoPopoverPlacement = useCallback(
-    (nodeId: number, triggerElement: HTMLElement | null) => {
-      if (!triggerElement) {
-        return;
-      }
-
-      const rect = triggerElement.getBoundingClientRect();
-      const cardElement = triggerElement.closest("[data-node-card='true']");
-      const cardRect =
-        cardElement instanceof HTMLElement
-          ? cardElement.getBoundingClientRect()
-          : null;
-      const estimatedPanelWidth = 288;
-      const containerPadding = 16;
-      const availableLeftSpace = cardRect
-        ? rect.left - cardRect.left
-        : rect.left;
-      const nextPlacement: "left" | "bottom" =
-        availableLeftSpace >= estimatedPanelWidth + containerPadding
-          ? "left"
-          : "bottom";
-
-      setInfoPopoverPlacement((prev) =>
-        prev[nodeId] === nextPlacement
-          ? prev
-          : { ...prev, [nodeId]: nextPlacement },
-      );
-    },
-    [],
-  );
-
   const [sheetNodeId, setSheetNodeId] = useState<number | null>(null);
   const [probingIds, setProbingIds] = useState<Set<number>>(new Set());
   const [routeNode, setRouteNode] = useState<Node | null>(null);
@@ -281,22 +262,25 @@ export default function NodePage({
     Record<string, [number, number]>
   >({});
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
+  const monthLoading = useRef(false);
+  const loadMonthTraffic = useCallback(async () => {
+    if (monthLoading.current) return;
+    monthLoading.current = true;
+    try {
       const res = await getNodeMonthTraffic();
 
-      if (active && res.code === 0 && res.data) setMonthTraffic(res.data);
-    };
-
-    void load();
-    const timer = window.setInterval(load, 60_000);
-
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
+      if (res.code === 0 && res.data) setMonthTraffic(res.data);
+    } catch {
+      // Retain the last known totals until the next refresh.
+    } finally {
+      monthLoading.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    if (active) void loadMonthTraffic();
+  }, [active, loadMonthTraffic]);
+  useVisiblePolling(loadMonthTraffic, 60_000, active);
 
   const [upgradeProgress, setUpgradeProgress] = useState<
     Record<number, { stage: string; percent: number; message: string }>
@@ -315,10 +299,11 @@ export default function NodePage({
     );
   }, []);
 
-  const { clearOfflineTimer, scheduleNodeOffline } = useNodeOfflineTimers({
-    delayMs: 3000,
-    onNodeOffline: handleNodeOffline,
-  });
+  const { clearOfflineTimer, scheduleNodeOffline, clearAllOfflineTimers } =
+    useNodeOfflineTimers({
+      delayMs: 3000,
+      onNodeOffline: handleNodeOffline,
+    });
 
   const loadRemoteUsage = useCallback(async () => {
     try {
@@ -423,124 +408,55 @@ export default function NodePage({
     }
   }, []);
 
-  // 处理WebSocket消息
-  const handleWebSocketMessage = (data: any) => {
-    const { id, type, data: messageData } = data;
-    const nodeId = Number(id);
+  const handleWebSocketMessages = useCallback(
+    (messages: NodeRealtimeMessage[]) => {
+      const progressUpdates: typeof upgradeProgress = {};
 
-    if (Number.isNaN(nodeId)) return;
+      for (const { id, type, data } of messages) {
+        const nodeId = Number(id);
 
-    if (type === "status") {
-      if (messageData === 1) {
-        clearOfflineTimer(nodeId);
-        setNodeList((prev) =>
-          prev.map((node) => {
-            if (node.id !== nodeId) return node;
-            if (node.connectionStatus === "online") return node;
+        if (!Number.isFinite(nodeId)) continue;
+        if (type === "status" && data !== 1) {
+          scheduleNodeOffline(nodeId);
+        } else if (type === "status" || type === "info" || type === "metric") {
+          clearOfflineTimer(nodeId);
+        } else if (type === "upgrade_progress") {
+          try {
+            const progress = typeof data === "string" ? JSON.parse(data) : data;
 
-            return { ...node, connectionStatus: "online" };
-          }),
-        );
-      } else {
-        // 离线事件做延迟处理，避免短抖动导致频繁闪烁
-        scheduleNodeOffline(nodeId);
-      }
-    } else if (type === "info") {
-      clearOfflineTimer(nodeId);
-      setNodeList((prev) =>
-        prev.map((node) => {
-          if (node.id === nodeId) {
-            const systemInfo = buildNodeSystemInfo(
-              messageData,
-              node.systemInfo,
-            );
-
-            if (!systemInfo) {
-              return node;
+            if (progress?.data) {
+              progressUpdates[nodeId] = {
+                stage: progress.data.stage || "",
+                percent: progress.data.percent || 0,
+                message: progress.message || "",
+              };
             }
-
-            return {
-              ...node,
-              connectionStatus: "online",
-              systemInfo,
-            };
+          } catch {
+            // A malformed update must not discard the rest of the delivery.
           }
-
-          return node;
-        }),
-      );
-    } else if (type === "upgrade_progress") {
-      try {
-        const progressData =
-          typeof messageData === "string"
-            ? JSON.parse(messageData)
-            : messageData;
-
-        if (progressData?.data) {
-          setUpgradeProgress((prev) => ({
-            ...prev,
-            [nodeId]: {
-              stage: progressData.data.stage || "",
-              percent: progressData.data.percent || 0,
-              message: progressData.message || "",
-            },
-          }));
         }
-      } catch {
-        // ignore parse errors
       }
-    } else if (type === "metric") {
-      clearOfflineTimer(nodeId);
-      setNodeList((prev) =>
-        prev.map((node) => {
-          if (node.id !== nodeId) return node;
-
-          const metric =
-            typeof messageData === "string"
-              ? JSON.parse(messageData)
-              : messageData;
-
-          if (!metric || typeof metric !== "object") return node;
-
-          const incomingUptime = metric.uptime ?? 0;
-
-          return {
-            ...node,
-            connectionStatus: "online",
-            systemInfo: {
-              cpuUsage: metric.cpuUsage ?? metric.cpu_usage ?? 0,
-              memoryUsage: metric.memoryUsage ?? metric.memory_usage ?? 0,
-              uploadTraffic:
-                metric.netOutBytes ?? metric.bytes_transmitted ?? 0,
-              downloadTraffic: metric.netInBytes ?? metric.bytes_received ?? 0,
-              uploadSpeed: metric.netOutSpeed ?? metric.net_out_speed ?? 0,
-              downloadSpeed: metric.netInSpeed ?? metric.net_in_speed ?? 0,
-              uptime: incomingUptime || node.systemInfo?.uptime || 0,
-              diskUsage: metric.diskUsage ?? metric.disk_usage,
-              load1: metric.load1,
-              load5: metric.load5,
-              load15: metric.load15,
-              tcpConns: metric.tcpConns ?? metric.tcp_conns,
-              udpConns: metric.udpConns ?? metric.udp_conns,
-              netInSpeed: metric.netInSpeed ?? metric.net_in_speed,
-              netOutSpeed: metric.netOutSpeed ?? metric.net_out_speed,
-            },
-          };
-        }),
-      );
-    }
-  };
+      setNodeList((prev) => applyNodeRealtimeBatch(prev, messages));
+      if (Object.keys(progressUpdates).length > 0) {
+        setUpgradeProgress((prev) => ({ ...prev, ...progressUpdates }));
+      }
+    },
+    [clearOfflineTimer, scheduleNodeOffline],
+  );
 
   const { wsConnected, wsConnecting, wsStarting, usingPollingFallback } =
-    useNodeRealtime({
-      onMessage: handleWebSocketMessage,
-    });
+    useNodeRealtime({ onMessages: handleWebSocketMessages, enabled: active });
 
   useEffect(() => {
+    if (!active) {
+      clearAllOfflineTimers();
+
+      return;
+    }
     // With cached data on screen, reload without the loading state.
     loadNodes({ silent: pageCached(PAGE) });
     loadRemoteUsage();
-  }, [loadNodes, loadRemoteUsage]);
+  }, [active, clearAllOfflineTimers, loadNodes, loadRemoteUsage]);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -549,72 +465,10 @@ export default function NodePage({
   // Metrics arrive over WebSocket, but cached latency is only in node/list.
   useVisiblePolling(
     useCallback(() => loadNodes({ silent: true }), [loadNodes]),
+    15_000,
+    active,
   );
 
-  // 格式化速度
-  const formatSpeed = (bytesPerSecond: number): string => {
-    if (bytesPerSecond === 0) return "0 B/s";
-
-    const k = 1024;
-    const sizes = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
-    const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k));
-
-    return (
-      parseFloat((bytesPerSecond / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
-    );
-  };
-
-  // 格式化开机时间
-  const formatUptime = (seconds: number): string => {
-    if (seconds === 0) return "-";
-
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-
-    if (days > 0) {
-      return `${days}天${hours}小时`;
-    } else if (hours > 0) {
-      return `${hours}小时${minutes}分钟`;
-    } else {
-      return `${minutes}分钟`;
-    }
-  };
-
-  // 格式化流量
-
-  const formatFlow = (bytes: number): string => {
-    return formatTraffic(bytes);
-  };
-
-  const formatChainType = (chainType: number, hopInx: number) => {
-    if (chainType === 1) {
-      return "入口服务器";
-    }
-    if (chainType === 2) {
-      return `中继跳点 #${hopInx}`;
-    }
-    if (chainType === 3) {
-      return "出口服务器";
-    }
-
-    return "未知链路";
-  };
-
-  // IPv4/IPv6 格式验证（仅用于判定地址族）
-  const ipv4Regex =
-    /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-  const ipv6Regex =
-    /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
-
-  const validateIpv4Literal = (ip: string): boolean =>
-    ipv4Regex.test(ip.trim());
-  const validateIpv6Literal = (ip: string): boolean =>
-    ipv6Regex.test(ip.trim());
-
-  // Hostname/domain validation (no scheme/port)
-  const hostnameRegex =
-    /^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/;
   const validateHostname = (host: string): boolean => {
     const v = host.trim();
 
@@ -774,7 +628,7 @@ export default function NodePage({
   }, [addRequest]);
 
   // 编辑节点
-  const handleEdit = (node: Node) => {
+  const handleEdit = useCallback((node: Node) => {
     setDialogTitle("编辑服务器");
     setIsEdit(true);
 
@@ -825,13 +679,13 @@ export default function NodePage({
           : "",
     );
     setDialogVisible(true);
-  };
+  }, []);
 
   // 删除节点
-  const handleDelete = (node: Node) => {
+  const handleDelete = useCallback((node: Node) => {
     setNodeToDelete(node);
     setDeleteModalOpen(true);
-  };
+  }, []);
 
   const confirmDelete = async () => {
     if (!nodeToDelete) return;
@@ -855,7 +709,7 @@ export default function NodePage({
     }
   };
 
-  const handleDismissExpiryReminder = async (nodeId: number) => {
+  const handleDismissExpiryReminder = useCallback(async (nodeId: number) => {
     try {
       const res = await dismissNodeExpiryReminder(nodeId);
 
@@ -871,45 +725,50 @@ export default function NodePage({
     } catch {
       toast.error("网络错误，请重试");
     }
-  };
+  }, []);
 
   // Only the stable channel is published, so there is nothing to choose.
-  const openInstallSelector = (node: Node) =>
-    handleCopyInstallCommand(node, "stable");
 
   // 复制安装命令
-  const handleCopyInstallCommand = async (
-    node: Node,
-    channel: ReleaseChannel,
-  ) => {
-    setNodeList((prev) =>
-      prev.map((n) => (n.id === node.id ? { ...n, copyLoading: true } : n)),
-    );
-
-    try {
-      const [res, dockerRes] = await Promise.all([
-        getNodeInstallCommand(node.id, channel),
-        getNodeInstallCommand(node.id, channel, "docker").catch(() => null),
-      ]);
-
-      if (res.code === 0 && res.data) {
-        setInstallCommands({
-          script: res.data,
-          docker: dockerRes?.code === 0 ? dockerRes.data || "" : "",
-        });
-        setCurrentNodeName(node.name);
-        setInstallCommandModal(true);
-      } else {
-        toast.error(res.msg || "获取安装命令失败");
-      }
-    } catch {
-      toast.error("获取安装命令失败");
-    } finally {
+  const handleCopyInstallCommand = useCallback(
+    async (node: Node, channel: ReleaseChannel) => {
       setNodeList((prev) =>
-        prev.map((n) => (n.id === node.id ? { ...n, copyLoading: false } : n)),
+        prev.map((n) => (n.id === node.id ? { ...n, copyLoading: true } : n)),
       );
-    }
-  };
+
+      try {
+        const [res, dockerRes] = await Promise.all([
+          getNodeInstallCommand(node.id, channel),
+          getNodeInstallCommand(node.id, channel, "docker").catch(() => null),
+        ]);
+
+        if (res.code === 0 && res.data) {
+          setInstallCommands({
+            script: res.data,
+            docker: dockerRes?.code === 0 ? dockerRes.data || "" : "",
+          });
+          setCurrentNodeName(node.name);
+          setInstallCommandModal(true);
+        } else {
+          toast.error(res.msg || "获取安装命令失败");
+        }
+      } catch {
+        toast.error("获取安装命令失败");
+      } finally {
+        setNodeList((prev) =>
+          prev.map((n) =>
+            n.id === node.id ? { ...n, copyLoading: false } : n,
+          ),
+        );
+      }
+    },
+    [],
+  );
+
+  const openInstallSelector = useCallback(
+    (node: Node) => handleCopyInstallCommand(node, "stable"),
+    [handleCopyInstallCommand],
+  );
 
   const handleCopyCommand = async (command: string) => {
     if (await copyWithToast(command, "安装命令已复制到剪贴板")) {
@@ -935,19 +794,19 @@ export default function NodePage({
   }, []);
 
   // 打开版本选择弹窗
-  const openUpgradeModal = async (
-    target: "single" | "batch",
-    nodeId?: number,
-  ) => {
-    const defaultChannel: ReleaseChannel = "stable";
+  const openUpgradeModal = useCallback(
+    async (target: "single" | "batch", nodeId?: number) => {
+      const defaultChannel: ReleaseChannel = "stable";
 
-    setUpgradeTarget(target);
-    setUpgradeTargetNodeId(nodeId || null);
-    setReleaseChannel(defaultChannel);
-    setSelectedVersion("");
-    setUpgradeModalOpen(true);
-    await loadReleasesByChannel(defaultChannel);
-  };
+      setUpgradeTarget(target);
+      setUpgradeTargetNodeId(nodeId || null);
+      setReleaseChannel(defaultChannel);
+      setSelectedVersion("");
+      setUpgradeModalOpen(true);
+      await loadReleasesByChannel(defaultChannel);
+    },
+    [loadReleasesByChannel],
+  );
 
   // 确认升级（从版本弹窗）
   const handleConfirmUpgrade = async () => {
@@ -1024,10 +883,10 @@ export default function NodePage({
   };
 
   // 回退节点
-  const handleRollbackNode = (node: Node) => {
+  const handleRollbackNode = useCallback((node: Node) => {
     setNodeToRollback(node);
     setRollbackModalOpen(true);
-  };
+  }, []);
 
   const confirmRollback = async () => {
     if (!nodeToRollback) return;
@@ -1185,7 +1044,7 @@ export default function NodePage({
 
   // 处理拖拽结束
   // Probes one node's latency again and patches its result in place.
-  const probeNode = async (id: number) => {
+  const probeNode = useCallback(async (id: number) => {
     setProbingIds((prev) => new Set(prev).add(id));
     try {
       const res = await probeNodeLatency([id]);
@@ -1212,37 +1071,7 @@ export default function NodePage({
         return next;
       });
     }
-  };
-
-  const renderLatency = (node: Node, variant: "card" | "list") =>
-    node.isRemote !== 1 && node.connectionStatus === "online" ? (
-      node.latencyTargets?.points.length === 0 ? (
-        <button
-          className="rounded-full bg-default-100 px-2 py-0.5 text-xs text-default-500 hover:text-default-700"
-          title="这台服务器没选测试点，点此设置"
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setTargetNodes([node]);
-          }}
-        >
-          不测延迟
-        </button>
-      ) : probePoints(node.latency).length === 0 ? null : (
-        // Nothing until the first round (every 3 minutes) has a result;
-        // re-probing is in the result's menu.
-        <LatencyCell
-          note={node.latencyTargets ? "自定义" : undefined}
-          probe={node.latency}
-          probing={probingIds.has(node.id)}
-          variant={variant}
-          onEditTargets={() => setTargetNodes([node])}
-          onProbe={() => probeNode(node.id)}
-          onShowRoute={() => setRouteNode(node)}
-          onShowTrend={() => setTrendNode(node)}
-        />
-      )
-    ) : null;
+  }, []);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1313,7 +1142,7 @@ export default function NodePage({
     });
   };
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
 
@@ -1325,7 +1154,7 @@ export default function NodePage({
 
       return next;
     });
-  };
+  }, []);
 
   const selectAll = () => {
     setSelectedIds(new Set(displayNodes.map((n) => n.id)));
@@ -1357,22 +1186,10 @@ export default function NodePage({
     }
   };
 
-  // 传感器配置
   const sensors = useSensors(
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
+    useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
+    useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
+    useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS),
   );
 
   const nodeExpiryStats = useMemo(() => {
@@ -1519,6 +1336,42 @@ export default function NodePage({
     [displayNodes],
   );
 
+  const wide = useWideNodeLayout();
+  const rowActions = useMemo(
+    () => ({
+      toggleSelect,
+      handleDismissExpiryReminder,
+      onOpenMonitor,
+      openInstallSelector,
+      openUpgradeModal,
+      handleRollbackNode,
+      handleEdit,
+      handleDelete,
+      probeNode,
+      setTargetNodes,
+      setTuneNode,
+      setSheetNodeId,
+      setRouteNode,
+      setTrendNode,
+    }),
+    [
+      toggleSelect,
+      handleDismissExpiryReminder,
+      onOpenMonitor,
+      openInstallSelector,
+      openUpgradeModal,
+      handleRollbackNode,
+      handleEdit,
+      handleDelete,
+      probeNode,
+      setTargetNodes,
+      setTuneNode,
+      setSheetNodeId,
+      setRouteNode,
+      setTrendNode,
+    ],
+  );
+
   return (
     <PageShell embedded={embedded}>
       {!embedded && (
@@ -1652,636 +1505,22 @@ export default function NodePage({
                 card ? CARD_GRID : "grid grid-cols-1 gap-2 2xl:grid-cols-2"
               }
             >
-              {displayNodes.map((node) => {
-                if (card) {
-                  const isRemoteNode = node.isRemote === 1;
-                  const remoteUsage = isRemoteNode
-                    ? remoteUsageMap[node.id]
-                    : null;
-                  const expiryMeta = getNodeExpiryMeta(
-                    node.expiryTime,
-                    node.renewalCycle,
-                  );
-                  const connectionStatusMeta = getConnectionStatusMeta(
-                    node.connectionStatus,
-                  );
-                  const hasRemark = Boolean(node.remark?.trim());
-                  const hasExpiryInfo = Boolean(
-                    node.expiryTime &&
-                      node.expiryTime > 0 &&
-                      node.renewalCycle &&
-                      !node.expiryReminderDismissed,
-                  );
-                  const hasInfoTrigger = hasRemark || hasExpiryInfo;
-                  const infoCount = Number(hasExpiryInfo) + Number(hasRemark);
-                  const infoPlacement = infoPopoverPlacement[node.id] ?? "left";
-
-                  return (
-                    <SortableItem key={node.id} id={node.id}>
-                      {(listeners) => (
-                        <Card
-                          key={node.id}
-                          className={`group relative overflow-visible h-full flex flex-col ${node.expiryReminderDismissed ? "" : expiryMeta.accentClassName}`}
-                          data-node-card="true"
-                        >
-                          <CardHeader className="pb-3 md:pb-3">
-                            <div className="flex justify-between items-start w-full gap-3">
-                              <div className="flex items-start gap-2 flex-1 min-w-0">
-                                <div
-                                  className="cursor-grab active:cursor-grabbing p-2 -ml-2 -mt-1 text-default-400 hover:text-default-600 transition-colors touch-manipulation opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0"
-                                  {...listeners}
-                                  style={{ touchAction: "none" }}
-                                  title="拖拽排序"
-                                >
-                                  <svg
-                                    aria-hidden="true"
-                                    className="w-4 h-4"
-                                    fill="currentColor"
-                                    viewBox="0 0 20 20"
-                                  >
-                                    <path d="M7 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 2zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 7 14zm6-8a2 2 0 1 1-.001-4.001A2 2 0 0 1 13 6zm0 2a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 8zm0 6a2 2 0 1 1 .001 4.001A2 2 0 0 1 13 14z" />
-                                  </svg>
-                                </div>
-                                {selectMode && (
-                                  <Checkbox
-                                    className="mt-0.5"
-                                    isSelected={selectedIds.has(node.id)}
-                                    onValueChange={() => toggleSelect(node.id)}
-                                  />
-                                )}
-                                <div className="min-w-0 flex-1 pt-0.5">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <h3 className="font-semibold text-foreground truncate text-lg leading-5">
-                                      {node.name}
-                                    </h3>
-                                    <div
-                                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0
-                                      ${connectionStatusMeta.color === "success" ? "bg-emerald-500/20 text-emerald-600" : "bg-rose-500/20 text-rose-600"}
-                                    `}
-                                      title={connectionStatusMeta.text}
-                                    >
-                                      <span
-                                        className={`h-1.5 w-1.5 rounded-full ${connectionStatusMeta.color === "success" ? "bg-emerald-500" : "bg-rose-500"}`}
-                                      />
-                                      {connectionStatusMeta.text}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="ml-2 flex-shrink-0 self-start">
-                                {hasInfoTrigger && (
-                                  <div className="group/info relative">
-                                    <button
-                                      aria-label={`查看服务器信息，共 ${infoCount} 项`}
-                                      className="relative flex h-7 w-7 items-center justify-center rounded-full border border-divider/80 bg-background/95 text-default-500 shadow-sm transition hover:border-default-300 hover:text-foreground focus-visible:border-default-300 focus-visible:text-foreground focus-visible:outline-none"
-                                      type="button"
-                                      onFocus={(event) =>
-                                        updateInfoPopoverPlacement(
-                                          node.id,
-                                          event.currentTarget,
-                                        )
-                                      }
-                                      onMouseEnter={(event) =>
-                                        updateInfoPopoverPlacement(
-                                          node.id,
-                                          event.currentTarget,
-                                        )
-                                      }
-                                    >
-                                      <svg
-                                        aria-hidden="true"
-                                        className="h-3.5 w-3.5"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                      >
-                                        <path
-                                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={1.8}
-                                        />
-                                      </svg>
-                                      {hasRemark && (
-                                        <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5 rounded-full border border-background bg-default-300 shadow-sm dark:bg-default-500" />
-                                      )}
-                                    </button>
-                                    <div
-                                      className={`pointer-events-none invisible absolute z-[60] w-72 max-w-[min(18rem,calc(100vw-4rem))] rounded-xl border border-divider/80 bg-background/98 p-3 opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover/info:visible group-hover/info:pointer-events-auto group-hover/info:opacity-100 group-focus-within/info:visible group-focus-within/info:pointer-events-auto group-focus-within/info:opacity-100 ${
-                                        infoPlacement === "bottom"
-                                          ? "right-0 top-[calc(100%+0.75rem)] translate-y-1 group-hover/info:translate-y-0 group-focus-within/info:translate-y-0"
-                                          : "right-[calc(100%+0.75rem)] top-1/2 -translate-y-1/2 translate-x-1 group-hover/info:translate-x-0 group-focus-within/info:translate-x-0"
-                                      }`}
-                                    >
-                                      <div className="space-y-3">
-                                        {hasExpiryInfo && (
-                                          <div className="space-y-2">
-                                            <div className="flex items-center justify-between">
-                                              <div className="text-[11px] font-medium text-default-500">
-                                                到期提醒
-                                              </div>
-                                              <button
-                                                className="text-[10px] text-default-400 hover:text-default-600 transition-colors"
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleDismissExpiryReminder(
-                                                    node.id,
-                                                  );
-                                                }}
-                                              >
-                                                关闭提醒
-                                              </button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-1.5">
-                                              <Chip
-                                                className="text-[10px] h-5 px-1 flex-shrink-0"
-                                                color={expiryMeta.tone}
-                                                size="sm"
-                                                title={`${formatNodeRenewalTime(expiryMeta.nextDueTime)} (${getNodeRenewalCycleLabel(node.renewalCycle)})`}
-                                                variant="flat"
-                                              >
-                                                {expiryMeta.label}
-                                              </Chip>
-                                            </div>
-                                            <div className="rounded-lg border border-divider/80 bg-default-50/80 px-3 py-2 text-xs leading-5 text-default-700">
-                                              {formatNodeRenewalTime(
-                                                expiryMeta.nextDueTime,
-                                              )}
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {hasRemark && (
-                                          <div className="space-y-2">
-                                            <div className="text-[11px] font-medium text-default-500">
-                                              备注
-                                            </div>
-                                            <div
-                                              className="max-h-32 overflow-y-auto rounded-lg border border-divider/80 bg-default-50/80 px-3 py-2 text-xs leading-5 text-default-700 break-all [scrollbar-width:thin]"
-                                              title={node.remark?.trim()}
-                                            >
-                                              {node.remark?.trim()}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </CardHeader>
-
-                          <CardBody className="pt-0 pb-3 md:pt-0 md:pb-3 flex-1 flex flex-col">
-                            {isRemoteNode && node.syncError && (
-                              <div className="mb-3 px-2 py-1.5 rounded-md bg-warning-50 dark:bg-warning-100/10 text-warning-700 dark:text-warning-400 text-xs">
-                                {getRemoteSyncErrorMessage(node.syncError)}
-                              </div>
-                            )}
-                            {isRemoteNode ? (
-                              <div className="space-y-2 mb-4">
-                                <div className="flex justify-between items-center text-sm min-w-0">
-                                  <span className="text-default-600 flex-shrink-0">
-                                    IP
-                                  </span>
-                                  <div className="text-right text-xs min-w-0 flex-1 ml-2 min-h-[2.125rem]">
-                                    {node.serverIpV4?.trim() ||
-                                    node.serverIpV6?.trim() ? (
-                                      <div className="space-y-0.5">
-                                        {node.serverIpV4?.trim() && (
-                                          <span
-                                            className="font-mono truncate block"
-                                            title={node.serverIpV4.trim()}
-                                          >
-                                            {node.serverIpV4.trim()}
-                                          </span>
-                                        )}
-                                        {node.serverIpV6?.trim() && (
-                                          <span
-                                            className="font-mono truncate block"
-                                            title={node.serverIpV6.trim()}
-                                          >
-                                            {node.serverIpV6.trim()}
-                                          </span>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span
-                                        className="font-mono truncate block"
-                                        title={node.serverIp.trim()}
-                                      >
-                                        {node.serverIp.trim()}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="mb-4 space-y-3">
-                                <p className="truncate font-mono text-xs text-default-500">
-                                  {[
-                                    node.serverIpV4?.trim() ||
-                                      node.serverIpV6?.trim() ||
-                                      node.serverIp.trim(),
-                                    node.version || "未连接过",
-                                    node.connectionStatus === "online" &&
-                                    node.systemInfo
-                                      ? `已运行 ${formatUptime(node.systemInfo.uptime)}`
-                                      : "",
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </p>
-                                {upgradeProgress[node.id] &&
-                                  upgradeProgress[node.id].percent < 100 && (
-                                    <Progress
-                                      showValueLabel
-                                      aria-label="升级进度"
-                                      color="warning"
-                                      label={upgradeProgress[node.id].message}
-                                      size="sm"
-                                      value={upgradeProgress[node.id].percent}
-                                    />
-                                  )}
-                                <NodeLiveStats
-                                  info={
-                                    node.connectionStatus === "online"
-                                      ? (node.systemInfo ?? null)
-                                      : null
-                                  }
-                                  month={monthTraffic[String(node.id)]}
-                                  variant="card"
-                                />
-                              </div>
-                            )}
-
-                            {isRemoteNode && (
-                              <div className="space-y-3 mb-4">
-                                {remoteUsage ? (
-                                  <>
-                                    <div className="text-xs rounded-md border border-default-200 dark:border-default-100/30 bg-default-50 dark:bg-default-100/20 p-2.5 space-y-2">
-                                      <div className="flex justify-between gap-2">
-                                        <span className="text-default-500">
-                                          远程地址
-                                        </span>
-                                        <span
-                                          className="font-mono text-right truncate"
-                                          title={
-                                            remoteUsage.remoteUrl ||
-                                            node.remoteUrl ||
-                                            "-"
-                                          }
-                                        >
-                                          {remoteUsage.remoteUrl ||
-                                            node.remoteUrl ||
-                                            "-"}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between gap-2">
-                                        <span className="text-default-500">
-                                          共享ID
-                                        </span>
-                                        <span className="font-mono">
-                                          #{remoteUsage.shareId}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between gap-2">
-                                        <span className="text-default-500">
-                                          流量
-                                        </span>
-                                        <span className="font-mono">
-                                          {formatFlow(remoteUsage.currentFlow)}
-                                        </span>
-                                      </div>
-                                      <div className="flex justify-between gap-2">
-                                        <span className="text-default-500">
-                                          带宽上限
-                                        </span>
-                                        <span className="font-mono">
-                                          {remoteUsage.maxBandwidth > 0
-                                            ? formatSpeed(
-                                                remoteUsage.maxBandwidth,
-                                              )
-                                            : "不限"}
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    <div className="text-xs rounded-md border border-default-200 dark:border-default-100/30 bg-default-50 dark:bg-default-100/20 p-2.5">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <span className="text-default-500">
-                                          占用端口
-                                        </span>
-                                        <span className="font-mono text-default-700 dark:text-default-300">
-                                          {remoteUsage.usedPorts.length}/
-                                          {Math.max(
-                                            remoteUsage.portRangeEnd -
-                                              remoteUsage.portRangeStart +
-                                              1,
-                                            0,
-                                          )}
-                                        </span>
-                                      </div>
-                                      <div className="max-h-20 overflow-y-auto rounded bg-white/10 dark:bg-black/10 p-1.5 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1">
-                                        {remoteUsage.usedPorts.length > 0 ? (
-                                          <div className="flex flex-wrap gap-1">
-                                            {remoteUsage.usedPorts.map(
-                                              (port) => (
-                                                <Chip
-                                                  key={`${node.id}-port-${port}`}
-                                                  className="font-mono shrink-0 whitespace-nowrap"
-                                                  size="sm"
-                                                  variant="flat"
-                                                >
-                                                  {port}
-                                                </Chip>
-                                              ),
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <div className="text-default-400">
-                                            暂无占用端口
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="text-xs rounded-md border border-default-200 dark:border-default-100/30 bg-default-50 dark:bg-default-100/20 p-2.5">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <span className="text-default-500">
-                                          绑定明细
-                                        </span>
-                                        <span className="font-mono text-default-700 dark:text-default-300">
-                                          {remoteUsage.activeBindingNum}
-                                        </span>
-                                      </div>
-                                      <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1">
-                                        {remoteUsage.bindings.length > 0 ? (
-                                          remoteUsage.bindings.map(
-                                            (binding) => (
-                                              <div
-                                                key={binding.bindingId}
-                                                className="rounded border border-default-200 dark:border-default-100/30 bg-white/10 dark:bg-black/10 p-2"
-                                              >
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <span
-                                                    className="font-medium truncate"
-                                                    title={binding.tunnelName}
-                                                  >
-                                                    {binding.tunnelName}
-                                                  </span>
-                                                  <span className="font-mono text-[11px]">
-                                                    #{binding.tunnelId}
-                                                  </span>
-                                                </div>
-                                                <div className="mt-1 text-[11px] text-default-500 flex items-center justify-between gap-2">
-                                                  <span>
-                                                    {formatChainType(
-                                                      binding.chainType,
-                                                      binding.hopInx,
-                                                    )}
-                                                  </span>
-                                                  <span className="font-mono">
-                                                    端口 {binding.allocatedPort}
-                                                  </span>
-                                                </div>
-                                              </div>
-                                            ),
-                                          )
-                                        ) : (
-                                          <div className="text-default-400">
-                                            暂无绑定明细
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <div className="text-xs rounded-md border border-default-200 dark:border-default-100/30 bg-default-50 dark:bg-default-100/20 p-2.5 text-default-500">
-                                    暂未获取到远程占用数据
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {node.latency && (
-                              <div className="mb-4 empty:hidden">
-                                {renderLatency(node, "card")}
-                              </div>
-                            )}
-
-                            <div className="mt-auto space-y-3">
-                              {/* 操作按钮 */}
-                              <div
-                                className={`grid gap-1.5 ${isRemoteNode ? "grid-cols-1" : "grid-cols-3"}`}
-                              >
-                                {!isRemoteNode && (
-                                  <>
-                                    {onOpenMonitor && (
-                                      <Button
-                                        className="min-h-8"
-                                        color="primary"
-                                        size="sm"
-                                        variant="flat"
-                                        onPress={() => onOpenMonitor(node.id)}
-                                      >
-                                        监控
-                                      </Button>
-                                    )}
-                                    <Button
-                                      className="min-h-8"
-                                      color="success"
-                                      isLoading={node.copyLoading}
-                                      size="sm"
-                                      variant="flat"
-                                      onPress={() => openInstallSelector(node)}
-                                    >
-                                      安装
-                                    </Button>
-                                    <Button
-                                      className="min-h-8 bg-default-100 text-default-700"
-                                      size="sm"
-                                      variant="flat"
-                                      onPress={() => setTargetNodes([node])}
-                                    >
-                                      测试点
-                                    </Button>
-                                    <Button
-                                      className="min-h-8"
-                                      color="warning"
-                                      isDisabled={
-                                        node.connectionStatus !== "online"
-                                      }
-                                      isLoading={node.upgradeLoading}
-                                      size="sm"
-                                      variant="flat"
-                                      onPress={() =>
-                                        openUpgradeModal("single", node.id)
-                                      }
-                                    >
-                                      升级
-                                    </Button>
-                                    <Button
-                                      className="min-h-8"
-                                      color="secondary"
-                                      isDisabled={
-                                        node.connectionStatus !== "online"
-                                      }
-                                      isLoading={node.rollbackLoading}
-                                      size="sm"
-                                      variant="flat"
-                                      onPress={() => handleRollbackNode(node)}
-                                    >
-                                      回退
-                                    </Button>
-                                    <Button
-                                      className="min-h-8"
-                                      color="success"
-                                      isDisabled={
-                                        node.connectionStatus !== "online"
-                                      }
-                                      size="sm"
-                                      variant="flat"
-                                      onPress={() => setTuneNode(node)}
-                                    >
-                                      调优
-                                    </Button>
-                                    <Button
-                                      className="min-h-8"
-                                      color="primary"
-                                      size="sm"
-                                      variant="flat"
-                                      onPress={() => handleEdit(node)}
-                                    >
-                                      编辑
-                                    </Button>
-                                  </>
-                                )}
-                                <Button
-                                  className="min-h-8"
-                                  color="danger"
-                                  size="sm"
-                                  variant="flat"
-                                  onPress={() => handleDelete(node)}
-                                >
-                                  删除
-                                </Button>
-                              </div>
-                            </div>
-                          </CardBody>
-                        </Card>
-                      )}
-                    </SortableItem>
-                  );
-                }
-
-                const isRemoteNode = node.isRemote === 1;
-                const online = node.connectionStatus === "online";
-                const expiryMeta = getNodeExpiryMeta(
-                  node.expiryTime,
-                  node.renewalCycle,
-                );
-                const showExpiry = Boolean(
-                  node.expiryTime &&
-                    node.expiryTime > 0 &&
-                    node.renewalCycle &&
-                    !node.expiryReminderDismissed &&
-                    expiryMeta.isHighlighted,
-                );
-                const progress = upgradeProgress[node.id];
-                const upgrading = progress && progress.percent < 100;
-                const address =
-                  node.serverIpV4?.trim() ||
-                  node.serverIpV6?.trim() ||
-                  node.serverIp.trim();
-                const meta = isRemoteNode
-                  ? [address, node.syncError ? "同步失败" : ""]
-                  : [
-                      address,
-                      upgrading
-                        ? `升级中 ${progress.percent}%`
-                        : node.version || "未连接过",
-                      online && node.systemInfo
-                        ? `已运行 ${formatUptime(node.systemInfo.uptime)}`
-                        : "",
-                    ];
-
-                return (
-                  <SortableItem key={node.id} id={node.id}>
-                    {(listeners) => (
-                      <ListRow
-                        badges={
-                          <>
-                            {isRemoteNode && (
-                              <Chip
-                                className="shrink-0"
-                                size="sm"
-                                variant="flat"
-                              >
-                                远程
-                              </Chip>
-                            )}
-                            {showExpiry && (
-                              <Chip
-                                className="shrink-0"
-                                color={expiryMeta.tone}
-                                size="sm"
-                                variant="flat"
-                              >
-                                {expiryMeta.label}
-                              </Chip>
-                            )}
-                          </>
-                        }
-                        footer={
-                          !isRemoteNode && (
-                            <NodeLiveStats
-                              info={online ? (node.systemInfo ?? null) : null}
-                              month={monthTraffic[String(node.id)]}
-                              variant="footer"
-                            />
-                          )
-                        }
-                        meta={meta.filter(Boolean).join(" · ")}
-                        right={
-                          <>
-                            {!isRemoteNode && (
-                              <NodeLiveStats
-                                info={online ? (node.systemInfo ?? null) : null}
-                                month={monthTraffic[String(node.id)]}
-                                variant="row"
-                              />
-                            )}
-                            {/* A fixed slot keeps the stats in line across rows. */}
-                            <div className="contents lg:flex lg:w-36 lg:justify-end">
-                              {renderLatency(node, "list")}
-                            </div>
-                            {!isDisplayFiltered && (
-                              <span
-                                className="cursor-grab touch-none p-1 text-default-300 hover:text-default-500 active:cursor-grabbing"
-                                title="拖动排序"
-                                {...listeners}
-                              >
-                                <GripVertical className="h-4 w-4" />
-                              </span>
-                            )}
-                          </>
-                        }
-                        selectMode={selectMode}
-                        selected={selectedIds.has(node.id)}
-                        status={upgrading ? "warn" : online ? "ok" : "bad"}
-                        statusTitle={
-                          getConnectionStatusMeta(node.connectionStatus).text
-                        }
-                        title={node.name}
-                        onPress={() => setSheetNodeId(node.id)}
-                        onSelect={() => toggleSelect(node.id)}
-                      />
-                    )}
-                  </SortableItem>
-                );
-              })}
+              {displayNodes.map((node) => (
+                <NodeRow
+                  key={node.id}
+                  actions={rowActions}
+                  card={card}
+                  isDisplayFiltered={isDisplayFiltered}
+                  month={monthTraffic[String(node.id)]}
+                  node={node}
+                  probing={probingIds.has(node.id)}
+                  progress={upgradeProgress[node.id]}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(node.id)}
+                  usage={remoteUsageMap[node.id]}
+                  wide={wide}
+                />
+              ))}
             </div>
           </SortableContext>
         </DndContext>

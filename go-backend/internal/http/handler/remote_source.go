@@ -60,8 +60,8 @@ type remoteSyncResult struct {
 	Added   int `json:"added"`
 	Updated int `json:"updated"`
 	Removed int `json:"removed"`
-	// Kept are nodes gone from the source that still have relays; they
-	// are left alone so the relays keep their target.
+	// Kept are unmatched nodes retained because they are referenced or
+	// because this refresh did not provide a complete, successfully saved set.
 	Kept   int      `json:"kept"`
 	Errors []string `json:"errors"`
 }
@@ -69,7 +69,7 @@ type remoteSyncResult struct {
 func (r remoteSyncResult) summary() string {
 	parts := []string{fmt.Sprintf("新增 %d", r.Added), fmt.Sprintf("更新 %d", r.Updated), fmt.Sprintf("移除 %d", r.Removed)}
 	if r.Kept > 0 {
-		parts = append(parts, fmt.Sprintf("%d 个已不在订阅里但有中转，已保留", r.Kept))
+		parts = append(parts, fmt.Sprintf("保留 %d 个旧节点", r.Kept))
 	}
 	return strings.Join(parts, "，")
 }
@@ -199,8 +199,15 @@ func (h *Handler) syncRemoteSource(ctx context.Context, src *model.RemoteSource,
 		}
 	}
 
+	// A failed parse, truncated input or failed write cannot establish that
+	// an unmatched node was removed by the provider. Keep its ID and references.
+	complete := len(res.Errors) == 0
 	for _, row := range mine {
 		if used[row.ID] {
+			continue
+		}
+		if !complete {
+			res.Kept++
 			continue
 		}
 		if relays, err := h.repo.ListInboundRelays(row.ID); err == nil && len(relays) > 0 {
@@ -226,9 +233,16 @@ func (h *Handler) syncRemoteSource(ctx context.Context, src *model.RemoteSource,
 			}
 		}
 	}
+	lastError := ""
+	if len(res.Errors) > 0 {
+		lastError = "订阅未完整同步：" + truncateRunes(strings.Join(res.Errors, "；"), 450)
+	}
 	_ = h.repo.UpdateRemoteSourceStatus(src.ID, map[string]interface{}{
-		"last_fetch": now, "last_error": "", "node_count": count, "userinfo": userinfo,
+		"last_fetch": now, "last_error": lastError, "node_count": count, "userinfo": userinfo,
 	})
+	if lastError != "" {
+		return res, fmt.Errorf("%s；%s", res.summary(), lastError)
+	}
 	return res, nil
 }
 

@@ -4,7 +4,7 @@ import axios from "axios";
 import { IS_DEMO, startDemoRealtime } from "@/demo";
 import { getToken } from "@/utils/session";
 
-interface NodeRealtimeMessage {
+export interface NodeRealtimeMessage {
   id?: string | number;
   type?: string;
   data?: unknown;
@@ -12,7 +12,8 @@ interface NodeRealtimeMessage {
 }
 
 interface UseNodeRealtimeOptions {
-  onMessage: (message: NodeRealtimeMessage) => void;
+  onMessage?: (message: NodeRealtimeMessage) => void;
+  onMessages?: (messages: NodeRealtimeMessage[]) => void;
   enabled?: boolean;
 }
 
@@ -65,7 +66,7 @@ let state: RealtimeState = {
   usingPollingFallback: false,
 };
 const stateListeners = new Set<() => void>();
-const handlers = new Set<(m: NodeRealtimeMessage) => void>();
+const handlers = new Set<(messages: NodeRealtimeMessage[]) => void>();
 
 let socket: WebSocket | null = null;
 let socketUrl = "";
@@ -84,7 +85,7 @@ function flush() {
 
   queue = [];
   // One task: React batches every handler's state updates into one render.
-  for (const m of batch) handlers.forEach((h) => h(m));
+  handlers.forEach((handler) => handler(batch));
 }
 
 function enqueue(m: NodeRealtimeMessage) {
@@ -219,7 +220,9 @@ function openSocket() {
   };
 }
 
-function subscribe(handler: (m: NodeRealtimeMessage) => void): () => void {
+function subscribe(
+  handler: (messages: NodeRealtimeMessage[]) => void,
+): () => void {
   handlers.add(handler);
   lingerTimer = clearTimer(lingerTimer);
   if (!reconnectTimer) openSocket();
@@ -244,26 +247,41 @@ function subscribeState(listener: () => void) {
 }
 
 const getState = () => state;
+const inactiveState = { ...state };
+const getInactiveState = () => inactiveState;
+const subscribeInactive = () => () => {};
 
 export const useNodeRealtime = ({
   onMessage,
+  onMessages,
   enabled = true,
 }: UseNodeRealtimeOptions) => {
-  const onMessageRef = useRef(onMessage);
-  const shared = useSyncExternalStore(subscribeState, getState);
+  const handlersRef = useRef({ onMessage, onMessages });
+  const shared = useSyncExternalStore(
+    enabled ? subscribeState : subscribeInactive,
+    enabled ? getState : getInactiveState,
+  );
   // A page that subscribes while the shared socket is already open has
   // nothing to wait for; until its effect runs, report the shared state.
   const [subscribed, setSubscribed] = useState(false);
 
   useEffect(() => {
-    onMessageRef.current = onMessage;
-  }, [onMessage]);
+    handlersRef.current = { onMessage, onMessages };
+  }, [onMessage, onMessages]);
 
   useEffect(() => {
     if (!enabled) return;
     // The online demo has no server to stream from.
-    if (IS_DEMO) return startDemoRealtime((m) => onMessageRef.current(m));
-    const unsubscribe = subscribe((m) => onMessageRef.current(m));
+    const deliver = (messages: NodeRealtimeMessage[]) => {
+      if (handlersRef.current.onMessages) {
+        handlersRef.current.onMessages(messages);
+      } else {
+        messages.forEach((message) => handlersRef.current.onMessage?.(message));
+      }
+    };
+
+    if (IS_DEMO) return startDemoRealtime((message) => deliver([message]));
+    const unsubscribe = subscribe(deliver);
 
     setSubscribed(true);
 

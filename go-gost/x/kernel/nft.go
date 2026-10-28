@@ -263,7 +263,7 @@ func (n *nftCounters) sync(ports []Port, users []int64) error {
 	defer n.mu.Unlock()
 	if err := nftAvailable(); err != nil {
 		n.lastErr = "未安装 nftables，无法统计流量"
-		return nil
+		return fmt.Errorf("未安装 nftables: %w", err)
 	}
 	rules := expandPorts(ports)
 	users = sortedUsers(users)

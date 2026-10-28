@@ -19,7 +19,7 @@ func TestRealmForwardRenderAndTraffic(t *testing.T) {
 
 	nodeID := seedRelayTargetNode(t, r, "entry", "198.51.100.7")
 	tunnelID := seedTunnelForNftables(t, h, "realm-tunnel", nodeID)
-	if err := r.DB().Exec(`UPDATE tunnel SET engine = 'realm' WHERE id = ?`, tunnelID).Error; err != nil {
+	if err := r.DB().Exec(`UPDATE tunnel SET engine = 'realm', flow = 2 WHERE id = ?`, tunnelID).Error; err != nil {
 		t.Fatal(err)
 	}
 	forward := seedForwardForNftables(t, h, tunnelID, nodeID, "1.1.1.1:443,2.2.2.2:443")

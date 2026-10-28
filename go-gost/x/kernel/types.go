@@ -61,7 +61,7 @@ type Port struct {
 	Network   string `json:"network"` // "tcp", "udp" or "tcp,udp"
 	// Allow, when present, restricts the port to these source CIDRs; every
 	// other packet to it is dropped. Absent means no restriction.
-	Allow []string `json:"allow,omitempty"`
+	Allow []string `json:"allow"`
 	// HopFrom..HopTo (UDP) are redirected to Port: Hysteria2 port hopping.
 	HopFrom int `json:"hopFrom,omitempty"`
 	HopTo   int `json:"hopTo,omitempty"`
@@ -121,9 +121,9 @@ type Status struct {
 	Kernels      []State       `json:"kernels"`
 	Counters     []Counter     `json:"counters"`
 	Users        []UserCounter `json:"users,omitempty"`
-	Epoch        string    `json:"epoch"`
-	NftAvailable bool      `json:"nftAvailable"`
-	NftError     string    `json:"nftError,omitempty"`
+	Epoch        string        `json:"epoch"`
+	NftAvailable bool          `json:"nftAvailable"`
+	NftError     string        `json:"nftError,omitempty"`
 }
 
 type adapter struct {

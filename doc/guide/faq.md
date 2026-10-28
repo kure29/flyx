@@ -4,6 +4,10 @@
 
 ## 面板
 
+### WHMCS 等集成登录提示“验证码校验失败”？
+
+启用登录验证码并配置完整的 Cloudflare Turnstile 密钥后，所有密码登录都必须提交有效的 `captchaId`，包括 WHMCS 等集成。`X-FLVX-API-Client` 是客户端可自行填写的请求头，不再提供验证码豁免。依赖旧豁免的集成需要适配验证码流程；验证码令牌只能使用一次。
+
 ### 安装脚本提示 "Docker command not found"？
 请确保您的系统已安装 Docker 和 Docker Compose。
 - Ubuntu/Debian 安装 Docker: `curl -fsSL https://get.docker.com | bash`
