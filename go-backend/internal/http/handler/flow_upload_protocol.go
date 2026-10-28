@@ -51,8 +51,21 @@ func (h *Handler) serveFlowUpload(w http.ResponseWriter, r *http.Request, reliab
 	} else {
 		err = json.Unmarshal([]byte(raw), &envelope.Items)
 	}
-	if err != nil || validateFlowUploadItems(envelope.Items, nil) != nil {
+	if err != nil {
 		http.Error(w, "invalid traffic upload", http.StatusBadRequest)
+		return
+	}
+	reject := func(status int, reason string) {
+		if !reliable {
+			http.Error(w, "invalid traffic upload", status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"stream": envelope.Stream, "sequence": envelope.Sequence, "error": reason})
+	}
+	if validateFlowUploadItems(envelope.Items, nil) != nil {
+		reject(http.StatusBadRequest, "invalid_batch")
 		return
 	}
 	now := time.Now()
@@ -83,14 +96,17 @@ func (h *Handler) serveFlowUpload(w http.ResponseWriter, r *http.Request, reliab
 	}
 	if err != nil {
 		log.Printf("flow upload failed node_id=%d err=%v", node.ID, err)
-		status := http.StatusServiceUnavailable
-		if errors.Is(err, errInvalidTraffic) {
-			status = http.StatusBadRequest
+		var gap *repo.TrafficSequenceGap
+		switch {
+		case errors.As(err, &gap):
+			reject(http.StatusConflict, "reset_stream")
+		case errors.Is(err, repo.ErrTrafficSequence):
+			reject(http.StatusConflict, "identity_conflict")
+		case errors.Is(err, errInvalidTraffic):
+			reject(http.StatusBadRequest, "invalid_batch")
+		default:
+			http.Error(w, "traffic upload not committed", http.StatusServiceUnavailable)
 		}
-		if errors.Is(err, repo.ErrTrafficSequence) {
-			status = http.StatusConflict
-		}
-		http.Error(w, "traffic upload not committed", status)
 		return
 	}
 	if reliable {

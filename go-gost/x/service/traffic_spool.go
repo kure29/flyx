@@ -18,10 +18,11 @@ type trafficEnvelope struct {
 	Items    []TrafficReportItem `json:"items"`
 }
 type trafficSpoolState struct {
-	Stream   string              `json:"stream"`
-	Next     int64               `json:"next"`
-	Pending  *trafficEnvelope    `json:"pending,omitempty"`
-	Buffered []TrafficReportItem `json:"buffered,omitempty"`
+	Stream   string                `json:"stream"`
+	Next     int64                 `json:"next"`
+	Pending  *trafficEnvelope      `json:"pending,omitempty"`
+	Buffered []TrafficReportItem   `json:"buffered,omitempty"`
+	Retry    [][]TrafficReportItem `json:"retry,omitempty"`
 }
 type trafficSpool struct {
 	path  string
@@ -78,11 +79,15 @@ func (s *trafficSpool) save(state trafficSpoolState) error {
 	if s.path == "" {
 		return nil
 	} // In-memory managers used by embedded callers/tests.
-	data, err := json.Marshal(state)
+	return saveTrafficJSON(s.path, state)
+}
+
+func saveTrafficJSON(path string, value any) error {
+	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(s.path), ".traffic-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".traffic-*")
 	if err != nil {
 		return err
 	}
@@ -100,10 +105,10 @@ func (s *trafficSpool) save(state trafficSpoolState) error {
 	if err != nil {
 		return err
 	}
-	if err = os.Rename(f.Name(), s.path); err != nil {
+	if err = os.Rename(f.Name(), path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(s.path))
+	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
@@ -128,4 +133,55 @@ func mergeTrafficItems(groups ...[]TrafficReportItem) []TrafficReportItem {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].N < out[j].N })
 	return out
+}
+
+// recoverRejected never changes a pending identity before the new state is
+// durable. Invalid batches are bisected so healthy siblings still get billed.
+func (s *trafficSpool) recoverRejected(reason trafficReportRejection) error {
+	pending := s.state.Pending
+	if pending == nil {
+		return nil
+	}
+	next := s.state
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return err
+	}
+	next.Stream, next.Next = hex.EncodeToString(id[:]), 1
+	replacement := *pending
+	replacement.Stream, replacement.Sequence = next.Stream, 1
+	next.Pending = &replacement
+	switch reason {
+	case "reset_stream": // Keep the exact bytes; only the lost cursor changes.
+	case "invalid_batch":
+		if len(pending.Items) > 1 {
+			mid := len(pending.Items) / 2
+			replacement.Items = pending.Items[:mid]
+			next.Retry = append([][]TrafficReportItem{pending.Items[mid:]}, next.Retry...)
+			break
+		}
+		fallthrough
+	case "identity_conflict":
+		// Preserve rejected evidence before unblocking the queue. Replaying an
+		// identity conflict could charge already committed bytes twice.
+		if s.path == "" {
+			return errors.New("cannot quarantine traffic without a spool path")
+		}
+		archive := fmt.Sprintf("%s.rejected-%s-%d.json", s.path, pending.Stream, pending.Sequence)
+		if err := saveTrafficJSON(archive, struct {
+			Reason trafficReportRejection `json:"reason"`
+			Batch  *trafficEnvelope       `json:"batch"`
+		}{reason, pending}); err != nil {
+			return err
+		}
+		fmt.Printf("traffic batch quarantined for inspection: %s (%s)\n", archive, reason)
+		next.Pending = nil
+	default:
+		return reason
+	}
+	if err := s.save(next); err != nil {
+		return err
+	}
+	s.state = next
+	return nil
 }

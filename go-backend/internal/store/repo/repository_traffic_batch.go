@@ -9,6 +9,15 @@ import (
 
 var ErrTrafficSequence = errors.New("unexpected traffic batch sequence or content")
 
+// TrafficSequenceGap distinguishes a missing/rolled-back cursor from reuse of
+// an already committed identity with different bytes.
+type TrafficSequenceGap struct{ Expected int64 }
+
+func (e *TrafficSequenceGap) Error() string {
+	return fmt.Sprintf("%v: expected %d", ErrTrafficSequence, e.Expected)
+}
+func (e *TrafficSequenceGap) Unwrap() error { return ErrTrafficSequence }
+
 // ApplyTrafficBatch commits the accounting and its acknowledgement together.
 // Producers send one batch at a time and retain it until the matching ACK.
 func (r *Repository) ApplyTrafficBatch(scope string, sequence int64, digest string, apply func(*Repository) error) (bool, error) {
@@ -31,7 +40,7 @@ func (r *Repository) ApplyTrafficBatch(scope string, sequence int64, digest stri
 			return nil
 		}
 		if sequence != cursor.Sequence+1 {
-			return fmt.Errorf("%w: got %d after %d", ErrTrafficSequence, sequence, cursor.Sequence)
+			return &TrafficSequenceGap{Expected: cursor.Sequence + 1}
 		}
 		if err := apply(tx); err != nil {
 			return err

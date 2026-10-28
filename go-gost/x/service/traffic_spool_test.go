@@ -150,3 +150,118 @@ func TestTrafficSpoolStopPersistsAndCorruptionIsNotOverwritten(t *testing.T) {
 		t.Fatal("overwrote corrupt evidence")
 	}
 }
+
+func TestTrafficSpoolRecoversCursorAndSplitsInvalidItemsAcrossRestarts(t *testing.T) {
+	oldDo, oldURL, oldAES := reportDo, httpReportURL, httpAESCrypto
+	defer func() { reportDo, httpReportURL, httpAESCrypto = oldDo, oldURL, oldAES }()
+	httpReportURL, httpAESCrypto = "http://panel.invalid/flow/upload?secret=test", nil
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	spool, err := openTrafficSpool(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spool.state.Next = 8
+	if err := spool.save(spool.state); err != nil {
+		t.Fatal(err)
+	}
+	m := &GlobalTrafficManager{spool: spool, ctx: context.Background(), serviceTraffic: map[string]*ServiceTraffic{"good": {DownBytes: 100}, "bad": {DownBytes: 200}}}
+	cursors := map[string]int64{}
+	totals := map[string]int64{}
+	sawGap, sawSplit := false, false
+	reportDo = func(_ context.Context, req *http.Request, _ time.Duration) (*http.Response, error) {
+		var batch trafficEnvelope
+		if err := json.NewDecoder(req.Body).Decode(&batch); err != nil {
+			t.Fatal(err)
+		}
+		status, reason := 200, ""
+		if batch.Sequence > cursors[batch.Stream]+1 {
+			status, reason = 409, "reset_stream"
+			sawGap = true
+		} else {
+			for _, item := range batch.Items {
+				if item.N == "bad" {
+					status, reason = 400, "invalid_batch"
+					if len(batch.Items) > 1 {
+						sawSplit = true
+					}
+					break
+				}
+			}
+			if status == 200 && batch.Sequence > cursors[batch.Stream] {
+				for _, item := range batch.Items {
+					totals[item.N] += item.D
+				}
+				cursors[batch.Stream] = batch.Sequence
+			}
+		}
+		data, _ := json.Marshal(map[string]any{"stream": batch.Stream, "sequence": batch.Sequence, "error": reason})
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+	}
+	for i := 0; i < 12; i++ {
+		if i == 1 {
+			m.serviceTraffic["later"] = &ServiceTraffic{DownBytes: 25}
+		}
+		m.collectAndReport()
+		recovered, err := openTrafficSpool(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m = &GlobalTrafficManager{spool: recovered, ctx: context.Background(), serviceTraffic: map[string]*ServiceTraffic{}}
+	}
+	if !sawGap || !sawSplit || totals["good"] != 100 || totals["later"] != 25 || totals["bad"] != 0 {
+		t.Fatalf("recovery gap=%v split=%v totals=%v", sawGap, sawSplit, totals)
+	}
+	files, err := filepath.Glob(path + ".rejected-*.json")
+	if err != nil || len(files) != 1 {
+		t.Fatalf("quarantine=%v %v", files, err)
+	}
+	var rejected struct{ Batch trafficEnvelope }
+	data, _ := os.ReadFile(files[0])
+	if err := json.Unmarshal(data, &rejected); err != nil {
+		t.Fatal(err)
+	}
+	if len(rejected.Batch.Items) != 1 || rejected.Batch.Items[0].N != "bad" || rejected.Batch.Items[0].D != 200 {
+		t.Fatalf("wrong quarantine: %+v", rejected)
+	}
+	if m.spool.state.Pending != nil || len(m.spool.state.Retry) > 0 || len(m.spool.state.Buffered) > 0 {
+		t.Fatalf("queue stuck: %+v", m.spool.state)
+	}
+}
+
+func TestTrafficRecoveryPersistenceFailureKeepsOriginalIdentity(t *testing.T) {
+	for _, reason := range []trafficReportRejection{"reset_stream", "invalid_batch", "identity_conflict"} {
+		t.Run(string(reason), func(t *testing.T) {
+			s, err := openTrafficSpool("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.state.Pending = &trafficEnvelope{Stream: s.state.Stream, Sequence: 1, Items: []TrafficReportItem{{N: "bad", D: 100}}}
+			s.path = filepath.Join(t.TempDir(), "missing", "traffic.json")
+			before, _ := json.Marshal(s.state)
+			if err := s.recoverRejected(reason); err == nil {
+				t.Fatal("expected persistence failure")
+			}
+			after, _ := json.Marshal(s.state)
+			if string(before) != string(after) {
+				t.Fatal("failed recovery mutated state")
+			}
+		})
+	}
+}
+
+func TestReliableTrafficIgnoresUnboundErrors(t *testing.T) {
+	oldDo, oldURL, oldAES := reportDo, httpReportURL, httpAESCrypto
+	defer func() { reportDo, httpReportURL, httpAESCrypto = oldDo, oldURL, oldAES }()
+	httpReportURL, httpAESCrypto = "http://panel.invalid/flow/upload?secret=test", nil
+	batch := trafficEnvelope{Stream: strings.Repeat("d", 32), Sequence: 1}
+	for _, body := range []string{`bad request`, `{"stream":"wrong","sequence":1,"error":"invalid_batch"}`, `{"stream":"` + batch.Stream + `","sequence":1,"error":"unknown"}`} {
+		reportDo = func(context.Context, *http.Request, time.Duration) (*http.Response, error) {
+			return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}
+		err := sendReliableTrafficReport(context.Background(), batch)
+		var rejection trafficReportRejection
+		if err == nil || errors.As(err, &rejection) {
+			t.Fatalf("unsafe error recovery: %v", err)
+		}
+	}
+}

@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+type trafficReportRejection string
+
+func (e trafficReportRejection) Error() string { return "traffic batch rejected: " + string(e) }
+
 func sendReliableTrafficReport(ctx context.Context, batch trafficEnvelope) error {
 	data, err := json.Marshal(batch)
 	if err != nil {
@@ -46,10 +50,16 @@ func sendReliableTrafficReport(ctx context.Context, batch trafficEnvelope) error
 		var ack struct {
 			Stream   string `json:"stream"`
 			Sequence int64  `json:"sequence"`
+			Error    string `json:"error"`
 		}
 		err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&ack)
 		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK && err == nil && ack.Stream == batch.Stream && ack.Sequence == batch.Sequence {
+		if err == nil && ack.Stream == batch.Stream && ack.Sequence == batch.Sequence {
+			if (resp.StatusCode == http.StatusConflict && (ack.Error == "reset_stream" || ack.Error == "identity_conflict")) || (resp.StatusCode == http.StatusBadRequest && ack.Error == "invalid_batch") {
+				return trafficReportRejection(ack.Error)
+			}
+		}
+		if resp.StatusCode == http.StatusOK && err == nil && ack.Error == "" && ack.Stream == batch.Stream && ack.Sequence == batch.Sequence {
 			storePreferredURL(&preferredUploadURL, target)
 			return nil
 		}

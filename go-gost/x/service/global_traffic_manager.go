@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -160,6 +161,12 @@ func (m *GlobalTrafficManager) collectAndReport() {
 		ctx = context.Background()
 	}
 	if err := sendReliableTrafficReport(ctx, *m.spool.state.Pending); err != nil {
+		var rejection trafficReportRejection
+		if errors.As(err, &rejection) {
+			if recoverErr := m.spool.recoverRejected(rejection); recoverErr != nil {
+				fmt.Printf("traffic recovery persistence failed: %v\n", recoverErr)
+			}
+		}
 		fmt.Printf("%v\n", err)
 		return
 	}
@@ -194,15 +201,22 @@ func (m *GlobalTrafficManager) persistTraffic() error {
 			items = append(items, TrafficReportItem{N: name, U: up, D: down})
 		}
 	}
-	if len(items) == 0 && (m.spool.state.Pending != nil || len(m.spool.state.Buffered) == 0) {
+	if len(items) == 0 && (m.spool.state.Pending != nil || (len(m.spool.state.Buffered) == 0 && len(m.spool.state.Retry) == 0)) {
 		return nil
 	}
 
 	next := m.spool.state
 	next.Buffered = mergeTrafficItems(next.Buffered, items)
-	if next.Pending == nil && len(next.Buffered) > 0 {
-		next.Pending = &trafficEnvelope{Stream: next.Stream, Sequence: next.Next, Items: next.Buffered}
-		next.Buffered = nil
+	if next.Pending == nil {
+		var items []TrafficReportItem
+		if len(next.Retry) > 0 {
+			items, next.Retry = next.Retry[0], next.Retry[1:]
+		} else {
+			items, next.Buffered = next.Buffered, nil
+		}
+		if len(items) > 0 {
+			next.Pending = &trafficEnvelope{Stream: next.Stream, Sequence: next.Next, Items: items}
+		}
 	}
 	if err := m.spool.save(next); err != nil {
 		return err
