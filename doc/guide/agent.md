@@ -15,19 +15,19 @@ agent 装在要搭节点或当中转的服务器上：连接面板，负责转�
 
 ## 用 Docker 安装
 
-服务器已装好 Docker 时，可以用容器运行 agent。在安装窗口切到 **Docker**，使用面板生成的命令可识别旧容器并保留其挂载。以下命令仅用于全新安装：
+服务器已装好 Docker 时，可以用容器运行 agent。在安装窗口切到 **Docker**，复制的命令形如：
 
 ```bash
-docker run -d --name flyx-agent \
+docker rm -f flux_agent >/dev/null 2>&1; docker run -d --name flux_agent \
   --restart unless-stopped --network host --cap-add NET_ADMIN \
-  -v /etc/flyx-agent:/etc/flyx-agent \
-  -e FLYX_AGENT_ADDR=<面板地址> -e FLYX_AGENT_SECRET=<密钥> \
-  ghcr.io/kure29/flyx-agent:<版本>
+  -v /etc/flux_agent:/etc/flux_agent \
+  -e FLUX_AGENT_ADDR=<面板地址> -e FLUX_AGENT_SECRET=<密钥> \
+  ghcr.io/kure29/flux-agent:<版本>
 ```
 
 - `--network host`：转发和入站要按需监听任意端口，必须用宿主机网络
 - `--cap-add NET_ADMIN`：入站流量统计和白名单要用 nftables
-- `/etc/flyx-agent`：配置、下载的内核和 agent 程序都在这里，删掉容器重建不会丢
+- `/etc/flux_agent`：配置、下载的内核和 agent 程序都在这里，删掉容器重建不会丢
 - `--restart unless-stopped`：不能去掉，面板一键升级靠它把容器拉起来
 - 不要和一键脚本安装的 agent 同时运行，二者会抢端口；换成 Docker 前先在原机器上卸载脚本版
 
@@ -35,7 +35,7 @@ docker run -d --name flyx-agent \
 
 **调优**：容器默认改不了宿主机内核参数。在安装窗口的 Docker 页打开 **服务器调优** 开关，命令会额外加入 `--privileged`；宿主机重启后需要在面板重新应用一次。
 
-**查看日志**：新安装使用 `docker logs -f flyx-agent`；旧安装继续使用 `docker logs -f flux_agent`。旧目录 `/etc/flux_agent` 和服务名在升级后仍会保留，详见 [命名兼容](./upgrade.md#flyx-命名兼容)。
+**查看日志**：`docker logs -f flux_agent`
 
 ## 用 Docker Compose 安装
 
