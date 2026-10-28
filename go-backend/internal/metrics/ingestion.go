@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -118,7 +119,18 @@ func (s *IngestionService) flushNodeMetrics() {
 		if len(s.pending) == 0 {
 			return
 		}
-		if err := s.repo.SaveNodeMetricBatch(s.stream, s.sequence, s.pending); err != nil {
+		err := s.repo.SaveNodeMetricBatch(s.stream, s.sequence, s.pending)
+		var gap *repo.TrafficSequenceGap
+		if errors.As(err, &gap) {
+			// This producer lives in the panel, not the Agent upload queue.
+			// A lost/rolled-back receipt cannot be repaired by retrying the
+			// old sequence. Keep pending intact and retry once with a fresh
+			// stream; further write failures retain that new identity.
+			log.Printf("node history cursor gap stream=%s sequence=%d expected=%d; starting new stream", s.stream, s.sequence, gap.Expected)
+			s.stream, s.sequence = uuid.NewString(), 1
+			err = s.repo.SaveNodeMetricBatch(s.stream, s.sequence, s.pending)
+		}
+		if err != nil {
 			log.Printf("monitoring write failed op=node_metric.flush count=%d err=%v", len(s.pending), err)
 			return
 		}

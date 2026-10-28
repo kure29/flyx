@@ -36,7 +36,33 @@ func TestPostgresNodeTrafficBatchAcknowledgementIsIdempotent(t *testing.T) {
 	if err := r.SaveNodeMetricBatch("stream", 2, batch); !errors.Is(err, ErrTrafficSequence) {
 		t.Fatalf("reused identity accepted: %v", err)
 	}
-	if err := r.SaveNodeMetricBatch("stream", 4, batch); !errors.Is(err, ErrTrafficSequence) {
-		t.Fatalf("sequence gap accepted: %v", err)
+	var gap *TrafficSequenceGap
+	if err := r.SaveNodeMetricBatch("stream", 4, batch); !errors.As(err, &gap) || gap.Expected != 3 {
+		t.Fatalf("sequence gap did not expose expected sequence: %v", err)
+	}
+	if err := r.DB().Where("scope=?", "node-history:stream").Delete(&model.TrafficCursor{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	next := []*model.NodeMetric{{NodeID: 7, Timestamp: 3000, NetInBytes: 300, Uptime: 12}}
+	if err := r.SaveNodeMetricBatch("stream", 3, next); !errors.As(err, &gap) || gap.Expected != 1 {
+		t.Fatalf("missing cursor did not expose expected sequence: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := r.SaveNodeMetricBatch("recovered-stream", 1, next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	totals, err = r.NodeTrafficSince(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if totals[7][0] != 200 {
+		t.Fatalf("stream recovery lost or duplicated increments: %v", totals)
+	}
+	if err := r.DB().Model(&model.NodeMetric{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("stream recovery duplicated raw metrics: %d", count)
 	}
 }
