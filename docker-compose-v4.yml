@@ -31,7 +31,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/opt/flyx-panel
     networks:
-      - flyx-network
+      - gost-network
     stop_grace_period: 30s
     stop_signal: SIGTERM
     healthcheck:
@@ -57,7 +57,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - flyx-network
+      - gost-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flux_panel} -d ${POSTGRES_DB:-flux_panel}"]
       interval: 10s
@@ -80,7 +80,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - flyx-network
+      - gost-network
 
 
 volumes:
@@ -93,7 +93,10 @@ volumes:
 
 
 networks:
-  flyx-network:
+  # Keep this key: Compose stores it in the network's
+  # com.docker.compose.network label and refuses to reuse an existing
+  # network whose label differs, which breaks every upgrade.
+  gost-network:
     name: ${FLYX_NETWORK:-gost-network}
     driver: bridge
     ipam:

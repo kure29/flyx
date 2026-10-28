@@ -97,6 +97,8 @@ with tempfile.TemporaryDirectory(prefix='flyx-compose-') as tmp:
   assert after['volumes']['sqlite_data']['name']=='sqlite_data'
   assert after['volumes']['postgres_data']['name']=='postgres_data'
   assert [x['name'] for x in after['networks'].values()]==['gost-network']
+  # Compose labels the network with this key; renaming it breaks upgrades.
+  assert list(after['networks'])==['gost-network']
   assert after['services']['backend']['environment']['FLYX_WEBAUTHN_ORIGIN']=='https://panel.example.com'
   new=render(root/name,base+'FLYX_VERSION=new\nFLYX_WEBAUTHN_ORIGIN=\nPANEL_BACKEND_CONTAINER=flyx-panel-backend\nPANEL_FRONTEND_CONTAINER=flyx-panel-frontend\nPANEL_POSTGRES_CONTAINER=flyx-panel-postgres\nFLYX_SQLITE_VOLUME=flyx-sqlite-data\nFLYX_POSTGRES_VOLUME=flyx-postgres-data\nFLYX_NETWORK=flyx-network\n')
   assert new['services']['backend']['container_name']=='flyx-panel-backend'

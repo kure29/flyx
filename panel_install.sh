@@ -616,14 +616,38 @@ activate_panel_update_files() {
   fi
 }
 
+# 3.4.0 renamed the network's Compose key. An existing network keeps the other
+# key in its com.docker.compose.network label and Compose refuses to reuse it;
+# recreate the network (volumes are kept) and run the same command again.
+panel_compose_up() {
+  local output
+  if output=$(run_panel_compose up "$@" 2>&1); then
+    printf '%s\n' "$output"
+    return 0
+  fi
+  printf '%s\n' "$output"
+  local network
+  network=$(sed -n 's/.*network \([^ ]*\) was found but has incorrect label com\.docker\.compose\.network.*/\1/p' <<<"$output" | head -n 1)
+  if [[ -z "$network" ]]; then
+    return 1
+  fi
+  echo "🔧 网络 $network 的标签与 Compose 配置不一致，停止服务并重建网络（数据卷保留）..."
+  run_panel_compose down --remove-orphans || true
+  if ! docker network rm "$network" >/dev/null; then
+    echo "❌ 无法删除网络 $network，请先断开仍连接它的容器后重试"
+    return 1
+  fi
+  run_panel_compose up "$@"
+}
+
 start_panel_after_update() {
   local db_type="$1"
 
   if [[ "$db_type" == "postgres" ]]; then
-    run_panel_compose up -d postgres || return 1
+    panel_compose_up -d postgres || return 1
     wait_for_postgres_healthy || return 1
   fi
-  run_panel_compose up -d --force-recreate --remove-orphans backend frontend || return 1
+  panel_compose_up -d --force-recreate --remove-orphans backend frontend || return 1
   wait_for_backend_healthy
 }
 
@@ -636,10 +660,10 @@ rollback_panel_update() {
     return 1
   fi
   if [[ "$db_type" == "postgres" ]]; then
-    run_panel_compose up -d postgres || return 1
+    panel_compose_up -d postgres || return 1
     wait_for_postgres_healthy || return 1
   fi
-  run_panel_compose up -d --force-recreate --remove-orphans backend frontend || return 1
+  panel_compose_up -d --force-recreate --remove-orphans backend frontend || return 1
   wait_for_backend_healthy
 }
 
@@ -796,11 +820,11 @@ EOF
   write_new_panel_identity
   echo "🚀 启动 docker 服务..."
   if [[ "$DB_TYPE" == "postgres" ]]; then
-    $DOCKER_CMD up -d postgres
+    panel_compose_up -d postgres
     wait_for_postgres_healthy
-    $DOCKER_CMD up -d backend frontend
+    panel_compose_up -d backend frontend
   else
-    $DOCKER_CMD up -d backend frontend
+    panel_compose_up -d backend frontend
   fi
 
   echo "🎉 部署完成"

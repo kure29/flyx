@@ -4,6 +4,13 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/kure29/flyx/releases)。
 
+## 3.4.1
+
+2026-10-28
+
+- **修复升级到 3.4.0 失败、面板打不开（502）**：3.4.0 改了 Compose 文件里网络的写法，从旧版本在面板内升级时，Docker Compose 会报 `network gost-network was found but has incorrect label`，升级失败；用脚本升级后也可能出现前端没有启动、访问面板返回 502 的情况。3.4.1 改回原来的写法，面板内升级和脚本升级都能正常完成。3.4.0 期间新装的面板升级时，会自动停止服务并重建网络，数据不受影响
+- **已经卡在 3.4.0 的面板**：直接在面板内升级或用脚本升级到 3.4.1 即可。如果面板打不开，在面板服务器上进入存放 `docker-compose.yml` 的目录（常见为 `/root`），执行 `docker compose up -d` 启动前端，再升级
+
 ## 3.4.0
 
 2026-10-28

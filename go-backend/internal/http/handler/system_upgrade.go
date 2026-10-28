@@ -269,10 +269,28 @@ log "等待旧容器释放资源..."
 sleep 3
 
 log "重启服务（force-recreate）..."
-if ! docker compose up -d --force-recreate --remove-orphans backend frontend >> "$LOGFILE" 2>&1; then
-  log "错误: 重启服务失败"
-  exit 1
+UPOUT="$PANEL_DEPLOY_DIR/.upgrade-compose.out"
+if ! docker compose up -d --force-recreate --remove-orphans backend frontend > "$UPOUT" 2>&1; then
+  cat "$UPOUT" >> "$LOGFILE"
+  # 3.4.0 renamed the network's Compose key; the existing network keeps the
+  # other key in its label and Compose refuses it. Recreate the network.
+  NETWORK=$(sed -n 's/.*network \([^ ]*\) was found but has incorrect label com\.docker\.compose\.network.*/\1/p' "$UPOUT" | head -n 1)
+  rm -f "$UPOUT"
+  if [ -z "$NETWORK" ]; then
+    log "错误: 重启服务失败"
+    exit 1
+  fi
+  log "网络 $NETWORK 的标签与 Compose 配置不一致，停止服务并重建网络（数据卷保留）..."
+  docker compose down --remove-orphans >> "$LOGFILE" 2>&1 || true
+  if ! docker network rm "$NETWORK" >> "$LOGFILE" 2>&1 || ! docker compose up -d >> "$LOGFILE" 2>&1; then
+    log "错误: 重启服务失败"
+    exit 1
+  fi
+  log "升级完成"
+  exit 0
 fi
+cat "$UPOUT" >> "$LOGFILE"
+rm -f "$UPOUT"
 
 log "升级完成"
 `
