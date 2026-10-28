@@ -33,4 +33,8 @@ fi
 [ -f gost.json ] || echo '{}' > gost.json
 chmod 600 gost.json
 
+# Crashing helpers (nft, kernels) would otherwise write core files into the
+# data directory on hosts with a relative core_pattern.
+ulimit -c 0
+
 exec "$BIN" "$@"

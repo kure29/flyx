@@ -37,16 +37,16 @@ func TestNftIdentityUsesLiveTablesWhenStateIsLost(t *testing.T) {
 
 func TestNftIdentityRefusesAmbiguousOrUnreadableTables(t *testing.T) {
 	for _, output := range []string{
-		`{"nftables":[{"table":{"family":"inet","name":"flyx_kernel"}},{"table":{"family":"inet","name":"flvx_kernel"}}]}`,
-		`{broken`,
+		"table inet flyx_kernel\ntable inet flvx_kernel\n",
+		"signal: segmentation fault (core dumped)",
 		"permission denied",
 	} {
 		t.Run(output, func(t *testing.T) {
 			rec := stubNft(t)
 			runner := nftRunner
 			nftRunner = func(ctx context.Context, stdin string, args ...string) ([]byte, error) {
-				if strings.Join(args, " ") == "-j list tables" {
-					if output == "permission denied" {
+				if strings.Join(args, " ") == "list tables" {
+					if !strings.HasPrefix(output, "table ") {
 						return nil, errors.New(output)
 					}
 					return []byte(output), nil
@@ -117,10 +117,38 @@ func TestNewNftIdentity(t *testing.T) {
 		t.Fatalf("new table = %q", n.state.Table)
 	}
 	for _, table := range []string{nftTable, legacyNftTable} {
-		raw := []byte(`{"nftables":[{"counter":{"name":"uup_7","table":"` + table + `","bytes":123}}]}`)
+		raw := []byte("table inet " + table + " {\n\tcounter uup_7 {\n\t\tpackets 1 bytes 123\n\t}\n}\n")
 		_, users, err := parseCounters(raw)
 		if err != nil || len(users) != 1 || users[0].Bytes != 123 {
 			t.Fatalf("%s: %+v %v", table, users, err)
 		}
+	}
+}
+
+// testdata/nft-list-counters.txt is real `nft list counters table inet
+// flyx_kernel` output; nft 1.0.6, 1.0.9 and 1.1.3 print it identically.
+func TestParseCountersFromNftTextListing(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "nft-list-counters.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	counters, users, err := parseCounters(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counters) != 6 || len(users) != 4 {
+		t.Fatalf("counters=%+v users=%+v", counters, users)
+	}
+	found := false
+	for _, c := range counters {
+		if c == (Counter{InboundID: 2, Proto: "udp", Dir: "in", Bytes: 102}) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing in_2_udp bytes: %+v", counters)
+	}
+	if _, _, err := parseCounters([]byte("table inet flyx_kernel {\n\tcounter in_1_tcp {\n\t\tpackets 1 bytes x\n\t}\n}\n")); err == nil {
+		t.Fatal("malformed byte count accepted")
 	}
 }

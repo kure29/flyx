@@ -266,28 +266,20 @@ func newNftCounters(baseDir string) *nftCounters {
 
 // Inspect live tables as well as disk state: nft.json can be lost while the
 // rules remain installed. Never create a second ruleset beside the old one.
+// Listings use nft's text output: older nft builds (1.0.6 in Debian bookworm
+// images) can segfault printing JSON on newer kernels, and some lack JSON.
 func (n *nftCounters) resolveTable(ctx context.Context) (string, bool, error) {
-	out, err := nftRunner(ctx, "", "-j", "list", "tables")
+	out, err := nftRunner(ctx, "", "list", "tables")
 	if err != nil {
 		return "", false, err
 	}
-	var listed struct {
-		Nftables []struct {
-			Table *struct {
-				Family string `json:"family"`
-				Name   string `json:"name"`
-			} `json:"table"`
-		} `json:"nftables"`
-	}
-	if err := json.Unmarshal(out, &listed); err != nil {
-		return "", false, fmt.Errorf("解析 nft 表失败: %w", err)
-	}
 	current, legacy := false, false
-	for _, item := range listed.Nftables {
-		if item.Table == nil || item.Table.Family != "inet" {
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "table" || fields[1] != "inet" {
 			continue
 		}
-		switch item.Table.Name {
+		switch strings.Trim(fields[2], `"`) {
 		case nftTable:
 			current = true
 		case legacyNftTable:
@@ -344,16 +336,6 @@ func (n *nftCounters) sync(ports []Port, users []int64) error {
 	return nil
 }
 
-type nftListOutput struct {
-	Nftables []struct {
-		Counter *struct {
-			Name  string `json:"name"`
-			Table string `json:"table"`
-			Bytes int64  `json:"bytes"`
-		} `json:"counter"`
-	} `json:"nftables"`
-}
-
 // read returns the current counters together with the epoch they belong to.
 func (n *nftCounters) read() ([]Counter, []UserCounter, string, error) {
 	n.mu.Lock()
@@ -363,7 +345,7 @@ func (n *nftCounters) read() ([]Counter, []UserCounter, string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := nftRunner(ctx, "", "-j", "list", "counters", "table", "inet", n.state.Table)
+	out, err := nftRunner(ctx, "", "list", "counters", "table", "inet", n.state.Table)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -371,22 +353,64 @@ func (n *nftCounters) read() ([]Counter, []UserCounter, string, error) {
 	return counters, users, n.state.Epoch, err
 }
 
+type nftCounterValue struct {
+	table, name string
+	bytes       int64
+}
+
+// parseCounterListing reads `nft list counters` text:
+//
+//	table inet flyx_kernel {
+//		counter in_7_tcp {
+//			packets 3 bytes 1200
+//		}
+//	}
+func parseCounterListing(raw []byte) ([]nftCounterValue, error) {
+	var values []nftCounterValue
+	var table, counter string
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		switch {
+		case len(fields) == 0:
+		case fields[0] == "table" && len(fields) >= 3:
+			table, counter = strings.Trim(fields[2], `"`), ""
+		case fields[0] == "counter" && len(fields) >= 2 && fields[1] != "{":
+			counter = strings.Trim(fields[1], `"`)
+		case fields[0] == "}":
+			counter = ""
+		case counter != "":
+			for i := 0; i+1 < len(fields); i++ {
+				if fields[i] != "bytes" {
+					continue
+				}
+				bytes, err := strconv.ParseInt(fields[i+1], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("解析 nft 计数失败: %q", strings.TrimSpace(line))
+				}
+				values = append(values, nftCounterValue{table: table, name: counter, bytes: bytes})
+				counter = ""
+				break
+			}
+		}
+	}
+	return values, nil
+}
+
 func parseCounters(raw []byte) ([]Counter, []UserCounter, error) {
-	var parsed nftListOutput
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil, nil, fmt.Errorf("解析 nft 计数失败: %v", err)
+	values, err := parseCounterListing(raw)
+	if err != nil {
+		return nil, nil, err
 	}
 	var counters []Counter
 	var users []UserCounter
-	for _, item := range parsed.Nftables {
-		c := item.Counter
-		if c == nil || (c.Table != nftTable && c.Table != legacyNftTable) {
+	for _, c := range values {
+		if c.table != nftTable && c.table != legacyNftTable {
 			continue
 		}
-		parts := strings.Split(c.Name, "_")
+		parts := strings.Split(c.name, "_")
 		if len(parts) == 2 && (parts[0] == "uup" || parts[0] == "udown") {
 			if id, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
-				users = append(users, UserCounter{ID: id, Dir: parts[0][1:], Bytes: c.Bytes})
+				users = append(users, UserCounter{ID: id, Dir: parts[0][1:], Bytes: c.bytes})
 			}
 			continue
 		}
@@ -397,7 +421,7 @@ func parseCounters(raw []byte) ([]Counter, []UserCounter, error) {
 		if err != nil {
 			continue
 		}
-		counters = append(counters, Counter{InboundID: id, Proto: parts[2], Dir: parts[0], Bytes: c.Bytes})
+		counters = append(counters, Counter{InboundID: id, Proto: parts[2], Dir: parts[0], Bytes: c.bytes})
 	}
 	return counters, users, nil
 }

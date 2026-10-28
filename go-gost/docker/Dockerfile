@@ -1,9 +1,10 @@
 # Node agent image. The release job builds it from the same UPX-compressed
 # binaries it publishes (gost-amd64 / gost-arm64 next to this file); run
 # with --network host so forwards can listen on any port.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # nftables: traffic counters and inbound whitelists; dsniff: tcpkill.
+# bookworm's nftables 1.0.6 crashed on newer host kernels; trixie ships 1.1.x.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tzdata nftables dsniff tini bash iperf3 iproute2 coreutils procps gawk \
   && rm -rf /var/lib/apt/lists/*
