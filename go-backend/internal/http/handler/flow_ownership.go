@@ -16,17 +16,17 @@ func (h *Handler) buildNodeFlowUploadBatch(nodeID int64, items []flowItem, metas
 	runtimes, err := h.repo.ListActiveForwardPeerShareRuntimesByNode(nodeID)
 	if err != nil {
 		log.Printf("flow ownership lookup failed node_id=%d err=%v", nodeID, err)
-		return flowUploadBatch{}
+		return flowUploadBatch{err: err}
 	}
 	resources, err := h.repo.ListPeerShareResourcesByNode(nodeID)
 	if err != nil {
 		log.Printf("flow resource lookup failed node_id=%d err=%v", nodeID, err)
-		return flowUploadBatch{}
+		return flowUploadBatch{err: err}
 	}
 	forwardIDs, err := h.repo.ListForwardIDsByNode(nodeID)
 	if err != nil {
 		log.Printf("flow node ownership lookup failed node_id=%d err=%v", nodeID, err)
-		return flowUploadBatch{}
+		return flowUploadBatch{err: err}
 	}
 	nodeForwards := make(map[int64]struct{}, len(forwardIDs))
 	for _, forwardID := range forwardIDs {

@@ -59,7 +59,16 @@ func (h *Handler) processFlowItem(nodeID int64, item flowItem) {
 	}
 	metas, err := h.repo.GetFlowUploadForwardMetas(collectFlowUploadForwardIDs([]flowItem{item}))
 	if err != nil {
-		metas = nil
+		log.Printf("flow metadata read failed node_id=%d err=%v", nodeID, err)
+		return
+	}
+	if err := validateFlowUploadItems([]flowItem{item}, metas); err != nil {
+		log.Printf("flow upload rejected node_id=%d err=%v", nodeID, err)
+		return
+	}
+	if err := validateFlowUploadItems([]flowItem{item}, metas); err != nil {
+		log.Printf("flow upload rejected node_id=%d err=%v", nodeID, err)
+		return
 	}
 	if err := validateFlowUploadItems([]flowItem{item}, metas); err != nil {
 		log.Printf("flow upload rejected node_id=%d err=%v", nodeID, err)

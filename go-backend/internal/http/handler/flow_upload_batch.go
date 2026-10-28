@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ type flowPolicyTarget struct {
 }
 
 type flowUploadBatch struct {
+	err                   error
 	flowDeltas            []repo.FlowUploadCounterDelta
 	quotaUsage            map[int64]int64
 	policyTargets         []flowPolicyTarget
@@ -119,85 +121,132 @@ func (h *Handler) buildFlowUploadBatch(items []flowItem, metas map[int64]repo.Fl
 	return batch
 }
 
-func (h *Handler) applyFlowUploadBatch(nodeID int64, batch flowUploadBatch, now time.Time) {
+// commitFlowUploadBatch must run inside the caller's accounting transaction.
+func (h *Handler) commitFlowUploadBatch(nodeID int64, batch *flowUploadBatch, now time.Time) (map[int64]*model.UserQuotaView, error) {
+	if batch.err != nil {
+		return nil, batch.err
+	}
+	shares, err := h.resolveFlowShareUsage(nodeID, *batch)
+	if err != nil {
+		return nil, err
+	}
+	batch.peerShareUsage = shares
+	if err := h.repo.ApplyFlowUploadDeltasBatchAt(batch.flowDeltas, now); err != nil {
+		return nil, err
+	}
+	quotas, err := h.repo.AddUserQuotaUsageBatch(batch.quotaUsage, now)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(shares))
+	for id := range shares {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, id := range ids {
+		if err := h.repo.AddPeerShareCurrentFlow(id, shares[id]); err != nil {
+			return nil, err
+		}
+	}
+	return quotas, nil
+}
+
+func (h *Handler) applyFlowUploadBatch(nodeID int64, batch flowUploadBatch, now time.Time) error {
 	if h == nil || h.repo == nil {
-		return
+		return errors.New("repository unavailable")
 	}
-	h.applyFlowDeltasWithFallback(nodeID, batch.flowDeltas)
-	for userID, quota := range h.applyQuotaUsageWithFallback(nodeID, batch.quotaUsage, now) {
-		h.enforceUserQuotaIfNeeded(userID, quota)
+	var quotas map[int64]*model.UserQuotaView
+	err := h.repo.Transaction(func(tx *repo.Repository) error {
+		var err error
+		quotas, err = (&Handler{repo: tx}).commitFlowUploadBatch(nodeID, &batch, now)
+		return err
+	})
+	if err != nil {
+		return err
 	}
-	for _, target := range batch.policyTargets {
-		if target.UserID <= 0 || target.UserTunnelID <= 0 {
-			continue
-		}
-		h.enforceFlowPolicies(target.UserID, target.UserTunnelID)
-	}
-	if len(batch.orphanServices) > 0 {
-		serviceNames := make([]string, 0, len(batch.orphanServices))
-		for serviceName := range batch.orphanServices {
-			serviceNames = append(serviceNames, serviceName)
-		}
-		h.sendDeleteOrphanedForwardServices(nodeID, serviceNames)
-	}
-	for serviceName, item := range batch.peerShareForwardItems {
-		forwardID, _, _, ok := parseFlowServiceIDs(serviceName)
-		if ok {
-			h.processPeerShareFlowFromForward(forwardID, nodeID, serviceName, item)
-		}
-	}
-	for runtimeID, item := range batch.peerShareRuntimeItems {
-		h.processPeerShareFlow(nodeID, runtimeID, item)
-	}
-	for shareID, delta := range batch.peerShareUsage {
-		h.addPeerShareFlow(nodeID, shareID, delta)
-	}
+	h.enforceFlowUploadBatch(nodeID, batch, quotas)
+	return nil
 }
 
-func (h *Handler) applyFlowDeltasWithFallback(nodeID int64, deltas []repo.FlowUploadCounterDelta) {
-	if h == nil || h.repo == nil || len(deltas) == 0 {
-		return
+func (h *Handler) resolveFlowShareUsage(nodeID int64, batch flowUploadBatch) (map[int64]int64, error) {
+	usages := make(map[int64]int64)
+	add := func(id, delta int64) error {
+		share, err := h.repo.GetPeerShare(id)
+		if err != nil {
+			return err
+		}
+		if share != nil && share.NodeID == nodeID && delta > 0 {
+			usages[id] += delta
+		}
+		return nil
 	}
-	if err := h.repo.ApplyFlowUploadDeltasBatch(deltas); err == nil {
-		return
-	} else {
-		log.Printf("flow upload write failed op=flow.batch_apply node_id=%d err=%v", nodeID, err)
-	}
-	for _, delta := range deltas {
-		if err := h.repo.AddFlow(delta.ForwardID, delta.UserID, delta.UserTunnelID, delta.InFlow, delta.OutFlow); err != nil {
-			log.Printf("flow upload write failed op=flow.single_apply node_id=%d forward_id=%d user_id=%d user_tunnel_id=%d err=%v", nodeID, delta.ForwardID, delta.UserID, delta.UserTunnelID, err)
+	for id, delta := range batch.peerShareUsage {
+		if err := add(id, delta); err != nil {
+			return nil, err
 		}
 	}
-}
-
-func (h *Handler) applyQuotaUsageWithFallback(nodeID int64, usages map[int64]int64, now time.Time) map[int64]*model.UserQuotaView {
-	if h == nil || h.repo == nil || len(usages) == 0 {
-		return map[int64]*model.UserQuotaView{}
-	}
-	quotaViews, err := h.repo.AddUserQuotaUsageBatch(usages, now)
-	if err == nil {
-		return quotaViews
-	}
-	log.Printf("flow upload write failed op=quota.batch_apply node_id=%d err=%v", nodeID, err)
-
-	userIDs := make([]int64, 0, len(usages))
-	for userID := range usages {
-		if userID > 0 {
-			userIDs = append(userIDs, userID)
+	for id, item := range batch.peerShareRuntimeItems {
+		runtime, err := h.repo.GetPeerShareRuntimeByID(id)
+		if err != nil {
+			return nil, err
+		}
+		if runtime != nil && runtime.NodeID == nodeID && runtime.Status == 1 {
+			if err := add(runtime.ShareID, item.U+item.D); err != nil {
+				return nil, err
+			}
 		}
 	}
-	sort.Slice(userIDs, func(i, j int) bool { return userIDs[i] < userIDs[j] })
-
-	quotaViews = make(map[int64]*model.UserQuotaView, len(userIDs))
-	for _, userID := range userIDs {
-		quota, singleErr := h.repo.AddUserQuotaUsage(userID, usages[userID], now)
-		if singleErr != nil {
-			log.Printf("flow upload write failed op=quota.single_apply node_id=%d user_id=%d err=%v", nodeID, userID, singleErr)
+	if len(batch.peerShareForwardItems) == 0 {
+		return usages, nil
+	}
+	runtimes, err := h.repo.ListActiveForwardPeerShareRuntimesByNode(nodeID)
+	if err != nil {
+		return nil, err
+	}
+	for name, item := range batch.peerShareForwardItems {
+		var owner int64
+		ambiguous := false
+		for _, rt := range runtimes {
+			if normalizeForwardRuntimeServiceName(rt.ServiceName) == name {
+				if owner != 0 {
+					ambiguous = true
+				}
+				owner = rt.ShareID
+			}
+		}
+		if ambiguous {
 			continue
 		}
-		if quota != nil {
-			quotaViews[userID] = quota
+		if owner == 0 {
+			fid, uid, _, ok := parseFlowServiceIDs(name)
+			if !ok {
+				continue
+			}
+			f, err := h.repo.GetForwardRecord(fid)
+			if err != nil {
+				return nil, err
+			}
+			if f == nil || f.UserID != uid {
+				continue
+			}
+			tunnel, err := h.repo.GetTunnelRecord(f.TunnelID)
+			if err != nil {
+				return nil, err
+			}
+			if tunnel == nil {
+				continue
+			}
+			name, err := h.repo.GetTunnelName(f.TunnelID)
+			if err != nil {
+				return nil, err
+			}
+			owner, _ = parsePeerShareIDFromFederationTunnelName(name)
+		}
+		if owner > 0 {
+			if err := add(owner, item.U+item.D); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return quotaViews
+	return usages, nil
 }

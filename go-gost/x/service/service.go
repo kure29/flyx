@@ -163,6 +163,15 @@ func (s *defaultService) Addr() net.Addr {
 	return s.listener.Addr()
 }
 
+// FlushTraffic transfers sampled bytes atomically, including at process shutdown.
+// Periodic observers can race this handoff without counting a byte twice.
+func (s *defaultService) FlushTraffic() {
+	if st, ok := s.status.Stats().(*xstats.Stats); ok && s.options.observer != nil {
+		input, output := st.TakeTraffic()
+		GetGlobalTrafficManager().addServiceTraffic(s.name, int64(output), int64(input))
+	}
+}
+
 func (s *defaultService) Serve() error {
 
 	s.execCmds("post-up", s.options.postUp)
@@ -181,12 +190,7 @@ func (s *defaultService) Serve() error {
 		if observerDone != nil {
 			<-observerDone
 		}
-		if st, ok := s.status.Stats().(*xstats.Stats); ok && s.options.observer != nil {
-			// This retired service has no remaining writers or sampler. Reading
-			// its residual counters cannot overlap a periodic handoff.
-			GetGlobalTrafficManager().addServiceTraffic(s.name,
-				int64(st.Get(stats.KindOutputBytes)), int64(st.Get(stats.KindInputBytes)))
-		}
+		s.FlushTraffic()
 	}()
 
 	if s.status.Stats() != nil {

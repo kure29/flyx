@@ -394,6 +394,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/flow/test", h.flowTest)
 	mux.HandleFunc("/flow/config", h.flowConfig)
 	mux.HandleFunc("/flow/upload", h.flowUpload)
+	mux.HandleFunc("/flow/upload/v2", func(w http.ResponseWriter, r *http.Request) { h.serveFlowUpload(w, r, true) })
 	mux.HandleFunc("/error", h.errorPage)
 }
 
@@ -981,44 +982,7 @@ func (h *Handler) flowConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) flowUpload(w http.ResponseWriter, r *http.Request) {
-	secret := r.URL.Query().Get("secret")
-	node, _ := h.repo.GetNodeBySecret(secret)
-	if node == nil {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("ok"))
-		return
-	}
-
-	raw, err := readAndDecryptFlowBody(r.Body, secret)
-	if err == nil && strings.TrimSpace(raw) != "" {
-		var items []flowItem
-		if err := json.Unmarshal([]byte(raw), &items); err != nil {
-			http.Error(w, "invalid traffic upload", http.StatusBadRequest)
-			return
-		}
-		if err := validateFlowUploadItems(items, nil); err != nil {
-			http.Error(w, "invalid traffic upload", http.StatusBadRequest)
-			return
-		}
-		now := time.Now()
-		forwardIDs := collectFlowUploadForwardIDs(items)
-		metas, metaErr := h.repo.GetFlowUploadForwardMetas(forwardIDs)
-		if metaErr != nil {
-			log.Printf("flow upload metadata lookup failed node_id=%d err=%v", node.ID, metaErr)
-			metas = map[int64]repo.FlowUploadForwardMeta{}
-		}
-		if err := validateFlowUploadItems(items, metas); err != nil {
-			log.Printf("flow upload rejected node_id=%d err=%v", node.ID, err)
-			http.Error(w, "invalid traffic upload", http.StatusBadRequest)
-			return
-		}
-		batch := h.buildNodeFlowUploadBatch(node.ID, items, metas)
-		h.recordTunnelMetricsFromForwardBatch(node.ID, batch.forwardTraffic, metas, now.UnixMilli())
-		h.applyFlowUploadBatch(node.ID, batch, now)
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("ok"))
+	h.serveFlowUpload(w, r, false)
 }
 
 func (h *Handler) updateConfigs(w http.ResponseWriter, r *http.Request) {

@@ -112,6 +112,13 @@ func TestServiceFinalTrafficWaitsForHandlersAndSampler(t *testing.T) {
 				close(done)
 			}()
 			waitFinalTrafficSignal(t, h.started)
+			if !tc.periodic {
+				svc.(interface{ FlushTraffic() }).FlushTraffic()
+				svc.(interface{ FlushTraffic() }).FlushTraffic()
+				if up, down := m.GetServiceTraffic(name); up != 40 || down != 100 {
+					t.Fatalf("shutdown handoff: %d/%d", up, down)
+				}
+			}
 			if tc.unregister {
 				registry.ServiceRegistry().Unregister(name)
 			} else if err := svc.Close(); err != nil {

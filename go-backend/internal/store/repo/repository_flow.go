@@ -6,6 +6,7 @@ import (
 	"go-backend/internal/store/model"
 	"sort"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -420,6 +421,10 @@ func sortedFlowUploadTargetIDs(totals map[int64][2]int64) []int64 {
 }
 
 func (r *Repository) ApplyFlowUploadDeltasBatch(deltas []FlowUploadCounterDelta) error {
+	return r.ApplyFlowUploadDeltasBatchAt(deltas, time.Now())
+}
+
+func (r *Repository) ApplyFlowUploadDeltasBatchAt(deltas []FlowUploadCounterDelta, now time.Time) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
 	}
@@ -428,11 +433,11 @@ func (r *Repository) ApplyFlowUploadDeltasBatch(deltas []FlowUploadCounterDelta)
 	}
 
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		return applyFlowUploadDeltasTx(tx, deltas)
+		return applyFlowUploadDeltasTx(tx, deltas, now)
 	})
 }
 
-func applyFlowUploadDeltasTx(tx *gorm.DB, deltas []FlowUploadCounterDelta) error {
+func applyFlowUploadDeltasTx(tx *gorm.DB, deltas []FlowUploadCounterDelta, now time.Time) error {
 	if tx == nil {
 		return errors.New("database unavailable")
 	}

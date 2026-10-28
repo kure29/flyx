@@ -407,6 +407,7 @@ func (FederationTunnelBinding) TableName() string { return "federation_tunnel_bi
 
 // BackupData represents the full backup structure.
 type BackupData struct {
+	FlowCursors  []TrafficCursor     `json:"flowCursors,omitempty"`
 	Version      string              `json:"version"`
 	ExportedAt   int64               `json:"exportedAt"`
 	Users        []UserBackup        `json:"users,omitempty"`

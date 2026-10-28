@@ -17,7 +17,27 @@ import (
 
 // ─── Export Methods ──────────────────────────────────────────────────
 
+// Keep balances and receipts in the same database snapshot. In PostgreSQL a
+// plain READ COMMITTED transaction would still mix different snapshots.
+func (r *Repository) exportBackupSnapshot(read func(*Repository) (*model.BackupData, error)) (*model.BackupData, error) {
+	var backup *model.BackupData
+	opts := &sql.TxOptions{}
+	if r.db.Dialector.Name() == "postgres" {
+		opts.Isolation = sql.LevelRepeatableRead
+	}
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		backup, err = read(&Repository{db: tx, dbPath: r.dbPath})
+		return err
+	}, opts)
+	return backup, err
+}
+
 func (r *Repository) ExportAll() (*model.BackupData, error) {
+	return r.exportBackupSnapshot(func(tx *Repository) (*model.BackupData, error) { return tx.exportAll() })
+}
+
+func (r *Repository) exportAll() (*model.BackupData, error) {
 	backup := &model.BackupData{Version: "1.0", ExportedAt: unixMilliNow()}
 
 	users, err := r.exportUsers()
@@ -86,10 +106,17 @@ func (r *Repository) ExportAll() (*model.BackupData, error) {
 	}
 	backup.Inbounds = inbounds
 
+	if err := r.db.Where("scope LIKE ?", "flow:%").Find(&backup.FlowCursors).Error; err != nil {
+		return nil, err
+	}
 	return backup, nil
 }
 
 func (r *Repository) ExportPartial(types []string) (*model.BackupData, error) {
+	return r.exportBackupSnapshot(func(tx *Repository) (*model.BackupData, error) { return tx.exportPartial(types) })
+}
+
+func (r *Repository) exportPartial(types []string) (*model.BackupData, error) {
 	backup := &model.BackupData{Version: "1.0", ExportedAt: unixMilliNow()}
 	typeSet := make(map[string]bool)
 	for _, t := range types {
@@ -172,6 +199,11 @@ func (r *Repository) ExportPartial(types []string) (*model.BackupData, error) {
 			return nil, fmt.Errorf("export inbounds failed: %w", err)
 		}
 		backup.Inbounds = v
+	}
+	if typeSet["users"] && typeSet["nodes"] && typeSet["forwards"] && typeSet["userTunnels"] {
+		if err := r.db.Where("scope LIKE ?", "flow:%").Find(&backup.FlowCursors).Error; err != nil {
+			return nil, err
+		}
 	}
 	return backup, nil
 }
@@ -553,6 +585,30 @@ func (r *Repository) Import(backup *model.BackupData, types []string) (*model.Im
 				return fmt.Errorf("import inbounds failed: %w", err)
 			}
 			result.InboundsImported = count
+		}
+		if typeSet["users"] && typeSet["nodes"] && typeSet["forwards"] && typeSet["userTunnels"] {
+			imported := make(map[int64]bool)
+			for _, node := range backup.Nodes {
+				imported[node.ID] = true
+				if err := tx.Where("scope LIKE ?", fmt.Sprintf("flow:%d:%%", node.ID)).Delete(&model.TrafficCursor{}).Error; err != nil {
+					return err
+				}
+			}
+			for _, cursor := range backup.FlowCursors {
+				var nodeID int64
+				var stream string
+				if _, err := fmt.Sscanf(cursor.Scope, "flow:%d:%s", &nodeID, &stream); err != nil || !imported[nodeID] {
+					continue
+				}
+				id, err := hex.DecodeString(stream)
+				digest, digestErr := hex.DecodeString(cursor.Digest)
+				if err != nil || len(id) != 16 || cursor.Sequence <= 0 || digestErr != nil || len(digest) != 32 {
+					return fmt.Errorf("invalid flow cursor in backup")
+				}
+				if err := tx.Create(&cursor).Error; err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
