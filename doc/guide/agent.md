@@ -10,7 +10,7 @@ agent 装在要搭节点或当中转的服务器上：连接面板，负责转�
 
 ## 用面板生成的命令安装（推荐）
 
-1. **服务器** 页新建服务器，点击 **安装**，在弹出的窗口里选 **一键脚本** 或 **Docker**，点 **复制**
+1. **服务器** 页新建服务器，点击 **安装**，在弹出的窗口里选 **一键脚本**、**Docker** 或 **Docker Compose**，点 **复制**
 2. 到服务器上以 root 执行，等服务器状态变为 **在线**
 
 ## 用 Docker 安装
@@ -33,9 +33,19 @@ docker run -d --name flyx-agent \
 
 **升级**：和脚本安装一样，在 **服务器** 页点 **升级**，agent 下载新版本替换数据目录里的程序后自动重启容器；也可以拉取新版本镜像后重新执行安装命令，镜像里的版本会覆盖数据目录里的程序。
 
-**调优**：容器默认改不了宿主机内核参数，要用调优需要把 `--cap-add NET_ADMIN` 换成 `--privileged`；宿主机重启后需要在面板重新应用一次。
+**调优**：容器默认改不了宿主机内核参数。在安装窗口的 Docker 页打开 **服务器调优** 开关，命令会额外加入 `--privileged`；宿主机重启后需要在面板重新应用一次。
 
 **查看日志**：新安装使用 `docker logs -f flyx-agent`；旧安装继续使用 `docker logs -f flux_agent`。旧目录 `/etc/flux_agent` 和服务名在升级后仍会保留，详见 [命名兼容](./upgrade.md#flyx-命名兼容)。
+
+## 用 Docker Compose 安装
+
+服务器已安装 Docker Compose 时，在安装窗口切到 **Docker Compose**。生成的命令会检查并创建 `/opt/docker/flyx-agent`，把配置写到 `/opt/docker/flyx-agent/docker-compose.yaml` 并设置为 `600` 权限，然后执行 `docker compose` 启动容器。
+
+- 重复执行安装命令会更新 Compose 配置并重建容器
+- 启动前会检查并移除已存在的 `flyx-agent` 容器，避免容器名冲突
+- 检测到旧版 `flux_agent` 容器时会停止，请先通过 Docker 安装方式完成迁移，避免新旧 agent 同时占用 host 网络
+- 需要服务器调优时，在安装窗口打开 **服务器调优**，Compose 配置会加入 `privileged: true`
+- Docker Compose 使用 `flyx-agent` 容器名和 `/etc/flyx-agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
 
 ## 服务器调优
 

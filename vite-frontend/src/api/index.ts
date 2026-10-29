@@ -188,11 +188,22 @@ export interface NodeBatchDeleteResult {
 /** `uninstall` also removes the agent and what it installed on the server. */
 export const deleteNode = (id: number, uninstall = false) =>
   Network.post<NodeDeleteResult>("/node/delete", { id, uninstall });
-export const getNodeInstallCommand = (
+export interface NodeInstallCommands {
+  script: string;
+  docker: string;
+  dockerPrivileged: string;
+  dockerCompose: string;
+  dockerComposePrivileged: string;
+}
+export const getNodeInstallCommands = (
   id: number,
   channel: ReleaseChannel = "stable",
-  mode: "script" | "docker" = "script",
-) => Network.post<string>("/node/install", { id, channel, mode });
+) =>
+  Network.post<NodeInstallCommands>("/node/install", {
+    id,
+    channel,
+    mode: "all",
+  });
 export const updateNodeOrder = (data: {
   nodes: Array<{ id: number; inx: number }>;
 }) => Network.post("/node/update-order", data);

@@ -23,7 +23,7 @@ import {
   getNodeList,
   updateNode,
   deleteNode,
-  getNodeInstallCommand,
+  getNodeInstallCommands,
   updateNodeOrder,
   batchDeleteNodes,
   upgradeNode,
@@ -232,6 +232,9 @@ export default function NodePage({
   const [installCommands, setInstallCommands] = useState<InstallCommands>({
     script: "",
     docker: "",
+    dockerPrivileged: "",
+    dockerCompose: "",
+    dockerComposePrivileged: "",
   });
   const [currentNodeName, setCurrentNodeName] = useState("");
 
@@ -753,16 +756,10 @@ export default function NodePage({
       );
 
       try {
-        const [res, dockerRes] = await Promise.all([
-          getNodeInstallCommand(node.id, channel),
-          getNodeInstallCommand(node.id, channel, "docker").catch(() => null),
-        ]);
+        const res = await getNodeInstallCommands(node.id, channel);
 
         if (res.code === 0 && res.data) {
-          setInstallCommands({
-            script: res.data,
-            docker: dockerRes?.code === 0 ? dockerRes.data || "" : "",
-          });
+          setInstallCommands(res.data);
           setCurrentNodeName(node.name);
           setInstallCommandModal(true);
         } else {

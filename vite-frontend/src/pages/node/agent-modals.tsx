@@ -14,12 +14,16 @@ import {
 import { Chip } from "@/shadcn-bridge/heroui/chip";
 import { Spinner } from "@/shadcn-bridge/heroui/spinner";
 import { Select, SelectItem } from "@/shadcn-bridge/heroui/select";
+import { Switch } from "@/shadcn-bridge/heroui/switch";
 import { Tab, Tabs } from "@/shadcn-bridge/heroui/tabs";
 import { type ReleaseChannel } from "@/api";
 
 export interface InstallCommands {
   script: string;
   docker: string;
+  dockerPrivileged: string;
+  dockerCompose: string;
+  dockerComposePrivileged: string;
 }
 
 export interface InstallCommandModalProps {
@@ -30,9 +34,9 @@ export interface InstallCommandModalProps {
   setInstallCommandModal: Dispatch<SetStateAction<boolean>>;
 }
 
-type InstallMode = keyof InstallCommands;
+type InstallMode = "script" | "docker" | "docker-compose";
 
-/** The commands that install the agent on a node: install.sh or Docker. */
+/** The commands that install the agent on a node: install.sh, Docker or Compose. */
 export function InstallCommandModal({
   currentNodeName,
   handleCopyCommand,
@@ -41,12 +45,40 @@ export function InstallCommandModal({
   setInstallCommandModal,
 }: InstallCommandModalProps) {
   const [mode, setMode] = useState<InstallMode>("script");
+  const [privileged, setPrivileged] = useState(false);
 
   useEffect(() => {
-    if (installCommandModal) setMode("script");
+    if (installCommandModal) {
+      setMode("script");
+      setPrivileged(false);
+    }
   }, [installCommandModal]);
 
-  const command = installCommands[mode];
+  const command =
+    mode === "script"
+      ? installCommands.script
+      : mode === "docker"
+        ? privileged
+          ? installCommands.dockerPrivileged
+          : installCommands.docker
+        : privileged
+          ? installCommands.dockerComposePrivileged
+          : installCommands.dockerCompose;
+  const privilegedControl = (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-default-200 bg-default-100/60 px-3 py-2.5">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">服务器调优（--privileged）</p>
+        <p className="text-xs text-default-500">
+          开启后追加 --privileged，可执行内核参数调优，但容器拥有宿主机高权限。
+        </p>
+      </div>
+      <Switch
+        aria-label="服务器调优"
+        isSelected={privileged}
+        onValueChange={setPrivileged}
+      />
+    </div>
+  );
   const commandBox = (
     <div className="relative">
       <Textarea
@@ -55,8 +87,8 @@ export function InstallCommandModal({
         classNames={{
           input: "font-mono text-sm",
         }}
-        maxRows={10}
-        minRows={6}
+        maxRows={16}
+        minRows={7}
         value={command}
         variant="bordered"
       />
@@ -88,7 +120,7 @@ export function InstallCommandModal({
         <ModalHeader closable>安装命令 - {currentNodeName}</ModalHeader>
         <ModalBody>
           <div className="space-y-4">
-            {installCommands.docker ? (
+            {installCommands.docker || installCommands.dockerCompose ? (
               <Tabs
                 aria-label="安装方式"
                 selectedKey={mode}
@@ -107,6 +139,7 @@ export function InstallCommandModal({
                     <p className="text-sm text-default-600">
                       在已安装 Docker 的服务器上执行：
                     </p>
+                    {privilegedControl}
                     {commandBox}
                     <ul className="list-disc space-y-1 pl-5 text-xs text-default-500">
                       <li>
@@ -118,7 +151,35 @@ export function InstallCommandModal({
                         面板一键升级会替换数据目录里的程序并自动重启容器；
                         拉取新镜像后重建容器也会升级。
                       </li>
-                      <li>服务器调优需要容器以 --privileged 运行。</li>
+                      <li>
+                        NET_ADMIN 用于 nftables
+                        流量统计和白名单；开启服务器调优会额外加入
+                        --privileged。
+                      </li>
+                    </ul>
+                  </div>
+                </Tab>
+                <Tab key="docker-compose" title="Docker Compose">
+                  <div className="space-y-3 pt-2">
+                    <p className="text-sm text-default-600">
+                      在已安装 Docker Compose 的服务器上执行，会写入
+                      /opt/docker/flyx-agent/docker-compose.yaml：
+                    </p>
+                    {privilegedControl}
+                    {commandBox}
+                    <ul className="list-disc space-y-1 pl-5 text-xs text-default-500">
+                      <li>
+                        自动检查并创建 /opt/docker/flyx-agent，配置写入后设置
+                        600 权限；启动前会检查并移除已存在的 flyx-agent 容器。
+                      </li>
+                      <li>
+                        使用 host 网络，数据保存在宿主机 /etc/flyx-agent；
+                        检测到旧版 flux_agent 容器时会停止并提示先迁移。
+                      </li>
+                      <li>
+                        Compose 文件包含节点密钥；开启服务器调优会写入
+                        privileged: true。
+                      </li>
                     </ul>
                   </div>
                 </Tab>
