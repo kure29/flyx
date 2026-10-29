@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -466,6 +467,7 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 		byInbound[rel.InboundID] = append(byInbound[rel.InboundID], rel)
 	}
 	nodes := make(map[int64]*model.Node)
+	postQuantum := make(map[int64]bool)
 
 	var endpoints []kernel.Endpoint
 	var kinds []string
@@ -482,11 +484,17 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 			node, _ = h.repo.GetNodeByID(row.NodeID)
 			nodes[row.NodeID] = node
 		}
+		pq, ok := postQuantum[row.KernelID]
+		if !ok && row.KernelID > 0 {
+			k, _ := h.repo.GetNodeKernel(row.KernelID)
+			pq = kernelSupportsPostQuantumReality(k)
+			postQuantum[row.KernelID] = pq
+		}
 		proxy := importedProxy(&row)
 		if row.RelayOnly != 1 && !isLoopbackListen(row.Listen) {
 			host := inboundShareAddress(&row, node)
 			if host != "" {
-				endpoints = append(endpoints, kernel.Endpoint{Name: row.Name, Host: host, Port: row.Port, Inbound: in, Direct: true, Proxy: proxy, SourceID: row.SourceID})
+				endpoints = append(endpoints, kernel.Endpoint{Name: row.Name, Host: host, Port: row.Port, Inbound: in, Direct: true, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq})
 				kinds = append(kinds, "direct")
 			}
 		}
@@ -503,7 +511,8 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 				if rel.ShareHost != "" {
 					host = rel.ShareHost
 				}
-				endpoints = append(endpoints, kernel.Endpoint{Name: name, Host: host, Port: entry.Port, Inbound: in, Proxy: proxy, SourceID: row.SourceID})
+				// A relay forwards TCP; REALITY still ends at the landing kernel.
+				endpoints = append(endpoints, kernel.Endpoint{Name: name, Host: host, Port: entry.Port, Inbound: in, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq})
 				kinds = append(kinds, "relay")
 			}
 		}
@@ -639,4 +648,18 @@ func constantTimeEqual(a, b string) bool {
 		v |= a[i] ^ b[i]
 	}
 	return v == 0
+}
+
+// installedKernelVersion is a concrete release such as "25.10.15".
+var installedKernelVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?$`)
+
+// kernelSupportsPostQuantumReality: Xray negotiates X25519MLKEM768 in REALITY
+// from 25.5.16 on. Mihomo needs server support for it, so an unknown installed
+// version does not count.
+func kernelSupportsPostQuantumReality(k *model.NodeKernel) bool {
+	if k == nil || k.KernelType != kernel.TypeXray {
+		return false
+	}
+	version := strings.TrimSpace(k.InstalledVersion)
+	return installedKernelVersion.MatchString(version) && !versionBelow(version, 25, 5, 16)
 }

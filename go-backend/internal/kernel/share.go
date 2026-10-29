@@ -31,6 +31,10 @@ type Endpoint struct {
 	// SourceID is the remote source an imported node comes from (0 for
 	// none).
 	SourceID int64
+	// PostQuantumReality: the serving kernel accepts X25519MLKEM768 for
+	// REALITY, so Mihomo may offer it. Mihomo requires server support, so
+	// it is only set for panel-built inbounds on a new enough Xray.
+	PostQuantumReality bool
 }
 
 // hopRange is the port-hopping range clients may use for this endpoint.
@@ -339,7 +343,7 @@ func ClashProxy(e Endpoint) (yamlNode, bool) {
 			if len(sec.RealityShortIDs) > 0 {
 				ro = append(ro, yamlField{"short-id", sec.RealityShortIDs[0]})
 			}
-			if in.Protocol == ProtocolVLESS {
+			if in.Protocol == ProtocolVLESS && e.PostQuantumReality {
 				ro = append(ro, yamlField{"support-x25519mlkem768", true})
 			}
 			p = append(p, yamlField{"reality-opts", ro})

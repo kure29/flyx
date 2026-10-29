@@ -45,26 +45,33 @@ func TestNormalizeFillsCredentials(t *testing.T) {
 	}
 }
 
-func TestClashProxyAddsX25519MLKEM768OnlyToVLESSReality(t *testing.T) {
+// Mihomo's support-x25519mlkem768 needs server support, so an imported node
+// keeps whatever its source says and never gets it added.
+func TestClashImportedRealityKeepsSourceMLKEMSetting(t *testing.T) {
 	tests := []struct {
 		name        string
 		proxy       Proxy
 		wantSupport bool
 	}{
 		{
-			name: "VLESS Reality",
+			name: "source without it",
 			proxy: Proxy{"type": "vless", "server": "example.com", "reality-opts": map[string]interface{}{
 				"public-key": "pub", "short-id": "sid",
+			}},
+		},
+		{
+			name: "source with it",
+			proxy: Proxy{"type": "vless", "server": "example.com", "reality-opts": map[string]interface{}{
+				"public-key": "pub", "short-id": "sid", "support-x25519mlkem768": true,
 			}},
 			wantSupport: true,
 		},
 		{name: "VLESS TLS", proxy: Proxy{"type": "vless", "server": "example.com", "tls": true}},
-		{name: "VMess Reality", proxy: Proxy{"type": "vmess", "server": "example.com", "reality-opts": map[string]interface{}{"public-key": "pub"}}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node, ok := proxyClash(Endpoint{Name: "test", Host: "example.com", Port: 443, Proxy: tt.proxy})
+			node, ok := proxyClash(Endpoint{Name: "test", Host: "example.com", Port: 443, Proxy: tt.proxy, PostQuantumReality: true})
 			if !ok {
 				t.Fatal("proxyClash rejected supported proxy")
 			}
@@ -86,28 +93,30 @@ func TestClashProxyAddsX25519MLKEM768OnlyToVLESSReality(t *testing.T) {
 	}
 }
 
-func TestClashProxyAddsX25519MLKEM768ToBuiltVLESSReality(t *testing.T) {
-	e := Endpoint{
-		Name: "VLESS Reality",
-		Host: "example.com",
-		Port: 443,
-		Inbound: Inbound{
-			Protocol:  ProtocolVLESS,
-			Transport: Transport{Type: TransportTCP},
-			Security: Security{
-				Type: SecurityReality, SNI: "example.com", Fingerprint: "chrome",
-				RealityPublicKey: "pub", RealityShortIDs: []string{"sid"},
+func TestClashBuiltVLESSRealityOffersMLKEMOnlyWhenServerSupportsIt(t *testing.T) {
+	for _, supported := range []bool{true, false} {
+		e := Endpoint{
+			Name: "VLESS Reality",
+			Host: "example.com",
+			Port: 443,
+			Inbound: Inbound{
+				Protocol:  ProtocolVLESS,
+				Transport: Transport{Type: TransportTCP},
+				Security: Security{
+					Type: SecurityReality, SNI: "example.com", Fingerprint: "chrome",
+					RealityPublicKey: "pub", RealityShortIDs: []string{"sid"},
+				},
 			},
-		},
-	}
+			PostQuantumReality: supported,
+		}
 
-	got, _, err := Subscription(FormatClash, []Endpoint{e}, SubOptions{})
-	if err != nil {
-		t.Fatalf("render Mihomo subscription: %v", err)
-	}
-	want := "support-x25519mlkem768: true"
-	if !strings.Contains(got, want) {
-		t.Fatalf("generated Mihomo proxy is missing %q:\n%s", want, got)
+		got, _, err := Subscription(FormatClash, []Endpoint{e}, SubOptions{})
+		if err != nil {
+			t.Fatalf("render Mihomo subscription: %v", err)
+		}
+		if has := strings.Contains(got, "support-x25519mlkem768: true"); has != supported {
+			t.Fatalf("server support %v, field present %v:\n%s", supported, has, got)
+		}
 	}
 }
 

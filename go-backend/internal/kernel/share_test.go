@@ -15,7 +15,7 @@ func shareFixtures(t *testing.T) []Endpoint {
 		byID[in.ID] = in
 	}
 	return []Endpoint{
-		{Name: "东京 Reality", Host: "203.0.113.10", Port: 443, Inbound: byID[1]},
+		{Name: "东京 Reality", Host: "203.0.113.10", Port: 443, Inbound: byID[1], PostQuantumReality: true},
 		{Name: "SS", Host: "2001:db8::1", Port: 8388, Inbound: byID[2]},
 		{Name: "CDN", Host: "cdn.example.com", Port: 8443, Inbound: byID[3]},
 		{Name: "Trojan", Host: "203.0.113.10", Port: 2053, Inbound: byID[4]},

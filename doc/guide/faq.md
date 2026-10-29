@@ -75,6 +75,8 @@ GITHUB_TOKEN=github_pat_xxx
 
 Xray 26.7.11 起，Reality 未设置“最低客户端版本”时默认只接受 26.3.27 及以上的客户端，而 Mihomo（Clash Verge、Stash、FlClash 等）上报的版本是 1.8.2，会被拒绝。面板默认把最低客户端版本设为 `1.0.0`，所有客户端都能连接；如需调整，在 Reality 设置里修改“最低客户端版本”。也可以在安装内核时选择旧版本的 Xray。
 
+服务器装的是 Xray 25.5.16 及以上时，Mihomo 订阅里的 VLESS Reality 节点会带上 `support-x25519mlkem768: true`，启用抗量子的 X25519MLKEM768 密钥交换。这个选项需要服务端支持，所以 sing-box 内核、更旧的 Xray 和导入的节点都不会加；导入的节点保留订阅源本身的设置。
+
 ## 订阅与流量
 
 ### 流量一直是 0
