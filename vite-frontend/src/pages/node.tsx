@@ -681,21 +681,37 @@ export default function NodePage({
     setDialogVisible(true);
   }, []);
 
+  const showDeleteWarnings = (warnings?: string[]) => {
+    if (warnings?.length) {
+      toast(warnings.join("\n"), { icon: "⚠️", duration: 10000 });
+    }
+  };
+
   // 删除节点
   const handleDelete = useCallback((node: Node) => {
     setNodeToDelete(node);
     setDeleteModalOpen(true);
   }, []);
 
-  const confirmDelete = async () => {
+  const confirmDelete = async (uninstall: boolean) => {
     if (!nodeToDelete) return;
 
     setDeleteLoading(true);
     try {
-      const res = await deleteNode(nodeToDelete.id);
+      const res = await deleteNode(nodeToDelete.id, uninstall);
 
       if (res.code === 0) {
-        toast.success("删除成功");
+        if (res.data?.uninstall === "done") {
+          toast.success("已删除，服务器上的 agent 正在卸载");
+        } else if (res.data?.uninstall === "pending") {
+          toast.success(
+            "已删除。服务器当前离线，agent 会在下次连接面板时自动卸载",
+            { duration: 6000 },
+          );
+        } else {
+          toast.success("删除成功");
+        }
+        showDeleteWarnings(res.data?.warnings);
         setNodeList((prev) => prev.filter((n) => n.id !== nodeToDelete.id));
         setDeleteModalOpen(false);
         setNodeToDelete(null);
@@ -1164,14 +1180,22 @@ export default function NodePage({
     setSelectedIds(new Set());
   };
 
-  const handleBatchDelete = async () => {
+  const handleBatchDelete = async (uninstall: boolean) => {
     if (selectedIds.size === 0) return;
     setBatchLoading(true);
     try {
-      const res = await batchDeleteNodes(Array.from(selectedIds));
+      const res = await batchDeleteNodes(Array.from(selectedIds), uninstall);
 
       if (res.code === 0) {
-        toast.success(`成功删除 ${selectedIds.size} 个服务器`);
+        const r = res.data;
+        const parts = [`已删除 ${r?.deleted ?? selectedIds.size} 个服务器`];
+
+        if (r?.uninstalled) parts.push(`${r.uninstalled} 个正在卸载 agent`);
+        if (r?.pending)
+          parts.push(`${r.pending} 个离线，将在下次连接面板时卸载`);
+        toast.success(parts.join("，"), { duration: 6000 });
+        if (r?.failed) toast.error(`${r.failed} 个服务器删除失败`);
+        showDeleteWarnings(r?.warnings);
         setNodeList((prev) => prev.filter((n) => !selectedIds.has(n.id)));
         setSelectedIds(new Set());
         setBatchDeleteModalOpen(false);

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go-backend/internal/http/response"
+	"go-backend/internal/store/model"
 	"go-backend/internal/store/repo"
 )
 
@@ -308,15 +309,23 @@ func (h *Handler) nodeDelete(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("请求失败"))
 		return
 	}
-	id := idFromBody(r, w)
-	if id <= 0 {
+	var req map[string]interface{}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
 		return
 	}
-	if err := h.deleteNodeByID(id); err != nil {
+	id := asInt64(req["id"], 0)
+	if id <= 0 {
+		response.WriteJSON(w, response.ErrDefault("id不能为空"))
+		return
+	}
+	// Without the flag (older API clients) only the panel record is removed.
+	result, err := h.deleteNode(id, asBool(req["uninstall"], false))
+	if err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	response.WriteJSON(w, response.OKEmpty())
+	response.WriteJSON(w, response.OK(result))
 }
 
 func (h *Handler) nodeInstall(w http.ResponseWriter, r *http.Request) {
@@ -466,14 +475,32 @@ func (h *Handler) nodeBatchDelete(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("请求失败"))
 		return
 	}
-	ids := idsFromBody(r, w)
-	if ids == nil {
+	var req map[string]interface{}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
 		return
 	}
-	for _, id := range ids {
-		_ = h.deleteNodeByID(id)
+	var ids []int64
+	for _, x := range asAnySlice(req["ids"]) {
+		if id := asInt64(x, 0); id > 0 {
+			ids = append(ids, id)
+		}
 	}
-	response.WriteJSON(w, response.OKEmpty())
+	if len(ids) == 0 {
+		response.WriteJSON(w, response.ErrDefault("ids不能为空"))
+		return
+	}
+	uninstall := asBool(req["uninstall"], false)
+	summary := nodeBatchDeleteResult{}
+	for _, id := range ids {
+		result, err := h.deleteNode(id, uninstall)
+		if err != nil {
+			summary.Failed++
+			continue
+		}
+		summary.add(result)
+	}
+	response.WriteJSON(w, response.OK(summary))
 }
 
 func (h *Handler) nodeCheckStatus(w http.ResponseWriter, r *http.Request) {
@@ -494,6 +521,88 @@ func (h *Handler) nodeCheckStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteNodeByID(id int64) error {
 	return h.repo.DeleteNodeCascade(id)
+}
+
+// Agent uninstall outcomes reported to the panel when a server is deleted.
+const (
+	nodeUninstallDone        = "done"        // the agent confirmed and is removing itself
+	nodeUninstallPending     = "pending"     // offline: it uninstalls when it reconnects
+	nodeUninstallUnsupported = "unsupported" // the agent is too old to uninstall itself
+)
+
+type nodeDeleteResult struct {
+	Uninstall string   `json:"uninstall,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
+}
+
+type nodeBatchDeleteResult struct {
+	Deleted     int      `json:"deleted"`
+	Failed      int      `json:"failed"`
+	Uninstalled int      `json:"uninstalled"`
+	Pending     int      `json:"pending"`
+	Unsupported int      `json:"unsupported"`
+	Warnings    []string `json:"warnings,omitempty"`
+}
+
+func (s *nodeBatchDeleteResult) add(r nodeDeleteResult) {
+	s.Deleted++
+	switch r.Uninstall {
+	case nodeUninstallDone:
+		s.Uninstalled++
+	case nodeUninstallPending:
+		s.Pending++
+	case nodeUninstallUnsupported:
+		s.Unsupported++
+	}
+	s.Warnings = append(s.Warnings, r.Warnings...)
+}
+
+// deleteNode uninstalls the agent first, when asked, while the server record
+// and its SSH configuration still exist.
+func (h *Handler) deleteNode(id int64, uninstall bool) (nodeDeleteResult, error) {
+	var result nodeDeleteResult
+	if uninstall {
+		node, err := h.repo.GetNodeByID(id)
+		if err != nil {
+			return result, err
+		}
+		if node != nil {
+			result = h.uninstallNodeAgent(node)
+		}
+	}
+	return result, h.deleteNodeByID(id)
+}
+
+func (h *Handler) uninstallNodeAgent(node *model.Node) nodeDeleteResult {
+	var result nodeDeleteResult
+	warn := func(format string, args ...interface{}) {
+		result.Warnings = append(result.Warnings, node.Name+"："+fmt.Sprintf(format, args...))
+	}
+	// nftables forwards are applied over SSH by the panel, not by the agent.
+	if _, err := h.repo.GetNodeSSHConfig(node.ID); err == nil {
+		if err := h.clearNftablesNode(node.ID); err != nil {
+			warn("清理 nftables 转发规则失败：%v", err)
+		}
+	}
+	if h.wsServer != nil && h.wsServer.IsNodeOnline(node.ID) {
+		_, err := h.wsServer.SendCommand(node.ID, "UninstallAgent", nil, 15*time.Second)
+		if err == nil {
+			result.Uninstall = nodeUninstallDone
+			return result
+		}
+		if strings.Contains(err.Error(), "未知命令") {
+			warn("agent 版本过旧，不支持自动卸载，请在服务器上手动卸载")
+			result.Uninstall = nodeUninstallUnsupported
+			return result
+		}
+		warn("卸载命令未确认（%v），将在 agent 重新连接时卸载", err)
+	}
+	if err := h.repo.AddNodeUninstall(node.Secret, node.Name, time.Now()); err != nil {
+		warn("记录待卸载失败：%v，请在服务器上手动卸载", err)
+		return result
+	}
+	result.Uninstall = nodeUninstallPending
+	return result
 }
 
 func normalizeNodeRenewalCycle(v string) string {

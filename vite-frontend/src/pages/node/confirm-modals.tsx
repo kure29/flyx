@@ -1,6 +1,9 @@
 import type { Dispatch, SetStateAction } from "react";
 
+import { useEffect, useState } from "react";
+
 import { Button } from "@/shadcn-bridge/heroui/button";
+import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
 import {
   Modal,
   ModalContent,
@@ -67,8 +70,39 @@ export function RollbackNodeModal({
   );
 }
 
+/** Ticked whenever a delete dialog opens: deleting usually means retiring the server. */
+function useUninstallChoice(open: boolean) {
+  const [uninstall, setUninstall] = useState(true);
+
+  useEffect(() => {
+    if (open) setUninstall(true);
+  }, [open]);
+
+  return [uninstall, setUninstall] as const;
+}
+
+function UninstallAgentOption({
+  isSelected,
+  onValueChange,
+}: {
+  isSelected: boolean;
+  onValueChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="space-y-1 rounded-xl border border-default-200 bg-default-100/60 px-3 py-2.5">
+      <Checkbox isSelected={isSelected} size="sm" onValueChange={onValueChange}>
+        同时卸载服务器上的 agent
+      </Checkbox>
+      <p className="pl-6 text-xs text-default-500">
+        停止并删除 agent、内核和 nftables
+        规则，恢复调优前的系统参数。服务器离线时，会在它下次连接面板时卸载。只想把服务器移到另一个面板时请取消勾选。
+      </p>
+    </div>
+  );
+}
+
 export interface DeleteNodeModalProps {
-  confirmDelete: () => Promise<void>;
+  confirmDelete: (uninstall: boolean) => Promise<void>;
   deleteLoading: boolean;
   deleteModalOpen: boolean;
   nodeToDelete: Node | null;
@@ -83,6 +117,8 @@ export function DeleteNodeModal({
   nodeToDelete,
   setDeleteModalOpen,
 }: DeleteNodeModalProps) {
+  const [uninstall, setUninstall] = useUninstallChoice(deleteModalOpen);
+
   return (
     <Modal
       backdrop="blur"
@@ -109,6 +145,10 @@ export function DeleteNodeModal({
               <p className="text-small text-default-500">
                 此操作不可恢复，请谨慎操作。
               </p>
+              <UninstallAgentOption
+                isSelected={uninstall}
+                onValueChange={setUninstall}
+              />
             </ModalBody>
             <ModalFooter>
               <Button variant="light" onPress={onClose}>
@@ -117,7 +157,7 @@ export function DeleteNodeModal({
               <Button
                 color="danger"
                 isLoading={deleteLoading}
-                onPress={confirmDelete}
+                onPress={() => void confirmDelete(uninstall)}
               >
                 {deleteLoading ? "删除中..." : "删除"}
               </Button>
@@ -132,7 +172,7 @@ export function DeleteNodeModal({
 export interface BatchDeleteNodesModalProps {
   batchDeleteModalOpen: boolean;
   batchLoading: boolean;
-  handleBatchDelete: () => Promise<void>;
+  handleBatchDelete: (uninstall: boolean) => Promise<void>;
   selectedIds: Set<number>;
   setBatchDeleteModalOpen: Dispatch<SetStateAction<boolean>>;
 }
@@ -145,6 +185,8 @@ export function BatchDeleteNodesModal({
   selectedIds,
   setBatchDeleteModalOpen,
 }: BatchDeleteNodesModalProps) {
+  const [uninstall, setUninstall] = useUninstallChoice(batchDeleteModalOpen);
+
   return (
     <Modal
       backdrop="blur"
@@ -171,6 +213,10 @@ export function BatchDeleteNodesModal({
               <p className="text-small text-default-500">
                 此操作不可恢复，请谨慎操作。
               </p>
+              <UninstallAgentOption
+                isSelected={uninstall}
+                onValueChange={setUninstall}
+              />
             </ModalBody>
             <ModalFooter>
               <Button variant="light" onPress={onClose}>
@@ -179,7 +225,7 @@ export function BatchDeleteNodesModal({
               <Button
                 color="danger"
                 isLoading={batchLoading}
-                onPress={handleBatchDelete}
+                onPress={() => void handleBatchDelete(uninstall)}
               >
                 {batchLoading ? "删除中..." : "删除"}
               </Button>

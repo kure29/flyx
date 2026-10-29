@@ -126,3 +126,18 @@ wget -O install.sh https://github.com/kure29/flyx/releases/latest/download/insta
 ## 升级 agent
 
 **服务器** 页选择服务器 → **升级**（可以多选批量升级），留空版本即使用最新版。新功能（例如回程检测）需要 agent 跟面板一起升级，见 [升级](./upgrade.md#agent-升级)。
+
+## 删除服务器并卸载 agent
+
+在 **服务器** 页删除服务器（单个或多选批量删除）时，确认窗口里的 **同时卸载服务器上的 agent** 默认勾选，会一并清理这台服务器：
+
+- 停止所有内核（Xray / sing-box 等），删除 agent 建的 nftables 规则（流量统计、入站白名单、端口跳跃）
+- 恢复 [服务器调优](#服务器调优) 前的系统参数和网卡队列，删除调优写入的 `/etc/sysctl.d/99-flyx-tuning.conf` 和 `/etc/modules-load.d/flyx-bbr.conf`
+- 使用 nftables 转发的服务器，面板会通过 SSH 清除它下发的转发规则
+- 脚本安装的 agent：停止并删除 systemd / OpenRC 服务，删除安装目录（`/etc/flyx-agent`，旧安装为 `/etc/flux_agent`）
+
+服务器离线时，面板先删除记录，等这台服务器的 agent 下次连上面板时再自动卸载（180 天内有效）。只想把服务器换到另一个面板时，取消勾选即可，服务器上的 agent 保持原样。
+
+**Docker 安装的 agent** 无法删除自己的容器：卸载后会清空数据目录里的配置和密钥，容器保留但不再连接面板。在服务器上执行 `docker rm -f flyx-agent`（旧安装为 `flux_agent`）删除容器即可。
+
+自动卸载需要 agent 3.4.2 及以上；更旧的 agent 会提示 **版本过旧**，请在服务器上运行安装脚本选择 **卸载**。

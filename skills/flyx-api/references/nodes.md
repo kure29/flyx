@@ -141,20 +141,36 @@ Update node configuration.
 
 ## POST /api/v1/node/delete
 
-Delete a node.
+Delete a node. With `"uninstall": true` the agent on the server is also
+uninstalled (kernels, nftables rules and tuning are cleaned up); without it only
+the panel record is removed.
 
 **Request:**
 ```json
-{"id": 2}
+{"id": 2, "uninstall": true}
 ```
+
+**Response `data`:**
+```json
+{"uninstall": "done", "warnings": []}
+```
+
+`uninstall` is `done` (the online agent confirmed), `pending` (the server was
+offline; its agent uninstalls when it next connects) or `unsupported` (the agent
+is too old; uninstall it on the server). It is absent when not requested.
 
 ## POST /api/v1/node/batch-delete
 
-Delete multiple nodes.
+Delete multiple nodes, optionally uninstalling their agents.
 
 **Request:**
 ```json
-{"ids": [2, 3, 4]}
+{"ids": [2, 3, 4], "uninstall": true}
+```
+
+**Response `data`:**
+```json
+{"deleted": 3, "failed": 0, "uninstalled": 2, "pending": 1, "unsupported": 0, "warnings": []}
 ```
 
 ## POST /api/v1/node/check-status

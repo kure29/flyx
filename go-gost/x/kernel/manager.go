@@ -530,6 +530,13 @@ func (m *Manager) Status(logsFor string) Status {
 
 // Shutdown stops every kernel process; the persisted state is kept so the
 // next agent start restores them.
+// Uninstall stops every kernel and removes the agent's nftables tables, whose
+// counters, whitelists and port hopping would otherwise outlive the agent.
+func (m *Manager) Uninstall() error {
+	m.Shutdown()
+	return m.nft.removeTables()
+}
+
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
 	insts := make([]*instance, 0, len(m.instances))

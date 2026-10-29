@@ -298,6 +298,37 @@ func (n *nftCounters) resolveTable(ctx context.Context) (string, bool, error) {
 	return table, current || legacy, nil
 }
 
+// removeTables deletes both the current and the legacy table, whichever exist.
+func (n *nftCounters) removeTables() error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if nftAvailable() != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := nftRunner(ctx, "", "list", "tables")
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "table" || fields[1] != "inet" {
+			continue
+		}
+		name := strings.Trim(fields[2], `"`)
+		if name != nftTable && name != legacyNftTable {
+			continue
+		}
+		if _, err := nftRunner(ctx, "", "delete", "table", "inet", name); err != nil {
+			return err
+		}
+	}
+	n.state = nftState{Table: nftTable}
+	_ = os.Remove(n.statePath)
+	return nil
+}
+
 func (n *nftCounters) sync(ports []Port, users []int64) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()

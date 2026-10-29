@@ -171,7 +171,23 @@ export const getDashboardNodeExpiryList = () =>
   Network.post<NodeApiItem[]>("/node/list", {});
 export const updateNode = (data: NodeMutationPayload) =>
   Network.post("/node/update", data);
-export const deleteNode = (id: number) => Network.post("/node/delete", { id });
+/** Outcome of uninstalling the agent while deleting a server. */
+export type NodeUninstallOutcome = "done" | "pending" | "unsupported";
+export interface NodeDeleteResult {
+  uninstall?: NodeUninstallOutcome;
+  warnings?: string[];
+}
+export interface NodeBatchDeleteResult {
+  deleted: number;
+  failed: number;
+  uninstalled: number;
+  pending: number;
+  unsupported: number;
+  warnings?: string[];
+}
+/** `uninstall` also removes the agent and what it installed on the server. */
+export const deleteNode = (id: number, uninstall = false) =>
+  Network.post<NodeDeleteResult>("/node/delete", { id, uninstall });
 export const getNodeInstallCommand = (
   id: number,
   channel: ReleaseChannel = "stable",
@@ -527,8 +543,8 @@ export const batchResumeForwards = (ids: number[]) =>
   Network.post<BatchOperationResult>("/forward/batch-resume", { ids });
 export const batchDeleteTunnels = (ids: number[]) =>
   Network.post<BatchOperationResult>("/tunnel/batch-delete", { ids });
-export const batchDeleteNodes = (ids: number[]) =>
-  Network.post<BatchOperationResult>("/node/batch-delete", { ids });
+export const batchDeleteNodes = (ids: number[], uninstall = false) =>
+  Network.post<NodeBatchDeleteResult>("/node/batch-delete", { ids, uninstall });
 export const batchRedeployForwards = (ids: number[]) =>
   Network.post<BatchOperationResult>("/forward/batch-redeploy", { ids });
 export const batchRedeployTunnels = (ids: number[]) =>

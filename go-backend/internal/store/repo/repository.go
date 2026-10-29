@@ -212,6 +212,7 @@ func autoMigrateAll(db *gorm.DB) error {
 		&model.ForwardPort{},
 		&model.Node{},
 		&model.NodeSSHConfig{},
+		&model.NodeUninstall{},
 		&model.NftRuleBinding{},
 		&model.NftCounterState{},
 		&model.SpeedLimit{},

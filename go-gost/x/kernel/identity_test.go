@@ -152,3 +152,34 @@ func TestParseCountersFromNftTextListing(t *testing.T) {
 		t.Fatal("malformed byte count accepted")
 	}
 }
+
+func TestUninstallRemovesCurrentAndLegacyTables(t *testing.T) {
+	var deleted []string
+	runner, available := nftRunner, nftAvailable
+	t.Cleanup(func() { nftRunner, nftAvailable = runner, available })
+	nftAvailable = func() error { return nil }
+	nftRunner = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch joined := strings.Join(args, " "); {
+		case joined == "list tables":
+			return []byte("table inet flyx_kernel\ntable inet flvx_kernel\ntable inet firewalld\ntable ip nat\n"), nil
+		case strings.HasPrefix(joined, "delete table inet "):
+			deleted = append(deleted, args[3])
+			return nil, nil
+		default:
+			return nil, errors.New("unexpected nft call: " + joined)
+		}
+	}
+	m := NewManager(t.TempDir())
+	if err := m.Uninstall(); err != nil {
+		t.Fatal(err)
+	}
+	// Tables of other software are never touched.
+	if strings.Join(deleted, ",") != "flyx_kernel,flvx_kernel" {
+		t.Fatalf("deleted %v", deleted)
+	}
+
+	nftAvailable = func() error { return errors.New("nft missing") }
+	if err := NewManager(t.TempDir()).Uninstall(); err != nil {
+		t.Fatalf("missing nft must not block the uninstall: %v", err)
+	}
+}

@@ -1003,6 +1003,11 @@ func (w *WebSocketReporter) routeCommand(ctx context.Context, cmd CommandMessage
 		response.Type = "UpgradeAgentResponse"
 		// needSaveConfig = false (默认值)
 
+	// 面板删除服务器时卸载 Agent（先回复，再异步卸载）
+	case "UninstallAgent":
+		err = w.handleUninstallAgent()
+		response.Type = "UninstallAgentResponse"
+
 	// 回退 Agent 到旧版本
 	case "RollbackAgent":
 		err = w.handleRollbackAgent(cmd.Data)

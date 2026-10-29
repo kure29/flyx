@@ -188,6 +188,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if typeVal == "1" {
 		node, err := s.repo.GetNodeBySecret(secret)
 		if err != nil || node == nil {
+			if err == nil && s.serveUninstalledNode(w, r, secret) {
+				return
+			}
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
