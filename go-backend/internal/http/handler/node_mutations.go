@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -458,8 +459,15 @@ func dockerComposeInstallCommand(version, panelAddr, secret string, privileged b
 	if privileged {
 		privilegedLine = "    privileged: true\n"
 	}
-	return fmt.Sprintf(`[ -d /opt/docker/flyx-agent ] || mkdir -p /opt/docker/flyx-agent
-cat > /opt/docker/flyx-agent/docker-compose.yaml <<'EOF'
+	// Compose interpolates "$" in values; doubling it keeps the secret intact.
+	value := func(v string) string { return strconv.Quote(strings.ReplaceAll(v, "$", "$$")) }
+	return fmt.Sprintf(`if docker container inspect flux_agent >/dev/null 2>&1; then
+  echo '检测到旧版 flux_agent 容器；请先使用 Docker 安装命令升级，或停止并移除旧容器后再执行。' >&2
+  exit 1
+fi
+mkdir -p /opt/docker/flyx-agent
+# The file holds the node secret: create it unreadable to other users.
+(umask 077 && cat > /opt/docker/flyx-agent/docker-compose.yaml) <<'EOF'
 services:
   flyx-agent:
     image: ghcr.io/%s/flyx-agent:%s
@@ -472,21 +480,17 @@ services:
       - /etc/flyx-agent:/etc/flyx-agent
     environment:
       FLYX_AGENT_DATA_DIR: "/etc/flyx-agent"
-      FLYX_AGENT_ADDR: %q
-      FLUX_AGENT_ADDR: %q
-      FLYX_AGENT_SECRET: %q
-      FLUX_AGENT_SECRET: %q
+      FLYX_AGENT_ADDR: %s
+      FLUX_AGENT_ADDR: %s
+      FLYX_AGENT_SECRET: %s
+      FLUX_AGENT_SECRET: %s
 EOF
 chmod 600 /opt/docker/flyx-agent/docker-compose.yaml
-if docker container inspect flux_agent >/dev/null 2>&1; then
-  echo '检测到旧版 flux_agent 容器；请先使用 Docker 安装命令升级，或停止并移除旧容器后再执行。' >&2
-  exit 1
-fi
 if docker container inspect flyx-agent >/dev/null 2>&1; then
   docker rm -f flyx-agent >/dev/null
 fi
 docker compose -f /opt/docker/flyx-agent/docker-compose.yaml up -d`,
-		owner, version, privilegedLine, panelAddr, panelAddr, secret, secret)
+		owner, version, privilegedLine, value(panelAddr), value(panelAddr), value(secret), value(secret))
 }
 
 func (h *Handler) nodeUpdateOrder(w http.ResponseWriter, r *http.Request) {

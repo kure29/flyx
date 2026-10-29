@@ -148,6 +148,6 @@ wget -O install.sh https://github.com/kure29/flyx/releases/latest/download/insta
 
 服务器离线时，面板先删除记录，等这台服务器的 agent 下次连上面板时再自动卸载（180 天内有效）。只想把服务器换到另一个面板时，取消勾选即可，服务器上的 agent 保持原样。
 
-**Docker 安装的 agent** 无法删除自己的容器：卸载后会清空数据目录里的配置和密钥，容器保留但不再连接面板。在服务器上执行 `docker rm -f flyx-agent`（旧安装为 `flux_agent`）删除容器即可。
+**Docker 安装的 agent** 无法删除自己的容器：卸载后会清空数据目录里的配置和密钥，容器保留但不再连接面板。在服务器上执行 `docker rm -f flyx-agent`（旧安装为 `flux_agent`）删除容器即可；用 Docker Compose 安装的，执行 `docker compose -f /opt/docker/flyx-agent/docker-compose.yaml down` 后删除 `/opt/docker/flyx-agent` 目录（里面的 Compose 文件含有节点密钥）。
 
 自动卸载需要 agent 3.4.2 及以上；更旧的 agent 会提示 **版本过旧**，请在服务器上运行安装脚本选择 **卸载**。

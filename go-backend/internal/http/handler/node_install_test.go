@@ -116,7 +116,8 @@ func TestDockerComposeInstallCommand(t *testing.T) {
 
 	cmd := dockerComposeInstallCommand("3.4.0", "panel.example.com:6365", "s3cret", false)
 	for _, want := range []string{
-		"[ -d /opt/docker/flyx-agent ] || mkdir -p /opt/docker/flyx-agent",
+		"mkdir -p /opt/docker/flyx-agent",
+		"(umask 077 && cat > /opt/docker/flyx-agent/docker-compose.yaml) <<'EOF'",
 		"/opt/docker/flyx-agent/docker-compose.yaml",
 		"image: ghcr.io/kure29/flyx-agent:3.4.0",
 		"container_name: flyx-agent",
@@ -157,5 +158,61 @@ func TestDockerComposeInstallCommand(t *testing.T) {
 	privileged := dockerComposeInstallCommand("3.4.0", "panel.example.com:6365", "s3cret", true)
 	if !strings.Contains(privileged, "    privileged: true") {
 		t.Errorf("missing privileged mode in %s", privileged)
+	}
+}
+
+func TestDockerComposeInstallChecksLegacyContainerBeforeWriting(t *testing.T) {
+	cmd := dockerComposeInstallCommand("3.4.0", "panel.example.com:6365", "s3cret", false)
+	legacy := strings.Index(cmd, "docker container inspect flux_agent")
+	write := strings.Index(cmd, "cat > /opt/docker/flyx-agent/docker-compose.yaml")
+	if legacy < 0 || write < 0 || legacy > write {
+		t.Fatalf("a refused install must not leave a compose file behind:\n%s", cmd)
+	}
+}
+
+// The heredoc must be a Compose file that delivers the panel address and
+// secret unchanged, even with characters Compose or YAML treat specially.
+func TestDockerComposeInstallFileParses(t *testing.T) {
+	if exec.Command("docker", "compose", "version").Run() != nil {
+		t.Skip("docker compose is not installed")
+	}
+	const secret = `a$b${HOME}"c'\\d`
+	const addr = "panel.example.com:6365"
+	cmd := dockerComposeInstallCommand("3.4.0", addr, secret, true)
+	start := strings.Index(cmd, "<<'EOF'\n")
+	end := strings.Index(cmd, "\nEOF\n")
+	if start < 0 || end < start {
+		t.Fatalf("no compose heredoc in %s", cmd)
+	}
+	path := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	if err := os.WriteFile(path, []byte(cmd[start+len("<<'EOF'\n"):end+1]), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("docker", "compose", "-f", path, "config", "--format", "json").CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker compose config: %v\n%s", err, out)
+	}
+	var cfg struct {
+		Services map[string]struct {
+			Privileged  bool              `json:"privileged"`
+			Environment map[string]string `json:"environment"`
+		} `json:"services"`
+	}
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	svc := cfg.Services["flyx-agent"]
+	if !svc.Privileged {
+		t.Error("privileged switch lost")
+	}
+	for key, want := range map[string]string{
+		"FLYX_AGENT_SECRET": secret, "FLUX_AGENT_SECRET": secret,
+		"FLYX_AGENT_ADDR": addr, "FLUX_AGENT_ADDR": addr,
+	} {
+		// `config` escapes "$" again so its output reads back the same; an
+		// unescaped "$" would have been interpolated away instead.
+		if got := strings.ReplaceAll(svc.Environment[key], "$$", "$"); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
 	}
 }
