@@ -412,7 +412,8 @@ type nodeInstallCommands struct {
 // Host networking lets forwards listen on any port, NET_ADMIN is for the
 // nftables counters and whitelists, and the restart policy brings the
 // container back after a one-click upgrade. An existing container of the
-// same name is replaced, so the command also reinstalls.
+// same name is replaced, so the command also reinstalls. flux-panel and FLVX
+// also run a flux_agent container; only one running our image is taken over.
 func dockerInstallCommand(version, panelAddr, secret string, privileged bool) string {
 	owner := strings.ToLower(strings.SplitN(githubRepo, "/", 2)[0])
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
@@ -425,7 +426,8 @@ name=flyx-agent
 data=/etc/flyx-agent
 destination=/etc/flyx-agent
 current=$(docker inspect -f '{{.Name}}' flyx-agent 2>/dev/null || true)
-legacy=$(docker inspect -f '{{.Name}}' flux_agent 2>/dev/null || true)
+legacy=$(docker inspect -f '{{.Config.Image}}' flux_agent 2>/dev/null || true)
+case "$legacy" in ghcr.io/%s/*) ;; *) legacy= ;; esac
 if [ -n "$current" ] && [ -n "$legacy" ]; then
   echo '同时发现新旧节点容器，请先确认要重装的实例' >&2
   exit 1
@@ -447,7 +449,7 @@ docker run -d --name "$name" --restart unless-stopped --network host --cap-add N
   -v "$data:$destination" -e FLYX_AGENT_DATA_DIR="$destination" \
   -e FLYX_AGENT_ADDR=%s -e FLUX_AGENT_ADDR=%s \
   -e FLYX_AGENT_SECRET=%s -e FLUX_AGENT_SECRET=%s "$image"`,
-		quote("ghcr.io/"+owner+"/flyx-agent:"+version), quote("ghcr.io/"+owner+"/flux-agent:"+version), privilegedFlag, quote(panelAddr), quote(panelAddr), quote(secret), quote(secret))
+		owner, quote("ghcr.io/"+owner+"/flyx-agent:"+version), quote("ghcr.io/"+owner+"/flux-agent:"+version), privilegedFlag, quote(panelAddr), quote(panelAddr), quote(secret), quote(secret))
 	return "sh -c " + quote(script)
 }
 
@@ -461,10 +463,10 @@ func dockerComposeInstallCommand(version, panelAddr, secret string, privileged b
 	}
 	// Compose interpolates "$" in values; doubling it keeps the secret intact.
 	value := func(v string) string { return strconv.Quote(strings.ReplaceAll(v, "$", "$$")) }
-	return fmt.Sprintf(`if docker container inspect flux_agent >/dev/null 2>&1; then
+	return fmt.Sprintf(`case "$(docker inspect -f '{{.Config.Image}}' flux_agent 2>/dev/null || true)" in ghcr.io/%s/*)
   echo '检测到旧版 flux_agent 容器；请先使用 Docker 安装命令升级，或停止并移除旧容器后再执行。' >&2
-  exit 1
-fi
+  exit 1;;
+esac
 mkdir -p /opt/docker/flyx-agent
 # The file holds the node secret: create it unreadable to other users.
 (umask 077 && cat > /opt/docker/flyx-agent/docker-compose.yaml) <<'EOF'
@@ -490,7 +492,7 @@ if docker container inspect flyx-agent >/dev/null 2>&1; then
   docker rm -f flyx-agent >/dev/null
 fi
 docker compose -f /opt/docker/flyx-agent/docker-compose.yaml up -d`,
-		owner, version, privilegedLine, value(panelAddr), value(panelAddr), value(secret), value(secret))
+		owner, owner, version, privilegedLine, value(panelAddr), value(panelAddr), value(secret), value(secret))
 }
 
 func (h *Handler) nodeUpdateOrder(w http.ResponseWriter, r *http.Request) {

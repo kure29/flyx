@@ -325,3 +325,42 @@ func TestUpdateNodeWithoutForwardModePreservesExistingMode(t *testing.T) {
 		t.Fatalf("expected persisted forwardMode nftables after update, got %#v", got)
 	}
 }
+
+// Nodes configured before the upgrade may own flvx tables; nodes added
+// afterwards never do, since on a shared server FLVX uses those names.
+func TestLegacyNftTablesBackfillOnlyExistingNodes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panel.db")
+	r, err := Open(path)
+	if err != nil {
+		t.Fatalf("open repo: %v", err)
+	}
+	cfg := NftSSHConfigInput{Host: "203.0.113.10", Username: "root", AuthType: "password", Password: "pw"}
+	if err := r.UpsertNodeSSHConfig(1, cfg, 1); err != nil {
+		t.Fatalf("UpsertNodeSSHConfig: %v", err)
+	}
+	if err := r.db.Exec("ALTER TABLE node_ssh_config DROP COLUMN legacy_nft_tables").Error; err != nil {
+		t.Fatalf("simulate pre-upgrade schema: %v", err)
+	}
+	_ = r.Close()
+
+	r, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopen repo: %v", err)
+	}
+	defer r.Close()
+	if err := r.UpsertNodeSSHConfig(2, cfg, 2); err != nil {
+		t.Fatalf("UpsertNodeSSHConfig: %v", err)
+	}
+	if err := r.UpsertNodeSSHConfig(1, cfg, 3); err != nil {
+		t.Fatalf("UpsertNodeSSHConfig update: %v", err)
+	}
+	for nodeID, want := range map[int64]bool{1: true, 2: false} {
+		got, err := r.GetNodeSSHConfig(nodeID)
+		if err != nil {
+			t.Fatalf("GetNodeSSHConfig(%d): %v", nodeID, err)
+		}
+		if got.LegacyNftTables != want {
+			t.Fatalf("node %d: LegacyNftTables=%v, want %v", nodeID, got.LegacyNftTables, want)
+		}
+	}
+}

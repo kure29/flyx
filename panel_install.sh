@@ -18,6 +18,7 @@ PROXY_ENABLED="${PROXY_ENABLED:-}"
 PROXY_URL="${PROXY_URL:-}"
 DEFAULT_PANEL_BACKEND_CONTAINER="flyx-panel-backend"
 DEFAULT_PANEL_POSTGRES_CONTAINER="flyx-panel-postgres"
+DEFAULT_PANEL_DEPLOY_DIR="/opt/flyx-panel"
 PANEL_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
 # 镜像加速
@@ -335,6 +336,27 @@ get_container_compose_label() {
   printf '%s' "$value"
 }
 
+# Images of this project live under ghcr.io/<owner>/; flux-panel and FLVX
+# publish theirs elsewhere.
+flyx_image_prefix() {
+  local owner="${REPO%%/*}"
+  printf 'ghcr.io/%s/' "$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
+}
+
+# flux-panel, FLVX and FLYX before 3.4.0 all name the backend
+# flux-panel-backend; only a container running our image is this panel.
+is_flyx_container() {
+  local image
+  image=$(docker inspect -f '{{.Config.Image}}' "$1" 2>/dev/null || true)
+  [[ "$image" == "$(flyx_image_prefix)"* ]]
+}
+
+# The same check for a deployment directory: its compose file must pull our
+# images, so another panel's .env and docker-compose.yml are never touched.
+is_flyx_deploy_dir() {
+  [[ -f "$1/.env" && -f "$1/docker-compose.yml" ]] && grep -Fq "$(flyx_image_prefix)" "$1/docker-compose.yml"
+}
+
 detect_panel_backend() {
   local configured="${PANEL_BACKEND_CONTAINER:-}" current="" legacy=""
   if [[ -z "$configured" ]]; then
@@ -343,6 +365,9 @@ detect_panel_backend() {
   if [[ -n "$configured" ]]; then printf '%s' "$configured"; return; fi
   current=$(docker inspect -f '{{.Name}}' flyx-panel-backend 2>/dev/null || true)
   legacy=$(docker inspect -f '{{.Name}}' flux-panel-backend 2>/dev/null || true)
+  if [[ -n "$legacy" ]] && ! is_flyx_container flux-panel-backend; then
+    legacy=""
+  fi
   if [[ -n "$current" && -n "$legacy" ]]; then
     echo "❌ 同时发现新旧面板，请通过 PANEL_BACKEND_CONTAINER 指定要管理的实例。" >&2
     return 1
@@ -380,7 +405,7 @@ resolve_panel_deployment() {
   # Older in-panel upgrades ran Compose inside a helper container, which left
   # the label pointing at the container path (/opt/flvx-panel) instead of the
   # real deployment. Prefer the current directory when only it has the files.
-  if [[ -n "$label_dir" && ! -f "$label_dir/docker-compose.yml" && -f ".env" && -f "docker-compose.yml" ]]; then
+  if [[ -n "$label_dir" && ! -f "$label_dir/docker-compose.yml" ]] && is_flyx_deploy_dir .; then
     echo "⚠️ 容器标签记录的部署目录 $label_dir 中没有 docker-compose.yml，改用当前目录 $(pwd -P)"
     label_dir=""
   fi
@@ -389,10 +414,12 @@ resolve_panel_deployment() {
     deploy_dir="$requested_dir"
   elif [[ -n "$label_dir" ]]; then
     deploy_dir="$label_dir"
-  elif [[ -f ".env" && -f "docker-compose.yml" ]]; then
+  elif is_flyx_deploy_dir .; then
     deploy_dir=$(pwd -P)
+  elif is_flyx_deploy_dir "$DEFAULT_PANEL_DEPLOY_DIR"; then
+    deploy_dir="$DEFAULT_PANEL_DEPLOY_DIR"
   else
-    echo "❌ 无法识别面板部署目录：未找到容器 Compose 标签，当前目录也没有完整部署配置"
+    echo "❌ 无法识别 FLYX 面板部署目录：未找到 FLYX 容器的 Compose 标签，当前目录和 $DEFAULT_PANEL_DEPLOY_DIR 也没有 FLYX 的部署配置"
     return 1
   fi
 
@@ -739,15 +766,49 @@ delete_self() {
 
 
 
+port_in_use() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -Htln 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}\$"
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -tln 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}\$"
+  else
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null
+  fi
+}
+
+# flux-panel and FLVX default to the same ports; suggest the next free one
+# so the panels can run side by side.
+next_free_port() {
+  local port="$1" skip="${2:-}"
+  while [[ "$port" -lt 65535 ]] && { [[ "$port" == "$skip" ]] || port_in_use "$port"; }; do
+    port=$((port + 2))
+  done
+  printf '%s' "$port"
+}
+
+read_panel_port() {
+  local prompt="$1" default="$2" port
+  while true; do
+    read -p "$prompt（默认 $default）: " port
+    port=${port:-$default}
+    if [[ ! "$port" =~ ^[0-9]+$ || "$port" -lt 1 || "$port" -gt 65535 ]]; then
+      echo "❌ 不是有效端口：$port" >&2
+    elif port_in_use "$port"; then
+      echo "❌ 端口 $port 已被占用（可能是其他面板），请换一个" >&2
+    else
+      printf '%s' "$port"
+      return
+    fi
+  done
+}
+
 # 获取用户输入的配置参数
 get_config_params() {
   echo "🔧 请输入配置参数："
 
-  read -p "前端端口（默认 6366）: " FRONTEND_PORT
-  FRONTEND_PORT=${FRONTEND_PORT:-6366}
-
-  read -p "后端端口（默认 6365）: " BACKEND_PORT
-  BACKEND_PORT=${BACKEND_PORT:-6365}
+  FRONTEND_PORT=$(read_panel_port "前端端口" "$(next_free_port 6366)")
+  BACKEND_PORT=$(read_panel_port "后端端口" "$(next_free_port 6365 "$FRONTEND_PORT")")
 
   echo "请选择数据库类型："
   echo "1. SQLite（默认）"
@@ -780,6 +841,23 @@ get_config_params() {
   JWT_SECRET=$(generate_random)
 }
 
+# New installs get their own directory: the Compose project is named after
+# it, and flux-panel / FLVX keep their .env and docker-compose.yml in /root.
+prepare_panel_install_dir() {
+  local dir="${PANEL_DEPLOY_DIR:-$DEFAULT_PANEL_DEPLOY_DIR}" confirm
+  mkdir -p "$dir" || return 1
+  cd "$dir" || return 1
+  if [[ -f .env || -f docker-compose.yml ]]; then
+    if ! is_flyx_deploy_dir .; then
+      echo "❌ $dir 中已有其他面板的部署文件，请用 PANEL_DEPLOY_DIR 指定一个空目录"
+      return 1
+    fi
+    read -p "⚠️ $dir 已有 FLYX 面板配置，重新安装会覆盖 .env（JWT 密钥等），继续吗？(y/N): " confirm
+    [[ "$confirm" == "y" || "$confirm" == "Y" ]] || return 1
+  fi
+  echo "📁 部署目录：$(pwd -P)"
+}
+
 # 安装功能
 install_panel() {
   echo "🚀 开始安装面板..."
@@ -788,6 +866,7 @@ install_panel() {
   ensure_compose_urls_initialized || return 1
 
   check_docker
+  prepare_panel_install_dir || return 1
   get_config_params
 
   echo "🔽 下载必要文件..."
@@ -906,6 +985,7 @@ migrate_to_postgres() {
 
   echo "🔄 开始迁移 SQLite -> PostgreSQL..."
   check_docker
+  resolve_panel_deployment || return 1
 
   if [[ ! -f ".env" ]]; then
     echo "❌ 未找到 .env 文件，请先安装面板"
@@ -995,6 +1075,13 @@ migrate_to_postgres() {
 uninstall_panel() {
   echo "🗑️ 开始卸载面板..."
   check_docker
+  resolve_panel_deployment || return 1
+  # Without .env the downloaded Compose file falls back to the names that
+  # flux-panel and FLVX also use, and would delete their volumes.
+  if [[ ! -f ".env" ]]; then
+    echo "❌ 部署目录缺少 .env，无法确认要删除的容器和数据卷，卸载终止"
+    return 1
+  fi
 
   if [[ ! -f "docker-compose.yml" ]]; then
     echo "⚠️ 未找到 docker-compose.yml 文件，正在下载以完成卸载..."

@@ -106,18 +106,22 @@ type Node struct {
 func (Node) TableName() string { return "node" }
 
 type NodeSSHConfig struct {
-	ID          int64          `gorm:"primaryKey;autoIncrement"`
-	NodeID      int64          `gorm:"column:node_id;not null;uniqueIndex"`
-	Host        string         `gorm:"type:varchar(255);not null"`
-	Port        int            `gorm:"not null;default:22"`
-	Username    string         `gorm:"type:varchar(100);not null"`
-	AuthType    string         `gorm:"column:auth_type;type:varchar(20);not null"`
-	Password    sql.NullString `gorm:"type:text"`
-	PrivateKey  sql.NullString `gorm:"column:private_key;type:text"`
-	Passphrase  sql.NullString `gorm:"type:text"`
-	SudoMode    string         `gorm:"column:sudo_mode;type:varchar(20);not null;default:'none'"`
-	CreatedTime int64          `gorm:"column:created_time;not null"`
-	UpdatedTime int64          `gorm:"column:updated_time;not null"`
+	ID         int64          `gorm:"primaryKey;autoIncrement"`
+	NodeID     int64          `gorm:"column:node_id;not null;uniqueIndex"`
+	Host       string         `gorm:"type:varchar(255);not null"`
+	Port       int            `gorm:"not null;default:22"`
+	Username   string         `gorm:"type:varchar(100);not null"`
+	AuthType   string         `gorm:"column:auth_type;type:varchar(20);not null"`
+	Password   sql.NullString `gorm:"type:text"`
+	PrivateKey sql.NullString `gorm:"column:private_key;type:text"`
+	Passphrase sql.NullString `gorm:"type:text"`
+	SudoMode   string         `gorm:"column:sudo_mode;type:varchar(20);not null;default:'none'"`
+	// LegacyNftTables lets the panel keep using the flvx / flvx_quota tables
+	// it wrote before the rename. Only nodes configured before that column
+	// existed may; FLVX itself uses those table names too.
+	LegacyNftTables bool  `gorm:"column:legacy_nft_tables;not null;default:false"`
+	CreatedTime     int64 `gorm:"column:created_time;not null"`
+	UpdatedTime     int64 `gorm:"column:updated_time;not null"`
 }
 
 func (NodeSSHConfig) TableName() string { return "node_ssh_config" }

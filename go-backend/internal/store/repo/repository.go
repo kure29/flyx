@@ -197,6 +197,19 @@ func (r *Repository) Close() error {
 }
 
 func autoMigrateAll(db *gorm.DB) error {
+	// Nodes configured before the column existed may own flvx tables.
+	m := db.Migrator()
+	backfillLegacyNft := m.HasTable(&model.NodeSSHConfig{}) && !m.HasColumn(&model.NodeSSHConfig{}, "legacy_nft_tables")
+	if err := autoMigrateModels(db); err != nil {
+		return err
+	}
+	if backfillLegacyNft {
+		return db.Model(&model.NodeSSHConfig{}).Where("1 = 1").Update("legacy_nft_tables", true).Error
+	}
+	return nil
+}
+
+func autoMigrateModels(db *gorm.DB) error {
 	if db.Dialector.Name() == "sqlite" {
 		if err := prepareSQLiteNftablesColumns(db); err != nil {
 			return err

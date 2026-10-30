@@ -174,7 +174,9 @@ export function InstallCommandModal({
                       </li>
                       <li>
                         使用 host 网络，数据保存在宿主机 /etc/flyx-agent；
-                        检测到旧版 flux_agent 容器时会停止并提示先迁移。
+                        检测到本项目旧版 flux_agent
+                        容器时会停止并提示先迁移；flux-panel / FLVX 的
+                        flux_agent 容器不受影响。
                       </li>
                       <li>
                         Compose 文件包含节点密钥；开启服务器调优会写入

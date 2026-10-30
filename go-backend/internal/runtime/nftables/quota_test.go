@@ -19,9 +19,9 @@ func TestQuotaBlocksEstablishedTrafficIntegration(t *testing.T) {
 		{ForwardID: 2, InPort: 20001, TargetHost: "fd00:2::2", TargetPort: 8080},
 	}}
 	paths := []string{filepath.Join(dir, "init.sh"), filepath.Join(dir, "block.sh"), filepath.Join(dir, "resume.sh")}
-	scripts := []string{buildApplyCommand("nft", RenderTable(plan)),
-		buildSetBlockedCommand("nft", 20000, true) + "\n" + buildSetBlockedCommand("nft", 20001, true),
-		buildSetBlockedCommand("nft", 20000, false) + "\n" + buildSetBlockedCommand("nft", 20001, false)}
+	scripts := []string{buildApplyCommand("nft", RenderTable(plan), false),
+		buildSetBlockedCommand("nft", 20000, true, false) + "\n" + buildSetBlockedCommand("nft", 20001, true, false),
+		buildSetBlockedCommand("nft", 20000, false, false) + "\n" + buildSetBlockedCommand("nft", 20001, false, false)}
 	for i, script := range scripts {
 		if err := os.WriteFile(paths[i], []byte(script), 0600); err != nil {
 			t.Fatal(err)

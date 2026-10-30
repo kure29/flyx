@@ -19,6 +19,8 @@ curl -L https://github.com/kure29/flyx/releases/latest/download/panel_install.sh
 - **前端端口**: 默认为 `6366`
 - **后端端口**: 默认为 `6365`
 
+端口已被占用（例如同一台服务器上装了 flux-panel 或 FLVX）时，脚本会建议下一个空闲端口。面板文件默认放在 `/opt/flyx-panel`，可用 `PANEL_DEPLOY_DIR=/path ./panel_install.sh` 指定。和其他面板共存见 [和 flux-panel / FLVX 装在同一台服务器](./upgrade.md#和-flux-panel-flvx-装在同一台服务器)。
+
 脚本会自动检测系统是否支持 IPv6，并自动配置 Docker 的 IPv6 支持。
 
 ## 访问面板

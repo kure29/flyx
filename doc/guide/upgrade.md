@@ -10,7 +10,18 @@
 
 节点新安装使用 `flyx-agent` 服务及 `/etc/flyx-agent`。旧节点继续在 `/etc/flux_agent` 中运行 `flux_agent`，保留配置、内核状态、待上报流量及调优备份。新版程序按自身安装位置执行升级和回退。Docker 重装命令会识别已有容器的数据挂载，镜像拉取成功后才替换容器；发现新旧容器同时存在或挂载不明确时停止。
 
-已有 nftables 表和计数 epoch 继续沿用，新建状态使用 FLYX 名称，避免仅因项目改名重置统计。内部的用户凭据、数字标记及 API 数据字段保持兼容。旧镜像名作为过渡别名继续发布。
+已有 nftables 表和计数 epoch 继续沿用，新建状态使用 FLYX 名称，避免仅因项目改名重置统计。只有升级前就已配置的 nftables 服务器会沿用旧的 `flvx` 表，之后新添加的服务器只使用 `flyx` 表。内部的用户凭据、数字标记及 API 数据字段保持兼容。旧镜像名作为过渡别名继续发布。
+
+## 和 flux-panel / FLVX 装在同一台服务器
+
+FLYX 3.4.0 之前和 flux-panel、FLVX 用的是同一套名字，所以安装脚本只在确认是 FLYX 自己的旧安装时才沿用旧名字，其他面板的安装不会被接管、改写或删除：
+
+- **面板**：已有的 `flux-panel-backend` 容器只有镜像来自 `ghcr.io/kure29/` 时才当作 FLYX 的旧部署；新安装默认放在 `/opt/flyx-panel`（可用 `PANEL_DEPLOY_DIR` 指定），不会覆盖 `/root` 里其他面板的 `.env` 和 `docker-compose.yml`。默认端口 `6366` / `6365` 被占用时，脚本会建议下一个空闲端口。更新、卸载、迁移 PostgreSQL 只处理 FLYX 的部署
+- **节点脚本安装**：`/etc/flux_agent` 只有 `config.json` 里的面板地址和本次安装的一致时才当作 FLYX 的旧节点，否则新装到 `/etc/flyx-agent`，两个 agent 各自运行；交互菜单里没有面板地址，更新或卸载前会先询问。脚本也不再删除 flux-panel 原版的 `gost.service` 和 `/usr/local/bin/gost`
+- **节点 Docker 安装**：已有的 `flux_agent` 容器只有镜像来自 `ghcr.io/kure29/` 时才会被替换
+- **nftables 转发**：FLVX 也用 `flvx` 表，新添加的服务器不会读写它
+
+两个面板的 agent 共用宿主机网络，同一个端口只能给其中一个面板的转发使用。
 
 回退前保留部署目录中的 `.env`、`docker-compose.yml` 及备份，使用该安装对应的原配置恢复；新安装回到不识别新资源参数的历史版本时，需要显式保留原数据卷挂载。API Skill 的迁移见 [AI Skill](../ai-skill.md)。
 
@@ -22,7 +33,7 @@
 
 ## 脚本升级
 
-在面板部署目录（存放 `docker-compose.yml` 和 `.env` 的目录）重新运行安装脚本，选 `2. 更新面板`：
+重新运行安装脚本，选 `2. 更新面板`。脚本会按运行中容器的标签找到部署目录（新安装默认为 `/opt/flyx-panel`）；找不到时，在部署目录（存放 `docker-compose.yml` 和 `.env` 的目录）里运行：
 
 ```bash
 curl -L https://github.com/kure29/flyx/releases/latest/download/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh

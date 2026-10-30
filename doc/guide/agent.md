@@ -43,7 +43,7 @@ docker run -d --name flyx-agent \
 
 - 重复执行安装命令会更新 Compose 配置并重建容器
 - 启动前会检查并移除已存在的 `flyx-agent` 容器，避免容器名冲突
-- 检测到旧版 `flux_agent` 容器时会停止，请先通过 Docker 安装方式完成迁移，避免新旧 agent 同时占用 host 网络
+- 检测到 FLYX 旧版 `flux_agent` 容器时会停止，请先通过 Docker 安装方式完成迁移，避免新旧 agent 同时占用 host 网络；flux-panel / FLVX 的 `flux_agent` 容器不受影响
 - 需要服务器调优时，在安装窗口打开 **服务器调优**，Compose 配置会加入 `privileged: true`
 - Docker Compose 使用 `flyx-agent` 容器名和 `/etc/flyx-agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
 

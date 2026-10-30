@@ -55,12 +55,12 @@ func buildCapabilityCheckCommand(nft, tableName string) string {
 }
 
 func (r *SSHRunner) ApplyScript(ctx context.Context, cfg SSHConfig, script string) error {
-	command := buildApplyCommand(nftBinary(cfg), script)
+	command := buildApplyCommand(nftBinary(cfg), script, cfg.LegacyTables)
 	return r.run(ctx, cfg, command)
 }
 
-func buildApplyCommand(nft, script string) string {
-	return "set -eu\n" + selectTableCommand(nft, "flyx", "flvx") +
+func buildApplyCommand(nft, script string, legacy bool) string {
+	return "set -eu\n" + selectTableCommand(nft, "flyx", "flvx", legacy) +
 		"tmp=$(mktemp /tmp/flyx-nft-XXXXXX.nft)\n" +
 		"batch=$(mktemp /tmp/flyx-nft-batch-XXXXXX.nft) || { rm -f \"$tmp\"; exit 1; }\n" +
 		"cleanup() {\n" +
@@ -83,12 +83,17 @@ func buildApplyCommand(nft, script string) string {
 
 func (r *SSHRunner) ListTableJSON(ctx context.Context, cfg SSHConfig) ([]byte, error) {
 	nft := nftBinary(cfg)
-	return r.runOutput(ctx, cfg, "set -eu\n"+selectTableCommand(nft, "flyx", "flvx")+nft+" -j list table inet \"$table\"")
+	return r.runOutput(ctx, cfg, "set -eu\n"+selectTableCommand(nft, "flyx", "flvx", cfg.LegacyTables)+nft+" -j list table inet \"$table\"")
 }
 
 // Existing tables retain their identity and counters until explicitly cleared.
 // Refuse ambiguous ownership instead of applying or counting two rule sets.
-func selectTableCommand(nft, current, legacy string) string {
+// Without allowLegacy the legacy table belongs to another panel (FLVX) and
+// is never touched.
+func selectTableCommand(nft, current, legacy string, allowLegacy bool) string {
+	if !allowLegacy {
+		return nft + " list tables >/dev/null\n" + "table=" + current + "\n"
+	}
 	return nft + " list tables >/dev/null\n" +
 		"table=" + current + "\n" +
 		"if " + nft + " list table inet " + legacy + " >/dev/null 2>&1; then\n" +

@@ -55,29 +55,44 @@ AGENT_NAME="flyx-agent"
 AGENT_SYSTEMD_SERVICE_FILE="/etc/systemd/system/flyx-agent.service"
 AGENT_OPENRC_SERVICE_FILE="/etc/init.d/flyx-agent"
 
-# Keep an existing installation in place: the old agent also upgrades and
-# rolls back using this path. Never start two agents against the same ports.
+# flux-panel, FLVX and FLYX before 3.4.0 all install to /etc/flux_agent.
+# Only a FLYX agent of this panel (same addr in config.json) is kept in place,
+# so it upgrades and rolls back from its old path; any other agent there
+# belongs to another panel and is left alone.
+legacy_agent_matches_panel() {
+  local config="$1/config.json" addr
+  [[ -n "$SERVER_ADDR" && -f "$config" ]] || return 1
+  addr=$(grep -o '"addr"[[:space:]]*:[[:space:]]*"[^"]*"' "$config" | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')
+  [[ -n "$addr" && "$addr" == "$(json_escape "$SERVER_ADDR")" ]]
+}
+
+# The menu has no panel address to compare, so let the user decide.
+confirm_legacy_agent() {
+  local etc_root="${AGENT_ETC_ROOT:-/etc}" confirm
+  [[ ! -e "$INSTALL_DIR/config.json" && ! -e "$INSTALL_DIR/$AGENT_NAME" ]] || return 0
+  [[ -e "$etc_root/flux_agent/config.json" || -e "$etc_root/flux_agent/flux_agent" ]] || return 0
+  echo "⚠️ 未找到 $INSTALL_DIR，但发现 $etc_root/flux_agent。"
+  echo "   它可能是 3.4.0 之前的 FLYX agent，也可能属于 flux-panel / FLVX 等其他面板。"
+  read -p "确认 $etc_root/flux_agent 是本面板的 FLYX agent 吗？(y/N): " confirm
+  [[ "$confirm" == "y" || "$confirm" == "Y" ]] || return 0
+  AGENT_NAME="flux_agent"
+  INSTALL_DIR="$etc_root/flux_agent"
+  AGENT_SYSTEMD_SERVICE_FILE="$etc_root/systemd/system/$AGENT_NAME.service"
+  AGENT_OPENRC_SERVICE_FILE="$etc_root/init.d/$AGENT_NAME"
+}
+
 resolve_agent_installation() {
   local etc_root="${AGENT_ETC_ROOT:-/etc}"
   local current="$etc_root/flyx-agent" legacy="$etc_root/flux_agent"
-  if [[ ( -e "$current/config.json" || -e "$current/flyx-agent" ) && ( -e "$legacy/config.json" || -e "$legacy/flux_agent" ) ]]; then
-    echo "❌ 同时发现新旧节点配置，请先确认需要管理的安装。" >&2
-    return 1
-  fi
   AGENT_NAME="flyx-agent"
   INSTALL_DIR="$current"
-  if [[ -e "$legacy/config.json" || -e "$legacy/flux_agent" ]]; then
+  if [[ ! -e "$current/config.json" && ! -e "$current/flyx-agent" ]] && legacy_agent_matches_panel "$legacy"; then
     AGENT_NAME="flux_agent"
     INSTALL_DIR="$legacy"
   fi
   AGENT_SYSTEMD_SERVICE_FILE="$etc_root/systemd/system/$AGENT_NAME.service"
   AGENT_OPENRC_SERVICE_FILE="$etc_root/init.d/$AGENT_NAME"
 }
-LEGACY_GOST_BINARY="/usr/local/bin/gost"
-LEGACY_GOST_CONFIG_DIR="/etc/gost"
-LEGACY_GOST_SERVICE_FILE_ETC="/etc/systemd/system/gost.service"
-LEGACY_GOST_SERVICE_FILE_LIB="/lib/systemd/system/gost.service"
-LEGACY_GOST_SERVICE_FILE_USR_LIB="/usr/lib/systemd/system/gost.service"
 SERVICE_MANAGER="${SERVICE_MANAGER:-}"
 
 # 镜像加速配置（可由面板传入或交互式询问）
@@ -543,52 +558,6 @@ agent_service_status_hint() {
   esac
 }
 
-cleanup_legacy_gost_installation() {
-  local matched_service_files=()
-  local service_file=""
-  local removed_service_file="0"
-
-  for service_file in "$LEGACY_GOST_SERVICE_FILE_ETC" "$LEGACY_GOST_SERVICE_FILE_LIB" "$LEGACY_GOST_SERVICE_FILE_USR_LIB"; do
-    if [[ ! -f "$service_file" ]]; then
-      continue
-    fi
-    if ! grep -Fq "WorkingDirectory=$LEGACY_GOST_CONFIG_DIR" "$service_file"; then
-      continue
-    fi
-    if grep -Fq "ExecStart=$LEGACY_GOST_CONFIG_DIR/gost" "$service_file" || \
-      (grep -Fq "ExecStart=$LEGACY_GOST_BINARY" "$service_file" && [[ -f "$LEGACY_GOST_CONFIG_DIR/config.json" && -f "$LEGACY_GOST_CONFIG_DIR/gost.json" ]]); then
-      matched_service_files+=("$service_file")
-    fi
-  done
-
-  if [[ ${#matched_service_files[@]} -eq 0 ]]; then
-    return 0
-  fi
-
-  if [[ "$SERVICE_MANAGER" == "systemd" ]] && \
-    systemctl list-units --full -all 2>/dev/null | grep -Fq "gost.service"; then
-    systemctl stop gost 2>/dev/null || true
-    systemctl disable gost 2>/dev/null || true
-  fi
-
-  for service_file in "${matched_service_files[@]}"; do
-    if [[ -f "$service_file" ]]; then
-      rm -f "$service_file"
-      removed_service_file="1"
-    fi
-  done
-
-  if [[ -f "$LEGACY_GOST_BINARY" ]]; then
-    rm -f "$LEGACY_GOST_BINARY"
-  fi
-  if [[ -f "$LEGACY_GOST_CONFIG_DIR/gost" ]]; then
-    rm -f "$LEGACY_GOST_CONFIG_DIR/gost"
-  fi
-
-  if [[ "$removed_service_file" == "1" && "$SERVICE_MANAGER" == "systemd" ]]; then
-    systemctl daemon-reload 2>/dev/null || true
-  fi
-}
 
 
 # 获取用户输入的配置参数
@@ -655,7 +624,6 @@ install_agent() {
     echo "❌ 下载失败，请检查网络或下载链接。"
     exit 1
   fi
-  cleanup_legacy_gost_installation
   mv "$tmp_binary" "$INSTALL_DIR/$AGENT_NAME"
   chmod +x "$INSTALL_DIR/$AGENT_NAME"
   echo "✅ 下载完成"
@@ -703,6 +671,7 @@ EOF
 # 更新功能
 update_agent() {
   echo "🔄 开始更新 FLYX agent..."
+  confirm_legacy_agent
   
   if [[ ! -d "$INSTALL_DIR" ]]; then
     echo "❌ FLYX agent 未安装，请先选择安装。"
@@ -726,7 +695,6 @@ update_agent() {
     echo "❌ 下载失败。"
     return 1
   fi
-  cleanup_legacy_gost_installation
 
   # 停止服务
   if agent_service_exists; then
@@ -752,7 +720,12 @@ update_agent() {
 uninstall_agent() {
   echo "🗑️ 开始卸载 FLYX agent..."
   ensure_service_manager || return 1
-  
+  confirm_legacy_agent
+  if [[ ! -d "$INSTALL_DIR" ]]; then
+    echo "❌ FLYX agent 未安装。"
+    return 1
+  fi
+
   read -p "确认卸载 FLYX agent 吗？此操作将删除所有相关文件 (y/N): " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "❌ 取消卸载"
@@ -798,6 +771,9 @@ main() {
     
     case $choice in
       1)
+        # The panel address decides whether an old flux_agent is ours.
+        get_config_params
+        resolve_agent_installation || exit 1
         install_agent
         delete_self
         exit 0

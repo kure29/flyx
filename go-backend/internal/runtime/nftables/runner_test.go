@@ -32,7 +32,7 @@ touch "` + applyMarker + `"
 		t.Fatalf("write fake nft: %v", err)
 	}
 
-	command := buildApplyCommand(nftPath, "table inet flyx { }")
+	command := buildApplyCommand(nftPath, "table inet flyx { }", false)
 	result := exec.Command("sh", "-c", command)
 	if err := result.Run(); err == nil {
 		t.Fatal("expected validation failure")
@@ -100,7 +100,7 @@ exit 0
 	}
 
 	script := "table inet flyx {\n  chain forward { }\n}"
-	result := exec.Command("sh", "-c", buildApplyCommand(nftPath, script))
+	result := exec.Command("sh", "-c", buildApplyCommand(nftPath, script, false))
 	if output, err := result.CombinedOutput(); err != nil {
 		t.Fatalf("apply command failed: %v: %s", err, output)
 	}

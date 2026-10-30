@@ -98,14 +98,15 @@ func sshConfigFromModel(cfg *model.NodeSSHConfig) (runtimenft.SSHConfig, error) 
 		return runtimenft.SSHConfig{}, errors.New("服务器 SSH 配置不完整")
 	}
 	return runtimenft.SSHConfig{
-		Host:       strings.TrimSpace(cfg.Host),
-		Port:       cfg.Port,
-		Username:   strings.TrimSpace(cfg.Username),
-		AuthType:   strings.TrimSpace(cfg.AuthType),
-		Password:   cfg.Password.String,
-		PrivateKey: cfg.PrivateKey.String,
-		Passphrase: cfg.Passphrase.String,
-		SudoMode:   strings.TrimSpace(cfg.SudoMode),
+		Host:         strings.TrimSpace(cfg.Host),
+		Port:         cfg.Port,
+		Username:     strings.TrimSpace(cfg.Username),
+		AuthType:     strings.TrimSpace(cfg.AuthType),
+		Password:     cfg.Password.String,
+		PrivateKey:   cfg.PrivateKey.String,
+		Passphrase:   cfg.Passphrase.String,
+		SudoMode:     strings.TrimSpace(cfg.SudoMode),
+		LegacyTables: cfg.LegacyNftTables,
 	}, nil
 }
 

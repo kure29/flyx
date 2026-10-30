@@ -43,6 +43,8 @@ type SSHConfig struct {
 	PrivateKey string
 	Passphrase string
 	SudoMode   string
+	// LegacyTables allows reusing an existing flvx / flvx_quota table.
+	LegacyTables bool
 }
 
 type ApplyResult struct {
