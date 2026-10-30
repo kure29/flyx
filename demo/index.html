@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="FLYX" />
+    <link rel="apple-touch-icon" href="/flyx/demo/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet">
+    
+    <title>FLYX</title>
+    <script>
+      // 防止暗黑模式闪烁：在页面加载前立即应用系统主题
+      (function() {
+        // 页面最早阶段应用缓存 favicon，避免默认图标闪烁
+        const defaultFavicon = '/favicon.ico';
+        let cachedFavicon = '';
+
+        try {
+          cachedFavicon = localStorage.getItem('vite_config_app_favicon') || '';
+        } catch (_) {
+          cachedFavicon = '';
+        }
+
+        // 无缓存时，尝试通过公开配置接口同步读取，避免登录页闪烁
+        if (!cachedFavicon.trim()) {
+          try {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/v1/config/get', false);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({ name: 'app_favicon' }));
+
+            if (xhr.status === 200) {
+              const resp = JSON.parse(xhr.responseText || '{}');
+              const value =
+                resp &&
+                typeof resp === 'object' &&
+                resp.code === 0 &&
+                resp.data &&
+                typeof resp.data.value === 'string'
+                  ? resp.data.value.trim()
+                  : '';
+
+              if (value) {
+                cachedFavicon = value;
+                try {
+                  localStorage.setItem('vite_config_app_favicon', value);
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+        }
+
+        const faviconHref = cachedFavicon.trim() || defaultFavicon;
+        let faviconLink = document.head.querySelector('link#app-favicon');
+
+        if (!faviconLink) {
+          faviconLink = document.createElement('link');
+          faviconLink.id = 'app-favicon';
+          faviconLink.rel = 'icon';
+          document.head.appendChild(faviconLink);
+        }
+
+        faviconLink.href = faviconHref;
+        if (faviconHref.startsWith('data:image/png')) {
+          faviconLink.type = 'image/png';
+        } else {
+          faviconLink.removeAttribute('type');
+        }
+
+        let shortcutIconLink = document.head.querySelector('link[rel="shortcut icon"]');
+        if (!shortcutIconLink) {
+          shortcutIconLink = document.createElement('link');
+          shortcutIconLink.rel = 'shortcut icon';
+          document.head.appendChild(shortcutIconLink);
+        }
+
+        shortcutIconLink.href = faviconHref;
+        if (faviconHref.startsWith('data:image/png')) {
+          shortcutIconLink.type = 'image/png';
+        } else {
+          shortcutIconLink.removeAttribute('type');
+        }
+
+        // 立即检测主题并应用（优先读取 localStorage 中的用户偏好）
+        var savedMode = '';
+        try { savedMode = localStorage.getItem('flyx:theme') ?? localStorage.getItem('flvx:theme') ?? ''; } catch (_) {}
+
+        var useDark;
+        if (savedMode === 'dark') {
+          useDark = true;
+        } else if (savedMode === 'light') {
+          useDark = false;
+        } else {
+          // "system" 或无保存：跟随系统
+          useDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
+        
+        // 立即设置主题类，避免闪烁
+        if (useDark) {
+          document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = 'dark';
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.style.colorScheme = 'light';
+        }
+        
+        // 仅在"跟随系统"模式下监听系统主题变化
+        if ((!savedMode || savedMode === 'system') && window.matchMedia) {
+          window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+            // 运行时可能已由 React 接管，这里仅做 fallback
+            var currentMode = '';
+            try { currentMode = localStorage.getItem('flyx:theme') ?? localStorage.getItem('flvx:theme') ?? ''; } catch (_) {}
+            if (currentMode && currentMode !== 'system') return; // 用户已手动选择，不干预
+            if (e.matches) {
+              document.documentElement.classList.add('dark');
+              document.documentElement.style.colorScheme = 'dark';
+            } else {
+              document.documentElement.classList.remove('dark');
+              document.documentElement.style.colorScheme = 'light';
+            }
+          });
+        }
+        
+        // 检测H5模式并设置标记，避免布局切换时的闪屏
+        const isMobile = window.innerWidth <= 768;
+        const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const urlParams = new URLSearchParams(window.location.search);
+        const isH5Param = urlParams.get('h5') === 'true';
+        
+        if (isMobile || isMobileBrowser || isH5Param) {
+          document.documentElement.classList.add('h5-mode');
+        } else {
+          document.documentElement.classList.add('pc-mode');
+        }
+      })();
+    </script>
+    <style>
+      /* 防止页面闪烁的基础样式 */
+      :root {
+        --toaster-bg: #ffffff;
+        --toaster-color: #000000;
+        --toaster-border: #e5e7eb;
+      }
+      
+      html.dark {
+        --toaster-bg: #374151;
+        --toaster-color: #ffffff;
+        --toaster-border: #4b5563;
+      }
+      
+      /* 默认浅色主题样式 */
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #ffffff;
+        color: #000000;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        /* 禁用弹性滚动 */
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      /* 暗色主题样式 */
+      html.dark body {
+        background-color: #000000;
+        color: #ffffff;
+      }
+      
+      #root {
+        min-height: 100vh;
+        background-color: inherit;
+        /* 确保根元素也禁用弹性滚动 */
+        overscroll-behavior: none;
+      }
+
+      /* 使用动态视口单位，避免移动端地址栏导致的额外滚动 */
+      @supports (height: 100dvh) {
+        #root { min-height: 100dvh; }
+      }
+
+      /* iOS Safari 旧版本兼容 */
+      @supports (-webkit-touch-callout: none) {
+        #root { min-height: -webkit-fill-available; }
+      }
+      
+      /* 防止加载时的闪烁 */
+      * {
+        box-sizing: border-box;
+      }
+      
+      /* 确保在主题切换时平滑过渡 */
+      html {
+        transition: color-scheme 0.2s ease;
+        /* 禁用整个页面的弹性滚动 */
+        overscroll-behavior: none;
+      }
+      
+      /* 防止布局切换时的闪屏 */
+      .h5-mode #root {
+        background-color: #ffffff;
+      }
+      
+      .h5-mode.dark #root {
+        background-color: #000000;
+      }
+      
+      .pc-mode #root {
+        background-color: #ffffff;
+      }
+      
+      .pc-mode.dark #root {
+        background-color: #000000;
+      }
+            
+      /* 移动端滚动优化 */
+      @media (max-width: 768px) {
+        html, body {
+          overscroll-behavior: none;
+          -webkit-overflow-scrolling: touch;
+        }
+        
+        /* 确保固定定位的元素不受滚动影响 */
+        .fixed {
+          overscroll-behavior: none;
+        }
+      }
+    </style>
+    <meta key="title" content="FLYX" property="og:title" />
+    <meta
+      content="FLYX"
+      property="og:description"
+    />
+    <meta
+      content="FLYX"
+      name="description"
+    />
+    <meta
+      key="viewport"
+      content="viewport-fit=cover, width=device-width, initial-scale=1.0, user-scalable=no"
+      name="viewport"
+    />
+    <script type="module" crossorigin src="/flyx/demo/assets/index-BwXXvSpr.js"></script>
+    <link rel="stylesheet" crossorigin href="/flyx/demo/assets/index--ZqDcvcq.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

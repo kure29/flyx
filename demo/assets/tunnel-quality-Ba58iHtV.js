@@ -1,0 +1,1 @@
+const e=`monitor_tunnel_quality_interval_sec`,t=1,n=1,r=3600,i=e=>{let t=Number(e);return Number.isInteger(t)&&t>=1&&t<=3600?t:1},a=e=>{let t=e.trim();if(!t)return`请输入探测间隔`;let n=Number(t);return Number.isInteger(n)?n<1||n>3600?`探测间隔必须在 1 到 ${r} 秒之间`:null:`探测间隔必须是整数`},o=e=>e===1?`每秒`:`每 ${e} 秒`;export{i as a,e as i,r as n,o,n as r,a as s,t};
