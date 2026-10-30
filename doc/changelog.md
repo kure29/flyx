@@ -4,6 +4,15 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/kure29/flyx/releases)。
 
+## 3.4.2
+
+2026-10-30
+
+- **删除服务器时可同时卸载 agent**：删除服务器（单个或批量）的确认窗口新增 **同时卸载服务器上的 agent**，默认勾选。会停止内核、删除 agent 建的 nftables 规则、恢复调优前的系统参数，脚本安装的还会删除服务和安装目录；nftables 转发的服务器会通过 SSH 清除转发规则。服务器离线时，等它下次连上面板再自动卸载。Docker 安装的 agent 会清空配置并停止连接面板，容器需要手动删除。只想把服务器换到另一个面板时取消勾选即可，见 [删除服务器并卸载 agent](./guide/agent.md#删除服务器并卸载-agent)
+- **节点支持 Docker Compose 安装**：服务器的安装命令窗口新增 **Docker Compose** 方式，Compose 文件写入 `/opt/docker/flyx-agent/`；Docker 和 Docker Compose 方式都可以打开 **服务器调优** 开关（以 `--privileged` 运行），见 [用 Docker Compose 安装](./guide/agent.md#用-docker-compose-安装)
+- **Mihomo 订阅启用抗量子密钥交换**：服务器装的是 Xray 25.5.16 及以上时，Mihomo 订阅里的 VLESS Reality 节点会带上 `support-x25519mlkem768: true`；sing-box、旧版 Xray 和导入的节点不受影响，见 [常见问题](./guide/faq.md#reality-用-clash-mihomo-连不上)
+- **升级**：删除服务器时自动卸载需要把节点 agent 升级到 3.4.2；旧 agent 会提示版本过旧，需在服务器上手动卸载
+
 ## 3.4.1
 
 2026-10-28
