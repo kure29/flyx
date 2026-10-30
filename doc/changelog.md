@@ -4,6 +4,14 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/kure29/flyx/releases)。
 
+## 3.4.3
+
+2026-10-30
+
+- **可以和 flux-panel / FLVX 装在同一台服务器**：以前安装脚本看到 `flux-panel-backend` 容器、`/etc/flux_agent` 目录或 `flux_agent` 容器就当成自己的旧安装接管，还会删除 flux-panel 原版的 `gost.service`。现在只有确认是 FLYX 自己的旧安装才沿用（面板和 Docker 节点看镜像是否来自本项目，脚本节点看 `config.json` 里的面板地址），其他面板的安装不会被接管、改写或删除，见 [和 flux-panel / FLVX 装在同一台服务器](./guide/upgrade.md#和-flux-panel-flvx-装在同一台服务器)
+- **面板新安装放到 `/opt/flyx-panel`**：不再把 `.env` 和 `docker-compose.yml` 写到当前目录（常见为 `/root`），避免覆盖其他面板的文件；默认端口 `6366` / `6365` 被占用时会建议下一个空闲端口。已有部署不受影响，更新、卸载、迁移 PostgreSQL 只会处理 FLYX 的部署
+- **nftables 转发不再碰 FLVX 的表**：升级前已配置的 nftables 服务器照常沿用原来的表；之后新添加的服务器只使用 `flyx` 表
+
 ## 3.4.2
 
 2026-10-30
