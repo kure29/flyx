@@ -1,0 +1,1 @@
+import{pi as e,ui as t}from"./index-0OVOFtwZ.js";var n=e(t(),1);function r(e){let t=(0,n.useRef)(0);return(0,n.useLayoutEffect)(()=>()=>{t.current+=1},[e]),(0,n.useCallback)(()=>{let e=++t.current;return()=>e===t.current},[])}export{r as t};
