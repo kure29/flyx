@@ -3,6 +3,7 @@
 // shell) both pages use.
 import type { PublicStatus, PublicStatusNode } from "@/api";
 
+import { useEffect } from "react";
 import { Moon, Sun } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -337,14 +338,26 @@ export function Shell({
 export function Notice({
   title,
   children,
+  onRetry,
 }: {
   title: string;
   children?: React.ReactNode;
+  /** Shows a retry button. */
+  onRetry?: () => void;
 }) {
   return (
     <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
       <span className="text-base font-medium">{title}</span>
       {children && <span className="text-sm text-default-500">{children}</span>}
+      {onRetry && (
+        <button
+          className={`${buttonClass} mt-2`}
+          type="button"
+          onClick={onRetry}
+        >
+          重试
+        </button>
+      )}
     </Card>
   );
 }
@@ -367,3 +380,27 @@ export async function getJSON<T>(path: string): Promise<Envelope<T>> {
 
 /** The public status API (flyxApi 1): no login, the panel's usual envelope. */
 export const fetchStatus = () => getJSON<PublicStatus>("/api/v1/public/status");
+
+/**
+ * Runs load now, every ms while the page is visible, and at once when the
+ * page becomes visible again (a background tab skips the timer, so its data
+ * would otherwise stay stale until the next tick).
+ */
+export function usePolling(load: () => void, ms: number) {
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, ms);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [load, ms]);
+}

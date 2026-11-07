@@ -273,8 +273,8 @@ body {
   --glass-card: rgba(40, 40, 40, 0.6);
 }
 
-/* Default background: plain light / dark colour. The built-in wallpaper is
-   opt-in (app_bg_image = "wallpaper"), custom images via has-custom-bg. */
+/* Default background: plain light / dark colour; custom images via
+   has-custom-bg. */
 .bg-mesh-gradient {
   background-color: var(--background);
   position: relative;
@@ -294,16 +294,6 @@ body {
 
 .dark .bg-mesh-gradient {
   background-color: var(--background);
-}
-
-:root.has-wallpaper-bg .bg-mesh-gradient::before {
-  background: url('/images/bg-light.jpg') no-repeat center center;
-  background-size: cover;
-}
-
-:root.dark.has-wallpaper-bg .bg-mesh-gradient::before {
-  background: url('/images/bg-dark.jpg') no-repeat center center;
-  background-size: cover;
 }
 
 :root.has-theme-bg .bg-mesh-gradient {

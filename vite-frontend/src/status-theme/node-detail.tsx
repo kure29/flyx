@@ -38,6 +38,7 @@ import {
   speedText,
   uptimeShort,
   usageText,
+  usePolling,
 } from "./ui";
 
 import { Spinner } from "@/shadcn-bridge/heroui/spinner";
@@ -318,16 +319,14 @@ export default function NodeDetail({ id }: { id: number }) {
       setLoading(false);
     }
   }, [id, range]);
-
-  useEffect(() => {
+  const retry = () => {
     setLoading(true);
     void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, REFRESH_MS[range]);
+  };
 
-    return () => window.clearInterval(timer);
-  }, [load, range]);
+  // A new range shows the spinner until its first answer.
+  useEffect(() => setLoading(true), [range]);
+  usePolling(load, REFRESH_MS[range]);
 
   const node = status?.nodes.find((n) => n.id === id);
   const [flag, , name] = nodeFlag(node ?? { name: "" });
@@ -441,7 +440,7 @@ export default function NodeDetail({ id }: { id: number }) {
           <Spinner label="加载中..." size="lg" />
         </div>
       ) : error && !metrics ? (
-        <Notice title={error}>
+        <Notice title={error} onRetry={retry}>
           <a className="hover:underline" href={home}>
             返回状态页
           </a>

@@ -172,16 +172,14 @@ function App() {
         customBg.startsWith("data:") ||
         customBg.startsWith("/") ||
         customBg.startsWith("blob:");
-      // "" and "theme" are the default plain background; "wallpaper" is
-      // the built-in picture; anything else is an image URL or a colour.
+      // "" and "theme" are the default plain background, as is "wallpaper"
+      // (the built-in picture, since removed) where a panel still has it
+      // saved; anything else is an image URL or a colour.
       const mode =
-        !customBg || customBg === "theme"
+        !customBg || customBg === "theme" || customBg === "wallpaper"
           ? "plain"
-          : customBg === "wallpaper"
-            ? "wallpaper"
-            : "custom";
+          : "custom";
 
-      root.classList.toggle("has-wallpaper-bg", mode === "wallpaper");
       root.classList.toggle("has-custom-bg", mode === "custom");
       root.classList.remove("has-theme-bg");
       if (mode === "custom") {

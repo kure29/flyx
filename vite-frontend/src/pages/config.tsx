@@ -372,8 +372,7 @@ const SECTION_CONFIG_KEYS: Partial<Record<SectionKey, string[]>> = {
 };
 
 const describeBackground = (value?: string) => {
-  if (!value) return "默认纯色背景";
-  if (value === "wallpaper") return "内置壁纸";
+  if (!value || value === "wallpaper") return "默认纯色背景";
   if (value === "theme") return "自适应纯色";
   if (/^(https?:|data:|\/|blob:)/.test(value)) return "自定义图片";
 
@@ -922,8 +921,9 @@ export default function ConfigPage() {
       bgImage.startsWith("/") ||
       bgImage.startsWith("blob:");
     const isTheme = bgImage === "theme";
-    const isWallpaper = bgImage === "wallpaper";
-    const isSolidColor = bgImage && !isImage && !isTheme && !isWallpaper;
+    // "wallpaper" was the built-in picture, since removed: shown as default.
+    const isSolidColor =
+      bgImage && !isImage && !isTheme && bgImage !== "wallpaper";
     const isChanged = configs[key] !== originalConfigs[key];
 
     return (
@@ -975,16 +975,6 @@ export default function ConfigPage() {
           >
             上传图片
           </Button>
-          {isDefault && (
-            <Button
-              isDisabled={bgImageUploading !== null || isWallpaper}
-              size="sm"
-              variant="flat"
-              onPress={() => handleConfigChange(key, "wallpaper")}
-            >
-              内置壁纸
-            </Button>
-          )}
           {isDefault && (
             <Button
               isDisabled={bgImageUploading !== null || bgImage === "#ffffff"}
