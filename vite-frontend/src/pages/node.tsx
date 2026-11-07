@@ -185,6 +185,8 @@ export default function NodePage({
     notifyEvents: {},
     expiryTime: 0,
     renewalCycle: "",
+    region: "",
+    regionDetected: "",
     serverHost: "",
     serverIpV4: "",
     serverIpV6: "",
@@ -646,6 +648,8 @@ export default function NodePage({
       notifyEvents: { ...node.notifyEvents },
       expiryTime: node.expiryTime || 0,
       renewalCycle: node.renewalCycle || "",
+      region: node.region || "",
+      regionDetected: node.regionDetected || "",
       serverHost: normalizedHost,
       serverIpV4: normalizedV4,
       serverIpV6: normalizedV6,
@@ -958,6 +962,7 @@ export default function NodePage({
         remark: form.remark.trim(),
         expiryTime: form.expiryTime,
         renewalCycle: form.renewalCycle,
+        region: form.region,
         extraIPs: form.extraIPs,
         forwardMode: form.forwardMode,
         sshConfig,
@@ -985,6 +990,7 @@ export default function NodePage({
                     notifyEvents: { ...form.notifyEvents },
                     expiryTime: form.expiryTime,
                     renewalCycle: form.renewalCycle,
+                    region: form.region,
                     serverIp:
                       form.serverIpV4?.trim() ||
                       form.serverIpV6?.trim() ||
@@ -1027,6 +1033,8 @@ export default function NodePage({
       notifyEvents: {},
       expiryTime: 0,
       renewalCycle: "",
+      region: "",
+      regionDetected: "",
       serverHost: "",
       serverIpV4: "",
       serverIpV6: "",

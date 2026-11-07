@@ -15,6 +15,7 @@ import { Alert } from "@/shadcn-bridge/heroui/alert";
 import { Accordion, AccordionItem } from "@/shadcn-bridge/heroui/accordion";
 import { Select, SelectItem } from "@/shadcn-bridge/heroui/select";
 import { type NodeRenewalCycle } from "@/pages/node/renewal";
+import { nodeRegionLabel, nodeRegionOptions } from "@/pages/node/region";
 import { NodeForm } from "@/pages/node/types";
 import { NODE_NOTIFY_EVENTS } from "@/utils/notification-events";
 
@@ -31,6 +32,9 @@ export interface NodeFormModalProps {
   submitLoading: boolean;
 }
 
+// Select keys can't be empty strings; this one stands for "detect".
+const REGION_AUTO = "auto";
+
 /** Create or edit a node. */
 export function NodeFormModal({
   dialogTitle,
@@ -44,6 +48,13 @@ export function NodeFormModal({
   setForm,
   submitLoading,
 }: NodeFormModalProps) {
+  const regionOptionLabel = (code: string) =>
+    code !== REGION_AUTO
+      ? nodeRegionLabel(code)
+      : form.regionDetected
+        ? `自动识别（${nodeRegionLabel(form.regionDetected)}）`
+        : "自动识别";
+
   return (
     <Modal
       classNames={{
@@ -110,6 +121,36 @@ export function NodeFormModal({
                 <SelectItem key="year" textValue="year">
                   年付
                 </SelectItem>
+              </Select>
+              <Select
+                description={
+                  form.region
+                    ? "状态页显示这里选的地区"
+                    : form.regionDetected
+                      ? `按服务器地址识别为 ${nodeRegionLabel(form.regionDetected)}`
+                      : "按服务器地址自动识别，保存后稍等片刻生效"
+                }
+                label="地区"
+                selectedKeys={[form.region || REGION_AUTO]}
+                variant="bordered"
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string | undefined;
+
+                  setForm((prev) => ({
+                    ...prev,
+                    region:
+                      !selected || selected === REGION_AUTO ? "" : selected,
+                  }));
+                }}
+              >
+                {[
+                  REGION_AUTO,
+                  ...nodeRegionOptions(form.region, form.regionDetected),
+                ].map((code) => (
+                  <SelectItem key={code} textValue={regionOptionLabel(code)}>
+                    {regionOptionLabel(code)}
+                  </SelectItem>
+                ))}
               </Select>
             </div>
 

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"go-backend/internal/config"
+	"go-backend/internal/geoip"
 	httpserver "go-backend/internal/http"
 	"go-backend/internal/http/handler"
 	"go-backend/internal/store/repo"
@@ -48,6 +50,7 @@ func New(cfg config.Config) (*App, error) {
 
 	h := handler.New(r, cfg.JWTSecret)
 	h.SetStatusThemesDir(cfg.StatusThemesDir)
+	h.SetGeoIP(geoIPFromConfig(cfg))
 	router := httpserver.NewRouter(h, cfg.JWTSecret)
 
 	s := &http.Server{
@@ -79,4 +82,16 @@ func (a *App) Shutdown(ctx context.Context) error {
 		return shutdownErr
 	}
 	return closeErr
+}
+
+// geoIPFromConfig picks the country database for node region detection.
+func geoIPFromConfig(cfg config.Config) *geoip.DB {
+	switch path := strings.TrimSpace(cfg.GeoIPCountryDB); {
+	case strings.EqualFold(path, "off"):
+		return nil
+	case path != "":
+		return geoip.New(path, false)
+	default:
+		return geoip.New(filepath.Join(filepath.Dir(cfg.DBPath), "geoip", geoip.FileName), true)
+	}
 }

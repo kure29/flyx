@@ -34,7 +34,7 @@ import {
   Segmented,
   Shell,
   splitBytes,
-  splitFlag,
+  nodeFlag,
   speedText,
   uptimeShort,
   usageText,
@@ -330,7 +330,7 @@ export default function NodeDetail({ id }: { id: number }) {
   }, [load, range]);
 
   const node = status?.nodes.find((n) => n.id === id);
-  const [flag, , name] = splitFlag(node?.name ?? "");
+  const [flag, , name] = nodeFlag(node ?? { name: "" });
   const title = status?.title || siteConfig.name;
 
   useEffect(() => {

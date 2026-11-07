@@ -135,6 +135,8 @@ func (r *Repository) ListNodes() ([]map[string]interface{}, error) {
 			"hostArch":                n.HostArch,
 			"hostCpuName":             n.HostCPUName,
 			"hostVirtualization":      n.HostVirtualization,
+			"region":                  n.Region,
+			"regionDetected":          n.RegionDetected,
 		})
 	}
 	return items, nil

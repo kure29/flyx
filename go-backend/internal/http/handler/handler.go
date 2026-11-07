@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go-backend/internal/auth"
+	"go-backend/internal/geoip"
 	"go-backend/internal/health"
 	"go-backend/internal/http/middleware"
 	"go-backend/internal/http/response"
@@ -78,7 +79,11 @@ type Handler struct {
 	// statusHistory serves the status page's history charts.
 	statusHistory *statusHistoryCache
 	// statusThemes holds the status page's installed themes.
-	statusThemes      *statustheme.Store
+	statusThemes *statustheme.Store
+	// geoip finds the country of a node's address; nil when detection is off.
+	geoip *geoip.DB
+	// regionNudge asks the region loop to look at the nodes again now.
+	regionNudge       chan struct{}
 	statusThemeChoice statusThemeChoiceCache
 }
 
@@ -149,6 +154,7 @@ func New(repo *repo.Repository, jwtSecret string) *Handler {
 		statusCache:              &statusPageCache{},
 		statusHistory:            &statusHistoryCache{},
 		statusThemes:             &statustheme.Store{},
+		regionNudge:              make(chan struct{}, 1),
 	}
 	h.installGithubTokenSource()
 	h.healthCheck = health.NewChecker(repo, h.wsServer)

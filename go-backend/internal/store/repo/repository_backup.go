@@ -259,6 +259,7 @@ func (r *Repository) exportNodes() ([]model.NodeBackup, error) {
 			Inx: n.Inx, IsRemote: n.IsRemote,
 			LatencyTargets: n.LatencyTargets,
 			NotifyEvents:   &n.NotifyEvents,
+			Region:         &n.Region,
 		}
 		if n.ExpiryTime.Valid {
 			b.ExpiryTime = n.ExpiryTime.Int64
@@ -762,6 +763,10 @@ func importNodes(tx *gorm.DB, nodes []model.NodeBackup, now int64) (int, error) 
 		if n.NotifyEvents != nil {
 			item.NotifyEvents = *n.NotifyEvents
 			columns = append(columns, "notify_events")
+		}
+		if n.Region != nil {
+			item.Region = *n.Region
+			columns = append(columns, "region")
 		}
 		err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},

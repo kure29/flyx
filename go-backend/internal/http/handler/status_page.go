@@ -198,6 +198,9 @@ type statusPageNode struct {
 	MonthUp   *int64 `json:"monthUp,omitempty"`
 	MonthDown *int64 `json:"monthDown,omitempty"`
 	Expiry    string `json:"expiry,omitempty"`
+	// Region is the node's country, ISO 3166-1 alpha-2 (HK, JP, US …): set by
+	// the admin, else detected from its address. Never the address itself.
+	Region string `json:"region,omitempty"`
 	// Ping is the latency to the node's reference points over the last
 	// hour: names the admin gave them only, never their addresses or errors.
 	Ping []statusPagePing `json:"ping,omitempty"`
@@ -412,6 +415,7 @@ func (h *Handler) buildStatusPage(cfg map[string]string, now time.Time) (*status
 		if showExpiry && n.ExpiryTime.Valid && n.ExpiryTime.Int64 > 0 {
 			v.Expiry = time.UnixMilli(n.ExpiryTime.Int64).In(loc).Format("2006-01-02")
 		}
+		v.Region = n.EffectiveRegion()
 		out.Nodes = append(out.Nodes, v)
 	}
 	out.Totals.Nodes = len(out.Nodes)

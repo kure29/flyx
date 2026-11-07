@@ -533,6 +533,36 @@ func (r *Repository) SetNodeHostFacts(nodeID int64, f NodeHostFacts) error {
 		}).Error
 }
 
+// SetNodeRegion stores the country the admin chose for the node ("" = detect).
+func (r *Repository) SetNodeRegion(nodeID int64, region string) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	return r.db.Model(&model.Node{}).Where("id = ? AND region <> ?", nodeID, region).
+		Update("region", region).Error
+}
+
+// SetNodeDetectedRegion stores the country found for the node's address.
+func (r *Repository) SetNodeDetectedRegion(nodeID int64, region, from string) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	return r.db.Model(&model.Node{}).
+		Where("id = ? AND (region_detected <> ? OR region_detected_from <> ?)", nodeID, region, from).
+		Updates(map[string]interface{}{"region_detected": region, "region_detected_from": from}).Error
+}
+
+// ListNodeRegionSources lists what region detection needs for every local node.
+func (r *Repository) ListNodeRegionSources() ([]model.Node, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var nodes []model.Node
+	err := r.db.Select("id", "server_ip", "server_ip_v4", "server_ip_v6", "region_detected", "region_detected_from").
+		Where("is_remote = ?", 0).Order("id ASC").Find(&nodes).Error
+	return nodes, err
+}
+
 func (r *Repository) SetNodeNftError(nodeID int64, msg string) (bool, error) {
 	if r == nil || r.db == nil {
 		return false, errors.New("repository not initialized")
