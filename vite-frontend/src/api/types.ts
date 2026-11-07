@@ -13,6 +13,8 @@ export interface NodeApiItem {
   remark?: string;
   expiryTime?: number;
   renewalCycle?: "month" | "quarter" | "year" | "";
+  region?: string;
+  regionDetected?: string;
   expiryReminderDismissed?: number;
   syncError?: string;
   [key: string]: unknown;
@@ -220,6 +222,8 @@ export interface NodeMutationPayload {
   remark?: string;
   expiryTime?: number;
   renewalCycle?: "month" | "quarter" | "year" | "";
+  /** 地区代码，空字符串为自动识别；不传则不修改。 */
+  region?: string;
   serverIp?: string;
   serverIpV4?: string;
   serverIpV6?: string;

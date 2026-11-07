@@ -17,6 +17,10 @@ export interface Node {
   remark?: string;
   expiryTime?: number;
   renewalCycle?: NodeRenewalCycle;
+  /** 管理员选的地区（ISO 代码），空为自动识别。 */
+  region?: string;
+  /** 面板按地址识别出的地区。 */
+  regionDetected?: string;
   expiryReminderDismissed?: number;
   ip: string;
   serverIp: string;
@@ -65,6 +69,10 @@ export interface NodeForm {
   notifyEvents: NodeNotifyEvents;
   expiryTime: number;
   renewalCycle: NodeRenewalCycle;
+  /** 管理员选的地区（ISO 代码），空为自动识别。 */
+  region: string;
+  /** 面板按地址识别出的地区，只读。 */
+  regionDetected: string;
   serverHost: string;
   serverIpV4: string;
   serverIpV6: string;

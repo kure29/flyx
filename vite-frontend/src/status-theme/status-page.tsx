@@ -34,7 +34,7 @@ import {
   Segmented,
   Shell,
   splitBytes,
-  splitFlag,
+  nodeFlag,
   speedText,
   uptimeShort,
   usageText,
@@ -201,7 +201,7 @@ function NodeCard({
   days: string[];
   showTraffic: boolean;
 }) {
-  const [flag, , name] = splitFlag(node.name);
+  const [flag, , name] = nodeFlag(node);
   const live = node.online && node.cpu !== undefined;
   const remaining = node.expiry ? daysUntil(node.expiry) : null;
   const host = hostLine(node);
@@ -364,7 +364,7 @@ function NodeTable({
         </thead>
         <tbody>
           {nodes.map((node) => {
-            const [flag, , name] = splitFlag(node.name);
+            const [flag, , name] = nodeFlag(node);
             const live = node.online && node.cpu !== undefined;
             const go = () => window.location.assign(nodeHref(node.id));
 
@@ -546,7 +546,7 @@ export default function StatusPage() {
     const m = new Map<string, { flag: string; count: number }>();
 
     for (const n of data?.nodes ?? []) {
-      const [flag, code] = splitFlag(n.name);
+      const [flag, code] = nodeFlag(n);
       const key = code || "其他";
       const r = m.get(key) ?? { flag, count: 0 };
 
@@ -562,7 +562,7 @@ export default function StatusPage() {
 
     return (data?.nodes ?? []).filter(
       (n) =>
-        (!region || (splitFlag(n.name)[1] || "其他") === region) &&
+        (!region || (nodeFlag(n)[1] || "其他") === region) &&
         (!q || n.name.toLowerCase().includes(q)),
     );
   }, [data, region, query]);
@@ -618,12 +618,12 @@ export default function StatusPage() {
               <div className="min-w-0 text-sm">
                 <div className="font-medium">
                   {offline.length === 1
-                    ? `${splitFlag(offline[0].name)[2]} 已离线`
+                    ? `${nodeFlag(offline[0])[2]} 已离线`
                     : `${offline.length} 台服务器离线`}
                 </div>
                 <div className="mt-0.5 text-[13px] text-default-500">
                   {offline.length > 1 &&
-                    `${offline.map((n) => splitFlag(n.name)[2]).join("、")}。`}
+                    `${offline.map((n) => nodeFlag(n)[2]).join("、")}。`}
                   其余 {t.online} 台服务器运行正常。
                 </div>
               </div>

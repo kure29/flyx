@@ -52,6 +52,25 @@ export function splitFlag(name: string): [string, string, string] {
   return [m[1], code, name.slice(m[0].length) || name];
 }
 
+/**
+ * The node's flag as [flag, code, name]: the flag its name starts with, else
+ * the region the panel reports (set by the admin or detected from its address).
+ */
+export function nodeFlag(node: {
+  name: string;
+  region?: string;
+}): [string, string, string] {
+  const split = splitFlag(node.name);
+  const code = (node.region ?? "").toUpperCase();
+
+  if (split[0] || !/^[A-Z]{2}$/.test(code)) return split;
+  const flag = String.fromCodePoint(
+    ...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65),
+  );
+
+  return [flag, code, node.name];
+}
+
 export const daysUntil = (date: string) => {
   const end = new Date(`${date}T23:59:59`).getTime();
 

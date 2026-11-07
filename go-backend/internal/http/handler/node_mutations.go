@@ -87,7 +87,22 @@ func (h *Handler) nodeCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
+	if err := h.applyNodeRegionRequest(nodeID, req); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	h.nudgeNodeRegions()
 	response.WriteJSON(w, response.OKEmpty())
+}
+
+// applyNodeRegionRequest stores the "region" the admin chose ("" = detect).
+// Requests without the field (older clients) leave it as it is.
+func (h *Handler) applyNodeRegionRequest(nodeID int64, req map[string]interface{}) error {
+	raw, ok := req["region"]
+	if !ok {
+		return nil
+	}
+	return h.repo.SetNodeRegion(nodeID, normalizeNodeRegion(asString(raw)))
 }
 
 func (h *Handler) nodeUpdate(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +188,11 @@ func (h *Handler) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
+	if err := h.applyNodeRegionRequest(id, req); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	h.nudgeNodeRegions()
 	if forwardMode == "nftables" && currentStatus != 1 {
 		if err := h.repo.UpdateNodeStatus(id, 1); err != nil {
 			response.WriteJSON(w, response.Err(-2, err.Error()))

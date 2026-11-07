@@ -129,6 +129,47 @@ func TestBackupRoundTripsNodeNotificationOverrides(t *testing.T) {
 	}
 }
 
+func TestBackupRoundTripsNodeRegion(t *testing.T) {
+	source, err := Open(filepath.Join(t.TempDir(), "source.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	node := model.Node{Name: "hk", Secret: "secret", ServerIP: "198.51.100.1", Region: "HK",
+		RegionDetected: "US", RegionDetectedFrom: "198.51.100.1"}
+	if err := source.DB().Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	backup, err := source.ExportAll()
+	if err != nil || len(backup.Nodes) != 1 || backup.Nodes[0].Region == nil || *backup.Nodes[0].Region != "HK" {
+		t.Fatalf("exported nodes = %+v, %v", backup, err)
+	}
+	dest, err := Open(filepath.Join(t.TempDir(), "dest.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dest.Close()
+	if _, err := dest.Import(backup, []string{"nodes"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := dest.GetNodeByID(node.ID)
+	// Only the admin's choice travels; the panel detects the rest again.
+	if err != nil || got == nil || got.Region != "HK" || got.RegionDetected != "" {
+		t.Fatalf("imported node = %+v, %v", got, err)
+	}
+	// Backups made before regions keep the region already set.
+	backup.Nodes[0].Region = nil
+	if err := dest.SetNodeRegion(node.ID, "JP"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dest.Import(backup, []string{"nodes"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := dest.GetNodeByID(node.ID); err != nil || got == nil || got.Region != "JP" {
+		t.Fatalf("legacy import: node = %+v, %v", got, err)
+	}
+}
+
 func TestExportAllOmitsSensitiveConfigs(t *testing.T) {
 	r, err := Open(filepath.Join(t.TempDir(), "export.db"))
 	if err != nil {

@@ -129,7 +129,7 @@ interface PublicStatus {
 
 interface PublicStatusNode {
   id: number;
-  name: string;           // 可能以国旗 emoji 开头，可据此按地区分组
+  name: string;           // 可能以国旗 emoji 开头；地区优先用下面的 region
   online: boolean;
   availability: {
     h24: number | null; d30: number | null;   // 可用率 %
@@ -146,6 +146,7 @@ interface PublicStatusNode {
   diskUsed?: number; diskTotal?: number;      // 字节
   monthUp?: number; monthDown?: number;       // 字节，showTraffic 为 false 时没有
   expiry?: string;                            // "YYYY-MM-DD"，管理员开启显示到期日时才有
+  region?: string;                            // 国家或地区代码（ISO 3166-1，如 "HK"、"JP"），管理员选的或按地址识别的；没有时不出现
   swap?: number;                              // Swap 使用率 %（agent 3.9.0 起；没有 Swap 时不出现）
   swapUsed?: number; swapTotal?: number;      // 字节
   procs?: number;                             // 进程数（agent 3.9.0 起）

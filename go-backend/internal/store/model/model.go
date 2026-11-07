@@ -110,6 +110,21 @@ type Node struct {
 	HostArch           string `gorm:"column:host_arch;type:varchar(50);not null;default:''"`
 	HostCPUName        string `gorm:"column:host_cpu_name;type:varchar(200);not null;default:''"`
 	HostVirtualization string `gorm:"column:host_virtualization;type:varchar(50);not null;default:''"`
+	// Region is the country (ISO 3166-1 alpha-2, upper case) the admin set;
+	// empty lets the panel detect it. RegionDetected is what the panel found
+	// for the address in RegionDetectedFrom (empty when it found nothing).
+	Region             string `gorm:"column:region;type:varchar(8);not null;default:''"`
+	RegionDetected     string `gorm:"column:region_detected;type:varchar(8);not null;default:''"`
+	RegionDetectedFrom string `gorm:"column:region_detected_from;type:varchar(100);not null;default:''"`
+}
+
+// EffectiveRegion is the country shown for the node: the admin's choice,
+// else the detected one.
+func (n Node) EffectiveRegion() string {
+	if n.Region != "" {
+		return n.Region
+	}
+	return n.RegionDetected
 }
 
 func (Node) TableName() string { return "node" }
@@ -645,6 +660,8 @@ type NodeBackup struct {
 	// NotifyEvents is nil in backups made before per-server notifications;
 	// restoring such a backup keeps the saved overrides.
 	NotifyEvents *string `json:"notifyEvents,omitempty"`
+	// Region is the country the admin chose; older backups have none.
+	Region *string `json:"region,omitempty"`
 }
 
 type TunnelBackup struct {

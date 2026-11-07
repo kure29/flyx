@@ -21,3 +21,10 @@ Modifications and new components (backend, agents, frontend updates)
 are licensed under the GNU General Public License v3.0 (GPLv3).
 See the LICENSE file for the full GPLv3 text.
 -------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+Node region detection uses the IP to Country Lite database by DB-IP
+(https://db-ip.com), licensed under the Creative Commons Attribution 4.0
+International License (https://creativecommons.org/licenses/by/4.0/).
+The database is downloaded at run time and is not part of this repository.
+-------------------------------------------------------------------------

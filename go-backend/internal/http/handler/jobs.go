@@ -25,7 +25,7 @@ func (h *Handler) StartBackgroundJobs() {
 	h.jobsCancel = cancel
 	h.jobsCtx = ctx
 	h.jobsStarted = true
-	h.jobsWG.Add(14)
+	h.jobsWG.Add(15)
 	h.jobsMu.Unlock()
 
 	go h.runDailyMaintenanceLoop(ctx)
@@ -42,6 +42,7 @@ func (h *Handler) StartBackgroundJobs() {
 	go h.runRemoteSourceLoop(ctx)
 	go h.runGistBackupLoop(ctx)
 	go h.runNodeUptimeLoop(ctx)
+	go h.runNodeRegionLoop(ctx)
 	go func() {
 		defer h.jobsWG.Done()
 		h.runNodeReconnectProbes(ctx, queue, 5*time.Second)

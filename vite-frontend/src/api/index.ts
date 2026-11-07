@@ -1314,6 +1314,8 @@ export interface PublicStatusNode {
   monthUp?: number;
   monthDown?: number;
   expiry?: string;
+  /** 国家代码（HK、JP…）：管理员选的，否则按服务器地址识别；没有时不出现。 */
+  region?: string;
   ping?: PublicStatusPing[];
   // From agents of 3.9.0 on.
   swap?: number;

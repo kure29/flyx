@@ -9,6 +9,7 @@ import { Node } from "@/pages/node/types";
 import { getNodeExpiryMeta, SortableItem } from "@/pages/node/helpers";
 import { NodeLiveStats } from "@/pages/node/node-live-stats";
 import { formatUptime } from "@/pages/node/format";
+import { nodeRegionFlag } from "@/pages/node/region";
 
 export interface NodeRowActions {
   toggleSelect: (id: number) => void;
@@ -188,12 +189,22 @@ const NodeRowContent = memo(function NodeRowContent({
       selected={selected}
       status={upgrading ? "warn" : online ? "ok" : "bad"}
       statusTitle={getConnectionStatusMeta(node.connectionStatus).text}
-      title={node.name}
+      title={withRegionFlag(node)}
       onPress={() => setSheetNodeId(node.id)}
       onSelect={() => toggleSelect(node.id)}
     />
   );
 });
+
+/** The name with the node's country flag in front (admin's choice, else detected). */
+function withRegionFlag(node: Node): string {
+  const flag = nodeRegionFlag(node.region || node.regionDetected || "");
+
+  // Names that already start with a flag ("🇭🇰 香港") keep their own.
+  if (!flag || /^\s*[\u{1F1E6}-\u{1F1FF}]/u.test(node.name)) return node.name;
+
+  return `${flag} ${node.name}`;
+}
 
 /** "Debian 12 · kvm" for the row, every fact for its tooltip. */
 function hostSummary(node: Node): { short: string; full: string } | null {

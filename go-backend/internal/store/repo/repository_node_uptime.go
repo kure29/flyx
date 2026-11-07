@@ -60,7 +60,7 @@ func (r *Repository) ListStatusPageNodes() ([]model.Node, error) {
 	}
 	var nodes []model.Node
 	err := r.db.Select("id", "inx", "name", "status", "expiry_time",
-		"host_os", "host_arch", "host_virtualization", "host_cpu_name").
+		"host_os", "host_arch", "host_virtualization", "host_cpu_name", "region", "region_detected").
 		Where("is_remote = ?", 0).
 		Order("inx ASC, id ASC").
 		Find(&nodes).Error
