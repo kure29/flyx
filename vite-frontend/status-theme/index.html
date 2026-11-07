@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="viewport-fit=cover, width=device-width, initial-scale=1.0"
+    />
+    <meta name="theme-color" content="#0a0a0a" />
+    <title>服务器状态</title>
+    <script>
+      // Before the first paint: the panel's favicon and light/dark choice,
+      // which this browser keeps from visiting the panel (same origin).
+      (function () {
+        var icon = "/favicon.ico";
+        var mode = "";
+        try {
+          icon = (localStorage.getItem("vite_config_app_favicon") || "").trim() || icon;
+          mode = localStorage.getItem("flyx:theme") || "";
+        } catch (_) {}
+        var link = document.createElement("link");
+        link.id = "app-favicon";
+        link.rel = "icon";
+        link.href = icon;
+        document.head.appendChild(link);
+        var dark =
+          mode === "dark" ||
+          (mode !== "light" &&
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
+    <style>
+      body { margin: 0; background: #fff; }
+      html.dark body { background: #000; }
+      #root { min-height: 100vh; }
+      @supports (height: 100dvh) { #root { min-height: 100dvh; } }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="../src/status-theme/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,1475 @@
+import type {
+  MonitorTunnelApiItem,
+  TunnelMetricApiItem,
+  TunnelQualityApiItem,
+  TunnelQualityCandidateHopApiItem,
+  TunnelQualityChainDetailsApiItem,
+  TunnelQualityHopApiItem,
+} from "@/api/types";
+
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import {
+  RefreshCw,
+  ArrowLeft,
+  Activity,
+  Zap,
+  Globe,
+  ArrowRightLeft,
+  WifiOff,
+  ArrowRight,
+} from "lucide-react";
+import toast from "react-hot-toast";
+
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { formatTraffic } from "@/utils/traffic";
+import {
+  getMonitorTunnels,
+  getTunnelMetrics,
+  getMonitorTunnelQuality,
+  getMonitorTunnelQualityHistory,
+  getConfigByName,
+} from "@/api";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
+import { Button } from "@/shadcn-bridge/heroui/button";
+import { Card, CardBody, CardHeader } from "@/shadcn-bridge/heroui/card";
+import { Chip } from "@/shadcn-bridge/heroui/chip";
+import { Select, SelectItem } from "@/shadcn-bridge/heroui/select";
+import {
+  EmptyHint,
+  ListGroup,
+  ListRow,
+  type RowStatus,
+} from "@/components/page-kit";
+import {
+  DEFAULT_TUNNEL_QUALITY_INTERVAL_SEC,
+  parseTunnelQualityIntervalSeconds,
+  TUNNEL_QUALITY_INTERVAL_CONFIG_KEY,
+  tunnelQualityIntervalLabel,
+} from "@/config/tunnel-quality";
+
+const MONITOR_TUNNEL_QUALITY_ENABLED_CONFIG_KEY =
+  "monitor_tunnel_quality_enabled";
+const MONITOR_TUNNEL_QUALITY_ENABLED_EVENT =
+  "monitorTunnelQualityEnabledChanged";
+const DEFAULT_PROBE_TARGET_LABEL = "www.bing.com:443";
+
+const probeTargetLabel = (quality?: TunnelQualityApiItem | null) => {
+  if (!quality?.probeTargetHost || !quality.probeTargetPort) {
+    return DEFAULT_PROBE_TARGET_LABEL;
+  }
+
+  const host = quality.probeTargetHost.includes(":")
+    ? `[${quality.probeTargetHost}]`
+    : quality.probeTargetHost;
+
+  return `${host}:${quality.probeTargetPort}`;
+};
+
+const formatTimestamp = (ts: number, rangeMs?: number): string => {
+  const date = new Date(ts);
+  const includeDate = (rangeMs ?? 0) >= 24 * 60 * 60 * 1000;
+
+  if (includeDate) {
+    return date.toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+function LatencyDisplay({
+  value,
+  loading,
+}: {
+  value?: number;
+  loading?: boolean;
+}) {
+  if (loading) {
+    return <RefreshCw className="w-3 h-3 animate-spin inline text-primary" />;
+  }
+  if (value === undefined || value < 0) {
+    return <span className="text-default-400">-</span>;
+  }
+  const ms = value.toFixed(0);
+  let colorClass = "text-success";
+
+  if (value > 200) colorClass = "text-danger";
+  else if (value > 100) colorClass = "text-warning";
+  else if (value > 50) colorClass = "text-primary";
+
+  return (
+    <span className={`font-mono text-xs font-semibold ${colorClass}`}>
+      {ms}ms
+    </span>
+  );
+}
+
+function LiveDot() {
+  return (
+    <span className="relative flex h-2 w-2">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+      <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+    </span>
+  );
+}
+
+const UPTIME_KUMA_BARS_COUNT = 30;
+
+function UptimeHistoryBar({
+  history = [],
+  type,
+  latestValue,
+}: {
+  history?: TunnelQualityApiItem[];
+  type: "entryToExit" | "exitToBing";
+  latestValue?: number;
+}) {
+  const bars = [...Array(UPTIME_KUMA_BARS_COUNT)].map((_, i) => {
+    const historyIndex = history.length - UPTIME_KUMA_BARS_COUNT + i;
+
+    if (historyIndex >= 0 && historyIndex < history.length) {
+      return history[historyIndex];
+    }
+
+    return null;
+  });
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-[3px]">
+        {bars.map((q, idx) => {
+          if (!q) {
+            return (
+              <div
+                key={idx}
+                className="w-1.5 h-4 rounded-full bg-default-200 dark:bg-default-100/50"
+                title="暂无数据"
+              />
+            );
+          }
+          const isEntry = type === "entryToExit";
+          const latency = isEntry ? q.entryToExitLatency : q.exitToBingLatency;
+          const loss = isEntry ? q.entryToExitLoss : q.exitToBingLoss;
+          const timeStr = new Date(q.timestamp).toLocaleTimeString("zh-CN");
+
+          let colorClass = "bg-success";
+          let statusText = "优秀";
+
+          if (q.errorMessage || (loss !== undefined && loss > 0)) {
+            colorClass = "bg-danger";
+            statusText = q.errorMessage ? "错误" : `丢包 ${loss?.toFixed(1)}%`;
+          } else if (latency < 0) {
+            colorClass = "bg-danger";
+            statusText = "探测失败";
+          } else if (latency > 200) {
+            colorClass = "bg-danger";
+            statusText = "极差";
+          } else if (latency > 100) {
+            colorClass = "bg-warning";
+            statusText = "较差";
+          }
+
+          const displayLatency = latency >= 0 ? `${latency.toFixed(0)}ms` : "-";
+          const tooltip = `${timeStr} | ${displayLatency} | ${statusText} | 测试目标: ${probeTargetLabel(q)}`;
+
+          return (
+            <div
+              key={q.timestamp || idx}
+              className={`w-1.5 h-4 rounded-full transition-colors cursor-help hover:opacity-80 ${colorClass}`}
+              title={tooltip}
+            />
+          );
+        })}
+      </div>
+      {latestValue !== undefined && (
+        <div>
+          <LatencyDisplay value={latestValue} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TIME_RANGE_OPTIONS = [
+  { key: String(15 * 60 * 1000), label: "15分钟" },
+  { key: String(60 * 60 * 1000), label: "1小时" },
+  { key: String(6 * 60 * 60 * 1000), label: "6小时" },
+  { key: String(24 * 60 * 60 * 1000), label: "24小时" },
+];
+
+function TimeRangeSelect({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <Select
+      className="w-28"
+      selectedKeys={[String(value)]}
+      onSelectionChange={(keys) => {
+        const v = Number(Array.from(keys)[0]);
+
+        if (v > 0) onChange(v);
+      }}
+    >
+      {TIME_RANGE_OPTIONS.map((opt) => (
+        <SelectItem key={opt.key}>{opt.label}</SelectItem>
+      ))}
+    </Select>
+  );
+}
+
+interface QualityChartCardProps {
+  rangeMs: number;
+  onRangeChange: (v: number) => void;
+  loading: boolean;
+  error: string | null;
+  data: Array<{
+    time: string;
+    entryToExit: number | null;
+    exitToBing: number | null;
+  }>;
+  tunnelId: number;
+  onRefresh: (id: number) => void;
+}
+
+const QualityChartCard = React.memo(function QualityChartCard({
+  rangeMs,
+  onRangeChange,
+  loading,
+  error,
+  data,
+  tunnelId,
+  onRefresh,
+}: QualityChartCardProps) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <h3 className="text-base font-semibold">质量趋势</h3>
+        <div className="flex items-center gap-2">
+          <TimeRangeSelect value={rangeMs} onChange={onRangeChange} />
+          <Button
+            isLoading={loading}
+            size="sm"
+            variant="flat"
+            onPress={() => onRefresh(tunnelId)}
+          >
+            <RefreshCw className="w-4 h-4 mr-1" />
+            刷新
+          </Button>
+        </div>
+      </CardHeader>
+      <CardBody>
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <RefreshCw className="w-6 h-6 animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="text-center py-8 text-danger text-sm">{error}</div>
+        ) : data.length > 0 ? (
+          <div className="h-64">
+            <ResponsiveContainer height="100%" width="100%">
+              <LineChart data={data}>
+                <CartesianGrid opacity={0.3} strokeDasharray="3 3" />
+                <XAxis dataKey="time" fontSize={11} tick={{ fill: "#888" }} />
+                <YAxis
+                  fontSize={11}
+                  label={{
+                    value: "延迟 (ms)",
+                    angle: -90,
+                    position: "insideLeft",
+                    style: { fontSize: 11, fill: "#888" },
+                  }}
+                  tick={{ fill: "#888" }}
+                  tickFormatter={(v: any) => `${Number(v).toFixed(0)}ms`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "rgba(0,0,0,0.85)",
+                    border: "none",
+                    borderRadius: "8px",
+                    fontSize: 12,
+                  }}
+                  formatter={(value: unknown, name: string) => {
+                    const n = Number(value);
+
+                    if (!Number.isFinite(n)) return "-";
+                    const label =
+                      name === "entryToExit"
+                        ? "入口→出口"
+                        : name === "exitToBing"
+                          ? "出口→测试目标"
+                          : name;
+
+                    return [`${n.toFixed(1)}ms`, label];
+                  }}
+                  labelStyle={{ color: "#fff" }}
+                />
+                <Line
+                  connectNulls
+                  dataKey="entryToExit"
+                  dot={false}
+                  name="entryToExit"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  type="monotone"
+                />
+                <Line
+                  connectNulls
+                  dataKey="exitToBing"
+                  dot={false}
+                  name="exitToBing"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  type="monotone"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-default-500">
+            暂无质量历史数据
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+});
+
+interface TrafficChartCardProps {
+  rangeMs: number;
+  onRangeChange: (v: number) => void;
+  loading: boolean;
+  error: string | null;
+  data: Array<{
+    time: string;
+    bytesIn: number;
+    bytesOut: number;
+    connections: number;
+  }>;
+  tunnelId: number;
+  onRefresh: (id: number) => void;
+}
+
+const TrafficChartCard = React.memo(function TrafficChartCard({
+  rangeMs,
+  onRangeChange,
+  loading,
+  error,
+  data,
+  tunnelId,
+  onRefresh,
+}: TrafficChartCardProps) {
+  const yFormatter = (value: unknown) => {
+    const n = Number(value);
+
+    return formatTraffic(n);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <h3 className="text-base font-semibold">流量趋势</h3>
+        <div className="flex items-center gap-2">
+          <TimeRangeSelect value={rangeMs} onChange={onRangeChange} />
+          <Button
+            isLoading={loading}
+            size="sm"
+            variant="flat"
+            onPress={() => onRefresh(tunnelId)}
+          >
+            <RefreshCw className="w-4 h-4 mr-1" />
+            刷新
+          </Button>
+        </div>
+      </CardHeader>
+      <CardBody>
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <RefreshCw className="w-6 h-6 animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="text-center py-8 text-danger text-sm">{error}</div>
+        ) : data.length > 0 ? (
+          <div className="h-64">
+            <ResponsiveContainer height="100%" width="100%">
+              <LineChart data={data}>
+                <CartesianGrid opacity={0.3} strokeDasharray="3 3" />
+                <XAxis dataKey="time" fontSize={11} tick={{ fill: "#888" }} />
+                <YAxis
+                  fontSize={11}
+                  tick={{ fill: "#888" }}
+                  tickFormatter={yFormatter}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "rgba(0,0,0,0.85)",
+                    border: "none",
+                    borderRadius: "8px",
+                    fontSize: 12,
+                  }}
+                  formatter={yFormatter}
+                  labelStyle={{ color: "#fff" }}
+                />
+                <Line
+                  dataKey="bytesIn"
+                  dot={false}
+                  name="上传流量"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  type="monotone"
+                />
+                <Line
+                  dataKey="bytesOut"
+                  dot={false}
+                  name="下载流量"
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                  type="monotone"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-default-500">暂无流量数据</div>
+        )}
+      </CardBody>
+    </Card>
+  );
+});
+
+const parseTunnelQualityChainDetails = (
+  raw?: string,
+): TunnelQualityChainDetailsApiItem => {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+
+    // Backward-compatible with historical rows that stored the primary path
+    // directly as a JSON array.
+    if (Array.isArray(parsed)) {
+      return { primaryPath: parsed as TunnelQualityHopApiItem[] };
+    }
+    if (parsed && typeof parsed === "object") {
+      return parsed as TunnelQualityChainDetailsApiItem;
+    }
+  } catch {
+    return {};
+  }
+
+  return {};
+};
+
+type TunnelTopologyHop = TunnelQualityHopApiItem & {
+  errorMessage?: string;
+};
+
+interface TunnelTopologyPath {
+  key: string;
+  hops: TunnelTopologyHop[];
+  alternativeNodeIndex?: number;
+}
+
+const tunnelTopologyHopKey = (fromNodeId: number, toNodeId: number) =>
+  `${fromNodeId}:${toNodeId}`;
+
+const buildTunnelTopologyPaths = (
+  details: TunnelQualityChainDetailsApiItem,
+): TunnelTopologyPath[] => {
+  const primaryHops = details.primaryPath ?? [];
+  const candidates = details.candidateHops ?? [];
+
+  if (primaryHops.length === 0) {
+    const publicCandidates = candidates.filter(
+      (candidate) => candidate.toRole === "target",
+    );
+    const selected = publicCandidates.find((candidate) => candidate.selected);
+    const paths: TunnelTopologyPath[] = [];
+
+    if (selected) {
+      paths.push({ key: "primary-public", hops: [selected] });
+    }
+    for (const candidate of publicCandidates) {
+      if (candidate.selected) continue;
+      paths.push({
+        key: `alternative-public-${candidate.fromNodeId}`,
+        hops: [candidate],
+        alternativeNodeIndex: 0,
+      });
+    }
+
+    return paths;
+  }
+
+  const primaryNodeIds = [
+    primaryHops[0].fromNodeId,
+    ...primaryHops.map((hop) => hop.toNodeId),
+  ];
+  const internalCandidates = candidates.filter(
+    (candidate) => candidate.toRole !== "target",
+  );
+  const candidateHopMap = new Map<string, TunnelQualityCandidateHopApiItem>();
+  const alternativeNodes = new Map<
+    string,
+    { column: number; nodeId: number }
+  >();
+
+  for (const candidate of internalCandidates) {
+    candidateHopMap.set(
+      tunnelTopologyHopKey(candidate.fromNodeId, candidate.toNodeId),
+      candidate,
+    );
+
+    const sourceColumn = candidate.hopIndex;
+    const targetColumn = candidate.hopIndex + 1;
+
+    if (
+      sourceColumn >= 0 &&
+      sourceColumn < primaryNodeIds.length &&
+      candidate.fromNodeId !== primaryNodeIds[sourceColumn]
+    ) {
+      alternativeNodes.set(`${sourceColumn}:${candidate.fromNodeId}`, {
+        column: sourceColumn,
+        nodeId: candidate.fromNodeId,
+      });
+    }
+    if (
+      targetColumn >= 0 &&
+      targetColumn < primaryNodeIds.length &&
+      candidate.toNodeId !== primaryNodeIds[targetColumn]
+    ) {
+      alternativeNodes.set(`${targetColumn}:${candidate.toNodeId}`, {
+        column: targetColumn,
+        nodeId: candidate.toNodeId,
+      });
+    }
+  }
+
+  const paths: TunnelTopologyPath[] = [{ key: "primary", hops: primaryHops }];
+
+  for (const alternative of alternativeNodes.values()) {
+    const nodeIds = [...primaryNodeIds];
+
+    nodeIds[alternative.column] = alternative.nodeId;
+    const hops: TunnelTopologyHop[] = [];
+
+    for (let index = 0; index < nodeIds.length - 1; index += 1) {
+      const fromNodeId = nodeIds[index];
+      const toNodeId = nodeIds[index + 1];
+      const usesPrimaryEdge =
+        fromNodeId === primaryNodeIds[index] &&
+        toNodeId === primaryNodeIds[index + 1];
+      const hop = usesPrimaryEdge
+        ? primaryHops[index]
+        : candidateHopMap.get(tunnelTopologyHopKey(fromNodeId, toNodeId));
+
+      if (!hop) break;
+      hops.push(hop);
+    }
+
+    if (hops.length === primaryHops.length) {
+      paths.push({
+        key: `alternative-${alternative.column}-${alternative.nodeId}`,
+        hops,
+        alternativeNodeIndex: alternative.column,
+      });
+    }
+  }
+
+  return paths;
+};
+
+function TunnelTopologyPathRow({ path }: { path: TunnelTopologyPath }) {
+  return (
+    <div className="flex min-w-max items-center py-2">
+      {path.hops.map((hop, index) => {
+        const hasError =
+          Boolean(hop.errorMessage) || hop.latency < 0 || hop.loss > 0;
+        const colorClass =
+          hop.latency < 0 || hop.errorMessage
+            ? "text-danger"
+            : hop.loss > 0
+              ? "text-warning"
+              : "text-success";
+        const borderColor = hasError ? "border-danger" : "";
+
+        return (
+          <React.Fragment
+            key={`${path.key}-${hop.fromNodeId}-${hop.toNodeId}-${index}`}
+          >
+            {index === 0 ? (
+              <TopologyNodeChip
+                isAlternative={path.alternativeNodeIndex === 0}
+                name={hop.fromNodeName}
+              />
+            ) : null}
+            <div
+              className="relative mx-1 flex min-w-[70px] shrink-0 flex-col items-center justify-center"
+              title={hop.errorMessage}
+            >
+              <span
+                className={`mb-1 text-[10px] font-mono leading-none ${colorClass}`}
+              >
+                {hop.latency >= 0 && !hop.errorMessage
+                  ? `${hop.latency.toFixed(0)}ms`
+                  : "超时"}
+              </span>
+              <div
+                className={`relative flex h-[2px] w-full items-center justify-end bg-default-200 ${hop.latency < 0 || hop.errorMessage ? "!bg-danger" : ""}`}
+              >
+                <ArrowRight
+                  className={`absolute -right-2 z-10 h-3.5 w-3.5 rounded-full bg-background p-[1px] ${colorClass}`}
+                />
+              </div>
+              <span
+                className={`mt-1.5 text-[10px] font-mono leading-none ${hop.errorMessage || hop.loss > 0 ? "text-warning" : "text-default-400"}`}
+              >
+                {hop.errorMessage ? "探测失败" : `${hop.loss.toFixed(0)}% 丢包`}
+              </span>
+            </div>
+            <TopologyNodeChip
+              borderColor={borderColor}
+              isAlternative={path.alternativeNodeIndex === index + 1}
+              name={hop.toNodeName}
+            />
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function TopologyNodeChip({
+  name,
+  isAlternative = false,
+  borderColor = "",
+}: {
+  name: string;
+  isAlternative?: boolean;
+  borderColor?: string;
+}) {
+  return (
+    <Chip
+      className={`shrink-0 font-mono ${borderColor}`}
+      size="sm"
+      variant="flat"
+    >
+      <span className="flex items-center gap-1.5">
+        <span>{name}</span>
+        {isAlternative ? (
+          <span className="rounded-full bg-warning/20 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-warning">
+            备选
+          </span>
+        ) : null}
+      </span>
+    </Chip>
+  );
+}
+
+const ForwardingChainTopology = React.memo(function ForwardingChainTopology({
+  hopsStr,
+}: {
+  hopsStr?: string;
+}) {
+  const details = useMemo(
+    () => parseTunnelQualityChainDetails(hopsStr),
+    [hopsStr],
+  );
+  const topologyPaths = useMemo(
+    () => buildTunnelTopologyPaths(details),
+    [details],
+  );
+
+  if (topologyPaths.length === 0) return null;
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="py-3 px-4 flex flex-row items-center justify-between pb-1">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5 text-default-700">
+          <Activity className="w-4 h-4 text-primary" />
+          全链路拓扑状态 (实时)
+        </h3>
+      </CardHeader>
+      <CardBody className="py-2 px-4 pb-4">
+        <div className="max-h-80 space-y-1 overflow-auto pb-1">
+          {topologyPaths.map((path, index) => (
+            <div
+              key={path.key}
+              className={
+                index === 0
+                  ? "overflow-x-auto"
+                  : "overflow-x-auto border-t border-dashed border-divider/60"
+              }
+            >
+              <TunnelTopologyPathRow path={path} />
+            </div>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
+  );
+});
+
+export function TunnelMonitorView() {
+  const loadTunnelsPending = useRef(0);
+  const loadQualityPending = useRef(0);
+  const loadQualityHistoryPending = useRef(0);
+  const loadTunnelMetricsPending = useRef(0);
+
+  const [tunnels, setTunnels] = useState<MonitorTunnelApiItem[]>([]);
+  const [tunnelsLoading, setTunnelsLoading] = useState(false);
+  const [tunnelsError, setTunnelsError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
+
+  // Quality data from backend periodic probing (latest per tunnel)
+  const [qualityMap, setQualityMap] = useState<
+    Record<number, TunnelQualityApiItem>
+  >({});
+  const [qualityHistoryMap, setQualityHistoryMap] = useState<
+    Record<number, TunnelQualityApiItem[]>
+  >({});
+  const initialHistoryFetched = useRef(false);
+  const [qualityLoading, setQualityLoading] = useState(false);
+  const [monitorTunnelQualityEnabled, setMonitorTunnelQualityEnabled] =
+    useState(true);
+  const [tunnelQualityIntervalSec, setTunnelQualityIntervalSec] = useState(
+    DEFAULT_TUNNEL_QUALITY_INTERVAL_SEC,
+  );
+
+  // Detail view state
+  const [detailTunnelId, setDetailTunnelId] = useState<number | null>(null);
+
+  // Quality history for chart (mirrors service monitor results)
+  const [qualityHistory, setQualityHistory] = useState<TunnelQualityApiItem[]>(
+    [],
+  );
+  const [qualityHistoryLoading, setQualityHistoryLoading] = useState(false);
+  const [qualityHistoryError, setQualityHistoryError] = useState<string | null>(
+    null,
+  );
+  const [qualityRangeMs, setQualityRangeMs] = useState(60 * 60 * 1000);
+
+  // Tunnel traffic metrics for chart
+  const [tunnelMetrics, setTunnelMetrics] = useState<TunnelMetricApiItem[]>([]);
+  const [tunnelMetricsLoading, setTunnelMetricsLoading] = useState(false);
+  const [tunnelMetricsError, setTunnelMetricsError] = useState<string | null>(
+    null,
+  );
+  const [tunnelRangeMs, setTunnelRangeMs] = useState(60 * 60 * 1000);
+
+  // --- Load tunnel list ---
+  const loadTunnels = useCallback(async (options?: { silent?: boolean }) => {
+    if (options?.silent && loadTunnelsPending.current > 0) return;
+    loadTunnelsPending.current += 1;
+    const silent = options?.silent ?? false;
+
+    if (!silent) setTunnelsLoading(true);
+    try {
+      const response = await getMonitorTunnels();
+
+      if (response.code === 0 && response.data) {
+        setAccessDenied(null);
+        setTunnelsError(null);
+        setTunnels(response.data);
+
+        return;
+      }
+      if (response.code === 403) {
+        setAccessDenied(response.msg || "暂无监控权限，请联系管理员授权");
+        setTunnelsError(null);
+        setTunnels([]);
+
+        return;
+      }
+      setTunnelsError(response.msg || "加载隧道列表失败");
+      if (!silent) toast.error(response.msg || "加载隧道列表失败");
+    } catch {
+      if (!silent) {
+        setTunnelsError("加载隧道列表失败");
+        toast.error("加载隧道列表失败");
+      }
+    } finally {
+      if (!silent) setTunnelsLoading(false);
+      loadTunnelsPending.current -= 1;
+    }
+  }, []);
+
+  const loadTunnelQualityConfig = useCallback(async () => {
+    const [enabledResponse, intervalResponse] = await Promise.all([
+      getConfigByName(MONITOR_TUNNEL_QUALITY_ENABLED_CONFIG_KEY).catch(
+        () => null,
+      ),
+      getConfigByName(TUNNEL_QUALITY_INTERVAL_CONFIG_KEY).catch(() => null),
+    ]);
+
+    setMonitorTunnelQualityEnabled(
+      typeof enabledResponse?.data?.value === "string"
+        ? enabledResponse.data.value === "true"
+        : true,
+    );
+    setTunnelQualityIntervalSec(
+      parseTunnelQualityIntervalSeconds(intervalResponse?.data?.value),
+    );
+  }, []);
+
+  useEffect(() => {
+    void loadTunnels();
+    void loadTunnelQualityConfig();
+  }, [loadTunnelQualityConfig, loadTunnels]);
+
+  useVisiblePolling(
+    useCallback(() => loadTunnels({ silent: true }), [loadTunnels]),
+    60_000,
+  );
+
+  useEffect(() => {
+    const handleMonitorTunnelQualityEnabledChanged = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ enabled?: boolean; intervalSec?: number }>
+      ).detail;
+      const enabled = detail?.enabled;
+      const intervalSec = detail?.intervalSec;
+
+      if (typeof enabled === "boolean") {
+        setMonitorTunnelQualityEnabled(enabled);
+        if (!enabled) {
+          setQualityLoading(false);
+        }
+      } else {
+        void loadTunnelQualityConfig();
+      }
+      if (typeof intervalSec === "number") {
+        setTunnelQualityIntervalSec(
+          parseTunnelQualityIntervalSeconds(String(intervalSec)),
+        );
+      }
+    };
+
+    window.addEventListener(
+      MONITOR_TUNNEL_QUALITY_ENABLED_EVENT,
+      handleMonitorTunnelQualityEnabledChanged as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener(
+        MONITOR_TUNNEL_QUALITY_ENABLED_EVENT,
+        handleMonitorTunnelQualityEnabledChanged as EventListener,
+      );
+    };
+  }, [loadTunnelQualityConfig]);
+
+  useEffect(() => {
+    if (tunnels.length > 0 && !initialHistoryFetched.current) {
+      initialHistoryFetched.current = true;
+      const fetchHistory = async () => {
+        const end = Date.now();
+        // Fetch last 5 minutes (about 30 points)
+        const start = end - 5 * 60 * 1000;
+
+        const promises = tunnels.map((t) =>
+          getMonitorTunnelQualityHistory(t.id, start, end)
+            .then((res) => {
+              if (res.code === 0 && res.data) {
+                return { id: t.id, data: res.data };
+              }
+
+              return { id: t.id, data: [] };
+            })
+            .catch(() => ({ id: t.id, data: [] })),
+        );
+
+        const results = await Promise.all(promises);
+
+        setQualityHistoryMap((prev) => {
+          const nextMap = { ...prev };
+
+          results.forEach((r) => {
+            const existing = nextMap[r.id] || [];
+            const merged = [...r.data, ...existing].sort(
+              (a, b) => a.timestamp - b.timestamp,
+            );
+            const unique: TunnelQualityApiItem[] = [];
+
+            for (const item of merged) {
+              if (
+                unique.length === 0 ||
+                unique[unique.length - 1].timestamp !== item.timestamp
+              ) {
+                unique.push(item);
+              }
+            }
+            nextMap[r.id] = unique.slice(-UPTIME_KUMA_BARS_COUNT);
+          });
+
+          return nextMap;
+        });
+      };
+
+      void fetchHistory();
+    }
+  }, [tunnels]);
+
+  // --- Load quality snapshots using the configured probe interval ---
+  const loadQuality = useCallback(async (options?: { silent?: boolean }) => {
+    if (options?.silent && loadQualityPending.current > 0) return;
+    loadQualityPending.current += 1;
+    const silent = options?.silent ?? false;
+
+    if (!silent) setQualityLoading(true);
+    try {
+      const response = await getMonitorTunnelQuality();
+
+      if (response.code === 0 && Array.isArray(response.data)) {
+        const map: Record<number, TunnelQualityApiItem> = {};
+
+        for (const q of response.data) {
+          map[q.tunnelId] = q;
+        }
+        setQualityMap(map);
+
+        // Accumulate locally
+        setQualityHistoryMap((prev) => {
+          const nextMap = { ...prev };
+
+          for (const q of response.data) {
+            const currentArr = nextMap[q.tunnelId] || [];
+            const lastItem =
+              currentArr.length > 0 ? currentArr[currentArr.length - 1] : null;
+
+            if (!lastItem || lastItem.timestamp !== q.timestamp) {
+              nextMap[q.tunnelId] = [...currentArr, q].slice(
+                -UPTIME_KUMA_BARS_COUNT,
+              );
+            }
+          }
+
+          return nextMap;
+        });
+      }
+    } catch {
+      // Silently ignore quality load failures
+    } finally {
+      if (!silent) setQualityLoading(false);
+      loadQualityPending.current -= 1;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!monitorTunnelQualityEnabled) {
+      return;
+    }
+
+    void loadQuality();
+  }, [loadQuality, monitorTunnelQualityEnabled]);
+
+  useVisiblePolling(
+    useCallback(async () => {
+      if (monitorTunnelQualityEnabled) await loadQuality({ silent: true });
+    }, [loadQuality, monitorTunnelQualityEnabled]),
+    tunnelQualityIntervalSec * 1000,
+  );
+
+  // --- Load quality history for detail chart ---
+  const beginQualityHistoryRequest = useLatestRequest(
+    `${detailTunnelId}:${qualityRangeMs}:${monitorTunnelQualityEnabled}`,
+  );
+
+  const loadQualityHistory = useCallback(
+    async (tunnelId: number, options?: { silent?: boolean }) => {
+      if (options?.silent && loadQualityHistoryPending.current > 0) return;
+      loadQualityHistoryPending.current += 1;
+      const silent = options?.silent ?? false;
+      const isCurrent = beginQualityHistoryRequest();
+
+      if (!silent) setQualityHistoryLoading(true);
+      try {
+        const end = Date.now();
+        const start = end - qualityRangeMs;
+        const response = await getMonitorTunnelQualityHistory(
+          tunnelId,
+          start,
+          end,
+        ).finally(() => {
+          loadQualityHistoryPending.current -= 1;
+        });
+
+        if (!isCurrent()) return;
+
+        if (response.code === 0 && Array.isArray(response.data)) {
+          setQualityHistoryError(null);
+          setQualityHistory(response.data);
+
+          return;
+        }
+        if (response.code === 403) {
+          setAccessDenied(response.msg || "暂无监控权限");
+
+          return;
+        }
+        setQualityHistoryError(response.msg || "加载质量历史失败");
+        if (!silent) toast.error(response.msg || "加载质量历史失败");
+      } catch {
+        if (!isCurrent()) return;
+        if (!silent) {
+          setQualityHistoryError("加载质量历史失败");
+        }
+      } finally {
+        if (isCurrent()) setQualityHistoryLoading(false);
+      }
+    },
+    [qualityRangeMs, beginQualityHistoryRequest],
+  );
+
+  useEffect(() => {
+    setQualityHistory([]);
+    setQualityHistoryError(null);
+    setQualityHistoryLoading(false);
+  }, [detailTunnelId, qualityRangeMs, monitorTunnelQualityEnabled]);
+
+  // --- Load tunnel traffic metrics for detail chart ---
+  const beginTunnelMetricsRequest = useLatestRequest(
+    `${detailTunnelId}:${tunnelRangeMs}`,
+  );
+
+  const loadTunnelMetrics = useCallback(
+    async (tunnelId: number, options?: { silent?: boolean }) => {
+      if (options?.silent && loadTunnelMetricsPending.current > 0) return;
+      loadTunnelMetricsPending.current += 1;
+      const silent = options?.silent ?? false;
+      const isCurrent = beginTunnelMetricsRequest();
+
+      if (!silent) setTunnelMetricsLoading(true);
+      try {
+        const end = Date.now();
+        const start = end - tunnelRangeMs;
+        const response = await getTunnelMetrics(tunnelId, start, end).finally(
+          () => {
+            loadTunnelMetricsPending.current -= 1;
+          },
+        );
+
+        if (!isCurrent()) return;
+
+        if (response.code === 0 && Array.isArray(response.data)) {
+          setTunnelMetricsError(null);
+          const ordered = [...response.data].sort(
+            (a, b) => a.timestamp - b.timestamp,
+          );
+
+          setTunnelMetrics(ordered);
+
+          return;
+        }
+        setTunnelMetricsError(response.msg || "加载流量数据失败");
+      } catch {
+        if (!isCurrent()) return;
+        if (!silent) setTunnelMetricsError("加载流量数据失败");
+      } finally {
+        if (isCurrent()) setTunnelMetricsLoading(false);
+      }
+    },
+    [tunnelRangeMs, beginTunnelMetricsRequest],
+  );
+
+  useEffect(() => {
+    setTunnelMetrics([]);
+    setTunnelMetricsError(null);
+    setTunnelMetricsLoading(false);
+  }, [detailTunnelId, tunnelRangeMs]);
+
+  useEffect(() => {
+    if (detailTunnelId) {
+      void loadTunnelMetrics(detailTunnelId);
+      if (monitorTunnelQualityEnabled) {
+        void loadQualityHistory(detailTunnelId);
+      }
+    }
+  }, [
+    detailTunnelId,
+    loadQualityHistory,
+    loadTunnelMetrics,
+    monitorTunnelQualityEnabled,
+  ]);
+
+  // Auto-refresh detail charts only while the document is visible.
+  useVisiblePolling(
+    useCallback(async () => {
+      if (!detailTunnelId) return;
+      await Promise.all([
+        monitorTunnelQualityEnabled
+          ? loadQualityHistory(detailTunnelId, { silent: true })
+          : Promise.resolve(),
+        loadTunnelMetrics(detailTunnelId, { silent: true }),
+      ]);
+    }, [
+      detailTunnelId,
+      loadQualityHistory,
+      loadTunnelMetrics,
+      monitorTunnelQualityEnabled,
+    ]),
+    30_000,
+  );
+
+  // Memoize chart data so React.memo sub-components see stable references
+  const qualityChartData = useMemo(
+    () =>
+      qualityHistory.map((q) => ({
+        time: formatTimestamp(q.timestamp, qualityRangeMs),
+        entryToExit: q.entryToExitLatency >= 0 ? q.entryToExitLatency : null,
+        exitToBing: q.exitToBingLatency >= 0 ? q.exitToBingLatency : null,
+        entryToExitLoss: q.entryToExitLoss,
+        exitToBingLoss: q.exitToBingLoss,
+      })),
+    [qualityHistory, qualityRangeMs],
+  );
+
+  const tunnelChartData = useMemo(
+    () =>
+      tunnelMetrics.map((m) => ({
+        time: formatTimestamp(m.timestamp, tunnelRangeMs),
+        bytesIn: m.bytesIn,
+        bytesOut: m.bytesOut,
+        connections: m.connections,
+      })),
+    [tunnelMetrics, tunnelRangeMs],
+  );
+
+  const detailTunnel =
+    detailTunnelId != null
+      ? tunnels.find((t) => t.id === detailTunnelId)
+      : null;
+
+  // Aggregate stats
+  const tunnelStats = useMemo(() => {
+    const enabled = tunnels.filter((t) => t.status === 1).length;
+
+    return { total: tunnels.length, enabled };
+  }, [tunnels]);
+
+  // Last quality update timestamp
+  const lastQualityUpdate = useMemo(() => {
+    let latest = 0;
+
+    for (const q of Object.values(qualityMap)) {
+      if (q.timestamp > latest) latest = q.timestamp;
+    }
+
+    return latest > 0 ? new Date(latest).toLocaleTimeString("zh-CN") : null;
+  }, [qualityMap]);
+
+  if (accessDenied) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <Activity className="w-5 h-5 text-warning" />
+          <h3 className="text-lg font-semibold">监控权限</h3>
+        </CardHeader>
+        <CardBody>
+          <div className="text-sm text-default-600">{accessDenied}</div>
+          <div className="text-xs text-default-500 mt-2">
+            如需使用监控功能，请联系管理员在用户页面授予监控权限。
+          </div>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  if (detailTunnelId && detailTunnel) {
+    const quality = qualityMap[detailTunnelId];
+
+    return (
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            size="sm"
+            variant="flat"
+            onPress={() => {
+              setDetailTunnelId(null);
+              setQualityHistory([]);
+              setTunnelMetrics([]);
+            }}
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            返回隧道列表
+          </Button>
+          <div className="flex items-center gap-2">
+            <ArrowRightLeft
+              className={`w-5 h-5 ${detailTunnel.status === 1 ? "text-success" : "text-default-400"}`}
+            />
+            <h3 className="text-lg font-semibold">{detailTunnel.name}</h3>
+            <Chip
+              color={detailTunnel.status === 1 ? "success" : "danger"}
+              size="sm"
+              variant="flat"
+            >
+              {detailTunnel.status === 1 ? "启用" : "禁用"}
+            </Chip>
+          </div>
+        </div>
+
+        {/* Quality KPI Cards */}
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <Card className="border border-divider">
+            <CardBody className="flex flex-col items-start gap-1 px-3 py-2">
+              <span className="text-xs text-default-500 flex items-center gap-1">
+                <Zap className="w-3 h-3" />
+                入口 → 出口 延迟
+              </span>
+              <LatencyDisplay
+                loading={qualityLoading}
+                value={quality?.entryToExitLatency}
+              />
+            </CardBody>
+          </Card>
+          <Card className="border border-divider">
+            <CardBody className="flex flex-col items-start gap-1 px-3 py-2">
+              <span
+                className="text-xs text-default-500 flex items-center gap-1"
+                title={probeTargetLabel(quality)}
+              >
+                <Globe className="w-3 h-3" />
+                出口 → 测试目标 延迟
+              </span>
+              <LatencyDisplay
+                loading={qualityLoading}
+                value={quality?.exitToBingLatency}
+              />
+            </CardBody>
+          </Card>
+          <Card className="border border-divider">
+            <CardBody className="flex flex-col items-start gap-1 px-3 py-2">
+              <span className="text-xs text-default-500">入口 → 出口 丢包</span>
+              <span
+                className={`text-sm font-semibold font-mono ${(quality?.entryToExitLoss ?? 0) > 0 ? "text-warning" : ""}`}
+              >
+                {quality?.entryToExitLoss !== undefined
+                  ? `${quality.entryToExitLoss.toFixed(1)}%`
+                  : "-"}
+              </span>
+            </CardBody>
+          </Card>
+          <Card className="border border-divider">
+            <CardBody className="flex flex-col items-start gap-1 px-3 py-2">
+              <span
+                className="text-xs text-default-500"
+                title={probeTargetLabel(quality)}
+              >
+                出口 → 测试目标 丢包
+              </span>
+              <span
+                className={`text-sm font-semibold font-mono ${(quality?.exitToBingLoss ?? 0) > 0 ? "text-warning" : ""}`}
+              >
+                {quality?.exitToBingLoss !== undefined
+                  ? `${quality.exitToBingLoss.toFixed(1)}%`
+                  : "-"}
+              </span>
+            </CardBody>
+          </Card>
+        </div>
+
+        {/* Auto-probe status */}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
+          {monitorTunnelQualityEnabled ? (
+            <>
+              <LiveDot />
+              <span>{`自动探测中（${tunnelQualityIntervalLabel(tunnelQualityIntervalSec)}测试）`}</span>
+            </>
+          ) : (
+            <>
+              <WifiOff className="w-3.5 h-3.5 text-warning" />
+              <span>实时隧道质量检测已关闭</span>
+            </>
+          )}
+          <span className="text-default-400">
+            · 测试目标: {probeTargetLabel(quality)}
+          </span>
+          {quality?.timestamp && (
+            <span className="text-default-400">
+              · 最近更新:{" "}
+              {new Date(quality.timestamp).toLocaleTimeString("zh-CN")}
+            </span>
+          )}
+          {quality?.errorMessage && (
+            <span className="text-danger ml-2">{quality.errorMessage}</span>
+          )}
+        </div>
+
+        {/* ====== Chain Topology ====== */}
+        {monitorTunnelQualityEnabled && quality?.chainDetails && (
+          <ForwardingChainTopology hopsStr={quality.chainDetails} />
+        )}
+
+        {/* ====== Quality History Chart — isolated with React.memo ====== */}
+        <QualityChartCard
+          data={qualityChartData}
+          error={qualityHistoryError}
+          loading={qualityHistoryLoading}
+          rangeMs={qualityRangeMs}
+          tunnelId={detailTunnelId}
+          onRangeChange={setQualityRangeMs}
+          onRefresh={loadQualityHistory}
+        />
+
+        {/* ====== Traffic Chart — isolated with React.memo ====== */}
+        <TrafficChartCard
+          data={tunnelChartData}
+          error={tunnelMetricsError}
+          loading={tunnelMetricsLoading}
+          rangeMs={tunnelRangeMs}
+          tunnelId={detailTunnelId}
+          onRangeChange={setTunnelRangeMs}
+          onRefresh={loadTunnelMetrics}
+        />
+      </div>
+    );
+  }
+
+  const latencyText = (v?: number) =>
+    v === undefined || v < 0 ? "-" : `${v.toFixed(0)}ms`;
+
+  // ===== LIST VIEW =====
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-default-500">
+          <span>
+            启用 {tunnelStats.enabled}/{tunnelStats.total}
+          </span>
+          {monitorTunnelQualityEnabled ? (
+            <span className="flex items-center gap-1.5">
+              <LiveDot />
+              {lastQualityUpdate
+                ? `${tunnelQualityIntervalLabel(tunnelQualityIntervalSec)}探测 · 更新于 ${lastQualityUpdate}`
+                : `${tunnelQualityIntervalLabel(tunnelQualityIntervalSec)}探测`}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <WifiOff className="h-3.5 w-3.5 text-warning" />
+              {lastQualityUpdate
+                ? `实时质量检测已关闭 · 最近更新于 ${lastQualityUpdate}`
+                : "实时质量检测已关闭"}
+            </span>
+          )}
+        </div>
+        <Button
+          className="shrink-0 gap-1"
+          isLoading={tunnelsLoading}
+          size="sm"
+          startContent={
+            tunnelsLoading ? undefined : <RefreshCw className="h-4 w-4" />
+          }
+          variant="flat"
+          onPress={() => loadTunnels()}
+        >
+          刷新
+        </Button>
+      </div>
+
+      {tunnelsError ? (
+        <div className="rounded-lg border border-divider px-3 py-2 text-sm text-default-600">
+          {tunnelsError}
+        </div>
+      ) : null}
+
+      {tunnels.length === 0 ? (
+        !tunnelsError && <EmptyHint text="暂无隧道" />
+      ) : (
+        <ListGroup>
+          {tunnels.map((tunnel) => {
+            const quality = qualityMap[tunnel.id];
+            const isEnabled = tunnel.status === 1;
+            const targetLabel = probeTargetLabel(quality);
+            const status: RowStatus = !isEnabled
+              ? "off"
+              : !quality
+                ? "off"
+                : quality.errorMessage ||
+                    quality.entryToExitLatency < 0 ||
+                    quality.exitToBingLatency < 0
+                  ? "bad"
+                  : quality.entryToExitLoss > 0 ||
+                      quality.exitToBingLoss > 0 ||
+                      quality.entryToExitLatency > 200 ||
+                      quality.exitToBingLatency > 200
+                    ? "warn"
+                    : "ok";
+            const meta = !quality
+              ? monitorTunnelQualityEnabled
+                ? "等待探测"
+                : "实时检测已关闭"
+              : quality.errorMessage
+                ? quality.errorMessage
+                : [
+                    `入口→出口 ${latencyText(quality.entryToExitLatency)}`,
+                    `出口→目标 ${latencyText(quality.exitToBingLatency)}`,
+                    quality.timestamp
+                      ? `更新 ${new Date(quality.timestamp).toLocaleTimeString("zh-CN")}`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+
+            return (
+              <ListRow
+                key={tunnel.id}
+                badges={
+                  !isEnabled && (
+                    <Chip className="shrink-0" size="sm" variant="flat">
+                      禁用
+                    </Chip>
+                  )
+                }
+                meta={meta}
+                right={
+                  <div
+                    aria-label={`出口到测试目标 ${targetLabel}`}
+                    className="hidden gap-4 lg:flex"
+                  >
+                    <UptimeHistoryBar
+                      history={qualityHistoryMap[tunnel.id]}
+                      type="entryToExit"
+                    />
+                    <UptimeHistoryBar
+                      history={qualityHistoryMap[tunnel.id]}
+                      type="exitToBing"
+                    />
+                  </div>
+                }
+                status={status}
+                statusTitle={isEnabled ? "启用" : "禁用"}
+                title={tunnel.name}
+                onPress={() => setDetailTunnelId(tunnel.id)}
+              />
+            );
+          })}
+        </ListGroup>
+      )}
+    </div>
+  );
+}

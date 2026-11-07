@@ -1,0 +1,32 @@
+table inet flyx_kernel {
+	counter in_1_tcp {
+		packets 0 bytes 0
+	}
+	counter out_1_tcp {
+		packets 0 bytes 0
+	}
+	counter in_1_udp {
+		packets 0 bytes 0
+	}
+	counter out_1_udp {
+		packets 0 bytes 0
+	}
+	counter in_2_udp {
+		packets 3 bytes 102
+	}
+	counter out_2_udp {
+		packets 0 bytes 0
+	}
+	counter uup_7 {
+		packets 0 bytes 0
+	}
+	counter udown_7 {
+		packets 0 bytes 0
+	}
+	counter uup_9 {
+		packets 0 bytes 0
+	}
+	counter udown_9 {
+		packets 0 bytes 0
+	}
+}

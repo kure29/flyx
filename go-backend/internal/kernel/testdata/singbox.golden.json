@@ -1,0 +1,167 @@
+{
+  "inbounds": [
+    {
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "tag": "tun-in",
+      "type": "tun"
+    },
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "tag": "mixed-in",
+      "type": "mixed"
+    }
+  ],
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "outbounds": [
+        "自动选择",
+        "东京 Reality",
+        "SS",
+        "CDN",
+        "Trojan",
+        "东京 Reality #2"
+      ],
+      "tag": "节点选择",
+      "type": "selector"
+    },
+    {
+      "interval": "5m",
+      "outbounds": [
+        "东京 Reality",
+        "SS",
+        "CDN",
+        "Trojan",
+        "东京 Reality #2"
+      ],
+      "tag": "自动选择",
+      "type": "urltest",
+      "url": "https://www.gstatic.com/generate_204"
+    },
+    {
+      "flow": "xtls-rprx-vision",
+      "server": "203.0.113.10",
+      "server_port": 443,
+      "tag": "东京 Reality",
+      "tls": {
+        "enabled": true,
+        "reality": {
+          "enabled": true,
+          "public_key": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw",
+          "short_id": "0123456789abcdef"
+        },
+        "server_name": "www.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "type": "vless",
+      "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+    },
+    {
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "AAAAAAAAAAAAAAAAAAAAAA==",
+      "server": "2001:db8::1",
+      "server_port": 8388,
+      "tag": "SS",
+      "type": "shadowsocks"
+    },
+    {
+      "security": "auto",
+      "server": "cdn.example.com",
+      "server_port": 8443,
+      "tag": "CDN",
+      "tls": {
+        "enabled": true,
+        "server_name": "cdn.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "headers": {
+          "Host": "cdn.example.com"
+        },
+        "path": "/ws",
+        "type": "ws"
+      },
+      "type": "vmess",
+      "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+    },
+    {
+      "password": "trojan-secret",
+      "server": "203.0.113.10",
+      "server_port": 2053,
+      "tag": "Trojan",
+      "tls": {
+        "alpn": [
+          "h2"
+        ],
+        "enabled": true,
+        "insecure": true,
+        "server_name": "t.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "service_name": "tun",
+        "type": "grpc"
+      },
+      "type": "trojan"
+    },
+    {
+      "flow": "xtls-rprx-vision",
+      "server": "198.51.100.7",
+      "server_port": 30001,
+      "tag": "东京 Reality #2",
+      "tls": {
+        "enabled": true,
+        "reality": {
+          "enabled": true,
+          "public_key": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw",
+          "short_id": "0123456789abcdef"
+        },
+        "server_name": "www.example.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "type": "vless",
+      "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "final": "节点选择",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "hijack-dns",
+        "protocol": "dns"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      }
+    ]
+  }
+}

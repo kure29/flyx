@@ -1,0 +1,9 @@
+{
+  "name": "FLYX 默认",
+  "short": "default",
+  "description": "FLYX 内置状态页：服务器卡片 / 列表、资源与连接数、延迟与回程、30 天可用率和历史图表",
+  "version": "2.0.0",
+  "author": "kure29",
+  "url": "https://github.com/kure29/flyx",
+  "flyxApi": 1
+}

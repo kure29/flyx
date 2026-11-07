@@ -1,0 +1,207 @@
+name: CI Build Check
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  install-scripts:
+    name: Test Installer Scripts (systemd and Alpine OpenRC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run installer regression tests
+        run: |
+          bash test-install-scripts-proxy.sh
+          bash test-project-identity.sh
+
+      - name: Test agent container naming and persistent state
+        run: bash test-agent-container-identity.sh
+
+      - name: Test Alpine bootstrap and OpenRC lifecycle
+        run: docker run --rm -v "$PWD:/workspace:ro" alpine:3.22 sh /workspace/test-install-scripts-alpine.sh
+
+  frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vite-frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Test API skill installer
+        run: node --test ../skills/flyx-api/install.test.cjs
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10.28.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm exec eslint .
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Build status page theme
+        run: pnpm run build:status-theme
+
+      # The online demo answers the API from a recording: fail when a page
+      # breaks or asks for something that was never recorded.
+      - name: Check online demo
+        run: |
+          VITE_DEMO=true VITE_BASE=/flyx/demo/ pnpm exec vite build --outDir dist-demo
+          node scripts/demo/check.mjs dist-demo
+
+  backend:
+    name: Build and Test Go Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go-backend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go-backend/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; echo "run gofmt -w on the files above"; exit 1; }
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+  # The release builds this image from the repository root with the built-in
+  # status page theme compiled in (go-backend/Dockerfile). Build it here
+  # (amd64 only, not pushed) and check the running panel serves the theme,
+  # so a broken Dockerfile or ignore file shows up before a release.
+  backend-image:
+    name: Backend Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build backend image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --cache-from type=gha,scope=backend-image \
+            --cache-to type=gha,mode=max,scope=backend-image \
+            --load \
+            -t flyx-backend-ci \
+            -f go-backend/Dockerfile \
+            .
+
+      - name: Check the panel serves the built-in status theme
+        run: |
+          docker run -d --name flyx-backend-ci -p 6365:6365 -e JWT_SECRET=ci-secret flyx-backend-ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:6365/flow/test >/dev/null 2>&1 && break
+            sleep 1
+          done
+          code=$(curl -sS -o status.html -w '%{http_code}' http://127.0.0.1:6365/status/)
+          page=$(cat status.html)
+          if [ "$code" != "200" ] || printf '%s' "$page" | grep -q 'make status-theme'; then
+            echo "/status/ answered $code: the built-in theme is missing from the image"; exit 1
+          fi
+          asset=$(printf '%s' "$page" | grep -oE '/status/assets/[^"]+\.js' | head -1)
+          if [ -z "$asset" ]; then
+            echo "/status/ is not the built theme:"; printf '%s\n' "$page"; exit 1
+          fi
+          curl -fsS -o /dev/null "http://127.0.0.1:6365$asset"
+          echo "ok: /status/ serves the built-in theme ($asset)"
+
+      - name: Panel log
+        if: always()
+        run: docker logs flyx-backend-ci 2>&1 | tail -50 || true
+
+  backend-postgres-contract:
+    name: Go Backend PostgreSQL Contract
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: flyx_test
+          POSTGRES_PASSWORD: flyx_test_pass
+          POSTGRES_DB: flyx_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flyx_test -d flyx_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: go-backend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go-backend/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run PostgreSQL contract test
+        env:
+          FLYX_POSTGRES_TEST_DSN: 'postgres://flyx_test:flyx_test_pass@127.0.0.1:5432/flyx_test?sslmode=disable'
+        run: go test ./tests/contract ./internal/store/repo -run 'TestPostgres(NodeCreateRepairsMissingIDDefaultContract|DailyRollPreservesConcurrentUsage)$' -count=1
+
+  agent:
+    name: Build Agent
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go-gost
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go-gost/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build
+        run: go build -v .
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test agent and protocol modules
+        run: |
+          go test ./...
+          cd x && go test ./...

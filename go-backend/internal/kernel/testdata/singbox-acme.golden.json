@@ -1,0 +1,136 @@
+{
+  "certificate_providers": [
+    {
+      "data_directory": "acme",
+      "domain": [
+        "hk.example.com"
+      ],
+      "email": "me@example.com",
+      "tag": "acme-1",
+      "type": "acme"
+    },
+    {
+      "data_directory": "acme",
+      "dns01_challenge": {
+        "api_token": "cf-token",
+        "provider": "cloudflare"
+      },
+      "domain": [
+        "cf.example.com"
+      ],
+      "tag": "acme-2",
+      "type": "acme"
+    }
+  ],
+  "inbounds": [
+    {
+      "listen": "::",
+      "listen_port": 443,
+      "tag": "in-1",
+      "tls": {
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ],
+        "certificate_provider": "acme-1",
+        "enabled": true,
+        "server_name": "hk.example.com"
+      },
+      "type": "naive",
+      "users": [
+        {
+          "password": "naive-secret",
+          "username": "flyx"
+        }
+      ]
+    },
+    {
+      "ignore_client_bandwidth": true,
+      "listen": "::",
+      "listen_port": 443,
+      "tag": "in-2",
+      "tls": {
+        "alpn": [
+          "h3"
+        ],
+        "certificate_provider": "acme-1",
+        "enabled": true,
+        "server_name": "hk.example.com"
+      },
+      "type": "hysteria2",
+      "users": [
+        {
+          "password": "hy2-secret"
+        }
+      ]
+    },
+    {
+      "listen": "::",
+      "listen_port": 8443,
+      "tag": "in-3",
+      "tls": {
+        "certificate_provider": "acme-2",
+        "enabled": true,
+        "server_name": "cf.example.com"
+      },
+      "type": "trojan",
+      "users": [
+        {
+          "password": "trojan-secret"
+        }
+      ]
+    },
+    {
+      "listen": "::",
+      "listen_port": 9443,
+      "tag": "in-4",
+      "tls": {
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ],
+        "certificate_provider": "acme-1",
+        "enabled": true,
+        "server_name": "hk.example.com"
+      },
+      "type": "anytls",
+      "users": [
+        {
+          "password": "anytls-secret"
+        }
+      ]
+    },
+    {
+      "listen": "::",
+      "listen_port": 10443,
+      "tag": "in-5",
+      "tls": {
+        "alpn": [
+          "http/1.1"
+        ],
+        "certificate_provider": "acme-1",
+        "enabled": true,
+        "server_name": "hk.example.com"
+      },
+      "transport": {
+        "path": "/ws",
+        "type": "ws"
+      },
+      "type": "vless",
+      "users": [
+        {
+          "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+        }
+      ]
+    }
+  ],
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ]
+}

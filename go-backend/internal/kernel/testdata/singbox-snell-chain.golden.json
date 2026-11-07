@@ -1,0 +1,58 @@
+{
+  "inbounds": [
+    {
+      "listen": "::",
+      "listen_port": 8443,
+      "tag": "in-5",
+      "type": "vless",
+      "users": [
+        {
+          "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+        }
+      ]
+    }
+  ],
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct"
+    },
+    {
+      "detour": "via-5 (shadowtls)",
+      "psk": "psk-cccccccc",
+      "tag": "via-5",
+      "type": "snell",
+      "version": 4
+    },
+    {
+      "password": "stls-pass-1",
+      "server": "127.0.0.1",
+      "server_port": 6162,
+      "tag": "via-5 (shadowtls)",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.microsoft.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "type": "shadowtls",
+      "version": 3
+    }
+  ],
+  "route": {
+    "final": "direct",
+    "rules": [
+      {
+        "inbound": [
+          "in-5"
+        ],
+        "outbound": "via-5"
+      }
+    ]
+  }
+}

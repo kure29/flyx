@@ -1,0 +1,483 @@
+name: Build and Push Images
+
+env:
+  VERSION: "2.0.7-beta"  # 分支推送时使用的默认版本
+  REGISTRY: ghcr.io
+
+on:
+  push:
+    tags:
+      - '[0-9]*'  # 匹配 2.0.8, 2.0.8-beta 等格式
+  # 手动发版：在 Actions 页面填写版本号，release 时会在当前提交上创建同名 tag
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 3.0.0，不带 v）'
+        required: true
+        type: string
+
+jobs:
+  check-version:
+    name: Check Version and Decide Build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_build: ${{ steps.version.outputs.should_build }}
+      should_build_gost: ${{ steps.version.outputs.should_build_gost }}
+      is_tag: ${{ steps.version.outputs.is_tag }}
+      image_owner: ${{ steps.version.outputs.image_owner }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Determine version and build strategy
+        id: version
+        run: |
+          # 镜像 owner 需要小写
+          IMAGE_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_owner=$IMAGE_OWNER" >> $GITHUB_OUTPUT
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.ref_type }}" == "tag" ]]; then
+            # Tag 或手动触发：使用 tag 名 / 填写的版本号，全量构建并发版
+            VERSION="${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}"
+            if [[ ! "$VERSION" =~ ^[0-9][0-9A-Za-z.-]*$ ]]; then
+              echo "::error::版本号必须以数字开头，例如 3.0.0"
+              exit 1
+            fi
+            echo "🏷️ Release version: $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "should_build_gost=true" >> $GITHUB_OUTPUT
+          else
+            # 分支触发：使用 env.VERSION，检查是否需要构建
+            VERSION="${{ env.VERSION }}"
+            echo "🌿 Branch trigger detected, using version: $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+
+            # 检查 tag 是否已存在
+            if git rev-parse "$VERSION" >/dev/null 2>&1; then
+              echo "Tag $VERSION already exists"
+              echo "should_build=false" >> $GITHUB_OUTPUT
+
+              # 检查 go-gost 目录是否有变化
+              TAG_COMMIT=$(git rev-list -n 1 "$VERSION")
+              if git diff --quiet --ignore-all-space --ignore-blank-lines $TAG_COMMIT HEAD -- go-gost/ 2>/dev/null; then
+                echo "✅ GOST files unchanged since tag"
+                echo "should_build_gost=false" >> $GITHUB_OUTPUT
+              else
+                echo "🔄 Detected changes in go-gost directory"
+                git diff --stat $TAG_COMMIT HEAD -- go-gost/ || true
+                echo "should_build_gost=true" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "Tag $VERSION does not exist, will build all components"
+              echo "should_build=true" >> $GITHUB_OUTPUT
+              echo "should_build_gost=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  build-gost:
+    name: Build & Compress GOST Binary
+    needs: check-version
+    if: needs.check-version.outputs.should_build_gost == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Cache Go modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go-gost/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install UPX
+        run: |
+          wget -q https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
+          tar -xf upx-4.2.1-amd64_linux.tar.xz
+          sudo mv upx-4.2.1-amd64_linux/upx /usr/local/bin/
+          rm -rf upx-4.2.1-amd64_linux*
+
+      - name: Build GOST binary (AMD64)
+        working-directory: ./go-gost
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-amd64
+
+      - name: Build GOST binary (ARM64)
+        working-directory: ./go-gost
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-arm64
+
+      - name: Compress with UPX
+        working-directory: ./go-gost
+        run: |
+          upx --best --lzma gost-amd64
+          upx --best --lzma gost-arm64
+
+      - name: Generate SHA256 checksums
+        working-directory: ./go-gost
+        run: |
+          sha256sum gost-amd64 > gost-amd64.sha256
+          sha256sum gost-arm64 > gost-arm64.sha256
+
+      - name: Upload GOST AMD64 artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-binary-amd64
+          path: ./go-gost/gost-amd64
+          # Only passed to the later jobs of this run; the release keeps the binaries.
+          retention-days: 1
+
+      - name: Upload GOST ARM64 artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-binary-arm64
+          path: ./go-gost/gost-arm64
+          # Only passed to the later jobs of this run; the release keeps the binaries.
+          retention-days: 1
+
+      - name: Upload GOST AMD64 checksum artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-checksum-amd64
+          path: ./go-gost/gost-amd64.sha256
+          # Only passed to the later jobs of this run; the release keeps the binaries.
+          retention-days: 1
+
+      - name: Upload GOST ARM64 checksum artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-checksum-arm64
+          path: ./go-gost/gost-arm64.sha256
+          # Only passed to the later jobs of this run; the release keeps the binaries.
+          retention-days: 1
+
+  build-agent-image:
+    name: Build & Push Node Agent Image
+    needs: [check-version, build-gost]
+    # Only releases: the panel's Docker install command pulls the image
+    # tagged with the release version.
+    if: needs.check-version.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # The image ships the same binaries as the release assets, so the
+      # checksums the panel verifies upgrades against still match.
+      - name: Download GOST binaries
+        uses: actions/download-artifact@v7
+        with:
+          pattern: gost-binary-*
+          path: ./go-gost/docker
+          merge-multiple: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push node agent images
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          OWNER="${{ needs.check-version.outputs.image_owner }}"
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg VERSION=${VERSION} \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --push \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-agent:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flux-agent:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-agent:${VERSION} \
+            -t ${{ env.REGISTRY }}/${OWNER}/flux-agent:${VERSION} \
+            ./go-gost/docker
+
+  build-vite:
+    name: Build & Push Vite Frontend
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare build args
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          {
+            echo "VITE_GITHUB_REPO=https://github.com/${{ github.repository }}"
+            echo "VITE_APP_VERSION=$VERSION"
+          } > ./vite-frontend/.env.production
+
+      - name: Build and push Vite Docker images
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          OWNER="${{ needs.check-version.outputs.image_owner }}"
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/vite-frontend:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:${VERSION} \
+            -t ${{ env.REGISTRY }}/${OWNER}/vite-frontend:${VERSION} \
+            ./vite-frontend
+
+  build-go-backend:
+    name: Build & Push Go Backend
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Cache Go dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-backend-${{ hashFiles('go-backend/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-backend-
+
+      - name: Download dependencies
+        working-directory: ./go-backend
+        run: go mod download
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Go backend Docker images
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          OWNER="${{ needs.check-version.outputs.image_owner }}"
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg GITHUB_REPO=${{ github.repository }} \
+            --push \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flux-panel-backend:latest \
+            -t ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:${VERSION} \
+            -t ${{ env.REGISTRY }}/${OWNER}/flux-panel-backend:${VERSION} \
+            -f go-backend/Dockerfile \
+            .
+
+  create-release:
+    name: Create Release (Tag Only)
+    needs: [check-version, build-gost, build-agent-image, build-vite, build-go-backend]
+    if: needs.check-version.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Tags and history for the release notes (commits since the
+          # previous release when the changelog has no entry).
+          fetch-depth: 0
+
+      - name: Download GOST AMD64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-binary-amd64
+          path: ./artifacts/amd64
+
+      - name: Download GOST ARM64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-binary-arm64
+          path: ./artifacts/arm64
+
+      - name: Download GOST AMD64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-checksum-amd64
+          path: ./artifacts/
+
+      - name: Download GOST ARM64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-checksum-arm64
+          path: ./artifacts/
+
+      - name: Prepare release files
+
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          OWNER="${{ needs.check-version.outputs.image_owner }}"
+          REPO="${{ github.repository }}"
+
+          # 移动二进制文件
+          mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
+          mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
+
+          # 复制并修改 docker-compose 文件
+          cp docker-compose-v4.yml ./artifacts/docker-compose-v4.yml
+          cp docker-compose-v6.yml ./artifacts/docker-compose-v6.yml
+
+          # 替换镜像地址为 GHCR
+          sed -i "s|image: .*flyx-panel-backend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:${VERSION}|g" ./artifacts/docker-compose-v4.yml
+          sed -i "s|image: .*flyx-panel-frontend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:${VERSION}|g" ./artifacts/docker-compose-v4.yml
+          sed -i "s|image: .*flyx-panel-backend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-backend:${VERSION}|g" ./artifacts/docker-compose-v6.yml
+          sed -i "s|image: .*flyx-panel-frontend:[^[:space:]]*|image: ${{ env.REGISTRY }}/${OWNER}/flyx-panel-frontend:${VERSION}|g" ./artifacts/docker-compose-v6.yml
+
+          # 复制并修改安装脚本
+          cp install.sh ./artifacts/install.sh
+          cp panel_install.sh ./artifacts/panel_install.sh
+
+          # 替换仓库地址和版本号
+          # Point the installers at this repository's releases, whatever
+          # upstream name the checked-in scripts carry.
+          sed -i -E "s|^REPO=\"[^\"]*\"|REPO=\"${REPO}\"|" ./artifacts/install.sh ./artifacts/panel_install.sh
+          grep -q "^REPO=\"${REPO}\"" ./artifacts/install.sh && grep -q "^REPO=\"${REPO}\"" ./artifacts/panel_install.sh
+          sed -i "s|2.0.7-beta|${VERSION}|g" ./artifacts/install.sh
+          sed -i "s|2.0.7-beta|${VERSION}|g" ./artifacts/panel_install.sh
+
+          # 注入固定版本号，使从 Release 页下载的脚本只安装该版本
+          sed -i "s|^PINNED_VERSION=\"\"|PINNED_VERSION=\"${VERSION}\"|" ./artifacts/install.sh
+          sed -i "s|^PINNED_VERSION=\"\"|PINNED_VERSION=\"${VERSION}\"|" ./artifacts/panel_install.sh
+
+      - name: Verify release installer on Alpine OpenRC
+        run: docker run --rm -v "$PWD:/workspace:ro" alpine:3.22 sh /workspace/test-install-scripts-alpine.sh /workspace/artifacts/install.sh
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          OWNER="${{ needs.check-version.outputs.image_owner }}"
+
+          # 更新内容取自 doc/changelog.md 里这个版本的一节，没有时列出上个版本以来的提交
+          .github/scripts/release-notes.sh "${VERSION}" "${{ github.repository }}" \
+            "${{ env.REGISTRY }}/${OWNER}" "${{ github.sha }}" > release-notes.md
+          cat release-notes.md
+
+          # 创建 release
+          gh release create "${VERSION}" \
+            --target "${{ github.sha }}" \
+            --title "Release ${VERSION}" \
+            --notes-file release-notes.md \
+            --repo ${{ github.repository }}
+
+          # 上传所有文件到 release
+          echo "📤 上传 GOST 二进制文件..."
+          gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
+
+          echo "📤 上传 GOST 校验文件..."
+          gh release upload "${VERSION}" ./artifacts/gost-amd64.sha256 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-arm64.sha256 --clobber
+
+          echo "📤 上传安装脚本..."
+          gh release upload "${VERSION}" ./artifacts/install.sh --clobber
+          gh release upload "${VERSION}" ./artifacts/panel_install.sh --clobber
+
+          echo "📤 上传 Docker Compose 配置文件..."
+          gh release upload "${VERSION}" ./artifacts/docker-compose-v4.yml --clobber
+          gh release upload "${VERSION}" ./artifacts/docker-compose-v6.yml --clobber
+
+          echo "✅ Release ${VERSION} 创建完成"
+
+  update-release-gost:
+    name: Update GOST Binaries in Release
+    needs: [check-version, build-gost]
+    if: needs.check-version.outputs.is_tag == 'false' && needs.check-version.outputs.should_build == 'false' && needs.check-version.outputs.should_build_gost == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download GOST AMD64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-binary-amd64
+          path: ./artifacts/amd64
+
+      - name: Download GOST ARM64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-binary-arm64
+          path: ./artifacts/arm64
+
+      - name: Download GOST AMD64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-checksum-amd64
+          path: ./artifacts/
+
+      - name: Download GOST ARM64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-checksum-arm64
+          path: ./artifacts/
+
+      - name: Rename binaries
+        run: |
+          mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
+          mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
+
+      - name: Update GOST binaries in Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+
+          echo "🔄 更新 Release ${VERSION} 中的 GOST 二进制文件..."
+
+          gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
+
+          echo "📤 上传 GOST 校验文件..."
+          gh release upload "${VERSION}" ./artifacts/gost-amd64.sha256 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-arm64.sha256 --clobber
+
+          echo "✅ GOST 二进制文件更新完成"

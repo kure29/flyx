@@ -1,0 +1,16 @@
+# snell-7.conf
+[snell-server]
+listen = [::]:6160
+psk = psk-aaaaaaaa
+ipv6 = true
+obfs = off
+# snell-8.conf
+[snell-server]
+listen = 127.0.0.1:36161
+psk = psk-bbbbbbbb
+ipv6 = false
+obfs = off
+snell-7 [] -c {RUN_DIR}/snell-7.conf
+snell-8 [] -c {RUN_DIR}/snell-8.conf
+stls-8 [shadow-tls] --v3 server --listen 0.0.0.0:6161 --server 127.0.0.1:36161 --tls www.microsoft.com:443 --password stls-pass-1
+extras: shadow-tls

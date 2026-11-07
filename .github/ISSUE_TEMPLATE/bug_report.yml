@@ -1,0 +1,95 @@
+name: 问题反馈
+description: 功能出错、显示不对、安装或升级失败
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先看看 [常见问题](https://kure29.github.io/flyx/guide/faq) 和已有的 issue，可能已经有答案；使用上的问题也可以先到 [Telegram 交流群](https://t.me/flyx_chat) 问。
+        **不要贴出** 面板地址、密码、节点密钥、订阅链接等敏感信息，截图里也请打码。
+  - type: input
+    id: panel-version
+    attributes:
+      label: 面板版本
+      description: 面板左下角显示的版本号
+      placeholder: 例如 3.3.23
+    validations:
+      required: true
+  - type: input
+    id: agent-version
+    attributes:
+      label: 节点 agent 版本
+      description: 和节点有关的问题请填写（节点页能看到）；无关可留空
+      placeholder: 例如 3.3.23
+  - type: dropdown
+    id: area
+    attributes:
+      label: 哪个部分
+      options:
+        - 落地（入站 / 内核）
+        - 中转 / 转发 / 隧道
+        - 订阅
+        - 节点（安装、上线、调优）
+        - 延迟 / 回程 / 连通性检测
+        - 用户 / 权限
+        - 共享（面板对接）
+        - 通知
+        - 安装 / 升级 / 备份
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: kernel
+    attributes:
+      label: 内核
+      description: 和入站有关的问题请选择
+      options:
+        - 不涉及
+        - Xray
+        - sing-box
+        - Snell
+        - 其他
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: 面板部署方式
+      options:
+        - Docker（安装脚本）
+        - Docker（自己写的 compose）
+        - 直接运行二进制
+        - 其他
+  - type: input
+    id: network
+    attributes:
+      label: 网络环境
+      description: 面板和相关节点是 IPv4 / IPv6 / 双栈，有没有用 WARP、NAT 机等
+      placeholder: 例如 面板双栈，节点只有 IPv6 + WARP
+  - type: textarea
+    id: what
+    attributes:
+      label: 问题描述
+      description: 发生了什么，你期望的是什么
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 落地 → ...
+        2. 点 ...
+        3. 看到 ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        面板：`docker compose logs --tail 200 backend`
+        节点 agent：`journalctl -u flyx-agent -u flux_agent -n 200 --no-pager`
+        内核日志：落地 → 内核 → 日志
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图
+      description: 可以直接粘贴图片

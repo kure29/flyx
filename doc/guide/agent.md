@@ -1,0 +1,153 @@
+# 安装 agent
+
+agent 装在要搭节点或当中转的服务器上：连接面板，负责转发流量、下载和运行内核、测延迟和回程。
+
+## 准备
+
+- Linux amd64 / arm64，root 权限（Alpine 也支持）
+- 面板 **设置 → 基本** 里已填好“面板后端地址”
+- 搭节点的服务器建议安装 nftables（`apt install nftables`）：入站流量统计、白名单、订阅流量上限和 Hysteria2 端口跳跃依赖它；没有时服务器照常工作，只是没有这些功能
+
+## 用面板生成的命令安装（推荐）
+
+1. **服务器** 页新建服务器，点击 **安装**，在弹出的窗口里选 **一键脚本**、**Docker** 或 **Docker Compose**，点 **复制**
+2. 到服务器上以 root 执行，等服务器状态变为 **在线**
+
+## 用 Docker 安装
+
+服务器已装好 Docker 时，可以用容器运行 agent。在安装窗口切到 **Docker**，使用面板生成的命令可识别旧容器并保留其挂载。以下命令仅用于全新安装：
+
+```bash
+docker run -d --name flyx-agent \
+  --restart unless-stopped --network host --cap-add NET_ADMIN \
+  -v /etc/flyx-agent:/etc/flyx-agent \
+  -e FLYX_AGENT_ADDR=<面板地址> -e FLYX_AGENT_SECRET=<密钥> \
+  ghcr.io/kure29/flyx-agent:<版本>
+```
+
+- `--network host`：转发和入站要按需监听任意端口，必须用宿主机网络
+- `--cap-add NET_ADMIN`：入站流量统计和白名单要用 nftables
+- `/etc/flyx-agent`：配置、下载的内核和 agent 程序都在这里，删掉容器重建不会丢
+- `--restart unless-stopped`：不能去掉，面板一键升级靠它把容器拉起来
+- 不要和一键脚本安装的 agent 同时运行，二者会抢端口；换成 Docker 前先在原机器上卸载脚本版
+
+**升级**：和脚本安装一样，在 **服务器** 页点 **升级**，agent 下载新版本替换数据目录里的程序后自动重启容器；也可以拉取新版本镜像后重新执行安装命令，镜像里的版本会覆盖数据目录里的程序。
+
+**调优**：容器默认改不了宿主机内核参数。在安装窗口的 Docker 页打开 **服务器调优** 开关，命令会额外加入 `--privileged`；宿主机重启后需要在面板重新应用一次。
+
+**查看日志**：新安装使用 `docker logs -f flyx-agent`；旧安装继续使用 `docker logs -f flux_agent`。旧目录 `/etc/flux_agent` 和服务名在升级后仍会保留，详见 [命名兼容](./upgrade.md#flyx-命名兼容)。
+
+## 用 Docker Compose 安装
+
+服务器已安装 Docker Compose 时，在安装窗口切到 **Docker Compose**。生成的命令会检查并创建 `/opt/docker/flyx-agent`，把配置写到 `/opt/docker/flyx-agent/docker-compose.yaml` 并设置为 `600` 权限，然后执行 `docker compose` 启动容器。
+
+- 重复执行安装命令会更新 Compose 配置并重建容器
+- 启动前会检查并移除已存在的 `flyx-agent` 容器，避免容器名冲突
+- 检测到 FLYX 旧版 `flux_agent` 容器时会停止，请先通过 Docker 安装方式完成迁移，避免新旧 agent 同时占用 host 网络；flux-panel / FLVX 的 `flux_agent` 容器不受影响
+- 需要服务器调优时，在安装窗口打开 **服务器调优**，Compose 配置会加入 `privileged: true`
+- Docker Compose 使用 `flyx-agent` 容器名和 `/etc/flyx-agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
+
+## 服务器调优
+
+在 **服务器** 页的服务器卡片上点 **调优**（列表视图在操作菜单里），再点 **自动调优**。无需填写带宽和延迟：Agent 自动选择公共 iperf3 对端，实测四并发吞吐，读取服务器内存后计算并应用参数，最后验证单连接和多连接吞吐。
+
+首次使用会自动安装缺少的测速依赖（iperf3、iproute2 等）。测速会向 Leaseweb、Clouvider 或 OVH 提供的公共对端发送流量，千兆线路基础测速约消耗 4 GB；公共对端忙或不可达时会报错，不会用假定的千兆带宽代替实测。
+
+任务在 Agent 后台执行，窗口显示阶段、日志和结果；关闭窗口不会中断，再次打开可继续查看。点 **停止任务** 会停止测速，已应用的基础参数保留，可随时恢复原配置。
+
+| 项目 | 作用 |
+|------|------|
+| BBR 拥塞控制 | 高延迟、有丢包的线路上明显提速，需要内核 4.9 以上；模块开机自动加载 |
+| 按实测带宽设缓冲区 | 单连接缓冲区上限 = 2 × 带宽时延积 + 2 MiB，最低 4 MiB，最多内存的 1/32、256 MiB；TCP 总内存按内存的 1/16、1/8、1/4 设三档；连接起始缓冲区 1 MiB；开启窗口缩放和接收缓冲自动调整 |
+| TCP 连接优化 | Fast Open、空闲后不降速、自动探测 MTU、15 秒回收关闭的连接、复用 TIME_WAIT、10 分钟保活、SYN Cookies |
+| 高并发 | 连接多时不丢新连接；出站端口范围 10000–65535，中转发起的连接多时不缺端口 |
+| IPv4 转发 | 内核转发（nftables 端口转发）需要 |
+| 文件句柄上限 | 允许打开更多连接和文件 |
+
+- 调优结果展示实测带宽、出口网卡、测速对端、测量时间、参数来源和验证吞吐。与 tcpfit 0.5.9 一致，计算缓冲区的 RTT 使用 **150 ms 路径估值**，不是到测速对端的延迟；对端只用于测量带宽，不能代表实际用户线路。
+- 基础参数立即生效，写入 `/etc/sysctl.d/99-flyx-tuning.conf`，重启后保持；原值在修改前备份，**恢复原配置** 会撤销 FLYX 的调优和整形。
+- 上限类参数如果服务器本来就更高，保持原值；FLYX 之前管理的参数会按本次实测值重新计算（可以调小）。
+- 系统不支持的项（比如内核没有 BBR）会跳过并提示
+- 自动调优需要配套升级面板和节点 Agent；旧 Agent 会显示升级提示，不会悄悄沿用固定带宽。
+
+### 深度优化
+
+点击 **深度优化** 可以打开准备流程，无需先自行寻找前置操作。还没有测速结果或结果超过 24 小时时，窗口会说明原因；点 **自动调优并继续**，完成后会自动显示预计流量和本次流量预算。勾选允许使用这些流量后，才会开始深度扫描。旧 Agent 会显示升级指引。
+
+扫描可能需要数分钟，单个任务最长运行 25 分钟；实际出口收发流量（含业务流量）达到预算后会停止并恢复扫描前的队列。本次预算最多 1000 GB；预计流量本身超过上限时，窗口会说明原因，不会启动扫描。
+
+深度优化复用 [tcpfit](https://github.com/Kylin010/tcpfit) 0.5.9 的限速器拐点扫描：先检查不限速吞吐和重传，再按带宽推导扫描区间、步长和安全余量。只有取得可靠拐点，才应用 **HTB 全局上限 + fq pacing**，并验证吞吐；验证失败会恢复原队列和原整形启动配置。没有明确拐点、对端过慢、结果不确定或超过扫描范围时，保留原整形配置。
+
+整形配置由 `flyx-tuning-qdisc.service` 在启动时恢复。扫描前保存出口队列及参数；发现外部整形器或自定义流量分类时会停止，避免覆盖现有配置。Agent 意外退出后，下次启动会尝试恢复中断扫描前的队列。
+
+Docker 节点仍需以 `--privileged` 运行。容器没有 systemd，已提交的整形会随 Agent 启动重新下发；宿主机重启后，基础 sysctl 调优仍需重新应用。
+
+FLYX 保留自己的内核参数备份和恢复机制，内置固定版本的 tcpfit 测速与扫描代码，不会下载执行最新版脚本，也不会修改默认路由初始窗口、创建 swap 或启用 tcpfit 遥测。
+
+## 国内服务器安装慢
+
+安装脚本、agent 程序、Xray / sing-box 等内核和分流数据都来自 GitHub，国内服务器直接下载很慢，默认经公共加速站下载，速度看加速站当时的情况。
+
+面板在海外时，可以让服务器改从面板下载：**设置** → **服务器与监控** → 打开 **GitHub 加速** → 加速地址点 **面板中转**，保存。地址是“面板后端地址”加上 `/api/v1/open_api/gh`，例如 `http://1.2.3.4:6365/api/v1/open_api/gh`（按钮会自动填，带 `https://` 的地址请核对一下）。之后：
+
+- 新生成的安装命令、服务器升级、内核安装和分流数据更新都经面板下载，服务器只需要能连上面板
+- 面板第一次下载某个文件时从 GitHub 拉取并缓存在数据目录的 `github-cache` 里（最多约 2 GB，超出自动清理最早的），之后直接给服务器，多个服务器只下载一次
+- 只提供面板用到的仓库（本项目、Xray、sing-box、shadow-tls 和分流数据），不能当通用 GitHub 代理用
+- 面板自己升级时仍直接访问 GitHub
+
+面板也在国内、同样访问不了 GitHub 时，继续用公共加速站，或者换成你自己的加速地址。
+
+## 手动安装
+
+在服务器上运行：
+
+```bash
+curl -L https://github.com/kure29/flyx/releases/latest/download/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+```
+
+Alpine Linux 最小化安装若未包含 `curl`，可使用系统自带的 `wget` 下载：
+
+```bash
+wget -O install.sh https://github.com/kure29/flyx/releases/latest/download/install.sh && chmod +x install.sh && ./install.sh
+```
+
+脚本会在 Alpine 上自动安装 Bash、`curl` 和 CA 证书，并使用 OpenRC 注册、启动和管理 `flyx-agent` 服务；其他受支持的 Linux 发行版继续使用 systemd。
+
+**安装过程中会提示输入：**
+- **服务器地址**: 面板端的通信地址（通常是 `http://<面板IP>:<后端端口>`，例如 `http://1.2.3.4:6365`）。
+- **密钥**: 服务器页里该服务器的密钥。
+
+或者直接使用带参数的命令（适用于自动化部署）：
+
+```bash
+# 替换 <面板地址> 和 <密钥>
+./install.sh -a "http://1.2.3.4:6365" -s "your_node_secret"
+```
+
+## 验证安装
+安装完成后，服务会自动启动。
+- systemd 查看状态: `systemctl status flyx-agent`
+- Alpine/OpenRC 查看状态: `rc-service flyx-agent status`
+- Docker 查看状态: `docker ps -f name=flyx-agent`
+- 回到面板 **服务器** 页，该服务器状态应显示为 **在线**
+
+服务器离线的排查见 [常见问题](./faq.md#服务器显示离线)。
+
+## 升级 agent
+
+**服务器** 页选择服务器 → **升级**（可以多选批量升级），留空版本即使用最新版。新功能（例如回程检测）需要 agent 跟面板一起升级，见 [升级](./upgrade.md#agent-升级)。
+
+## 删除服务器并卸载 agent
+
+在 **服务器** 页删除服务器（单个或多选批量删除）时，确认窗口里的 **同时卸载服务器上的 agent** 默认勾选，会一并清理这台服务器：
+
+- 停止所有内核（Xray / sing-box 等），删除 agent 建的 nftables 规则（流量统计、入站白名单、端口跳跃）
+- 恢复 [服务器调优](#服务器调优) 前的系统参数和网卡队列，删除调优写入的 `/etc/sysctl.d/99-flyx-tuning.conf` 和 `/etc/modules-load.d/flyx-bbr.conf`
+- 使用 nftables 转发的服务器，面板会通过 SSH 清除它下发的转发规则
+- 脚本安装的 agent：停止并删除 systemd / OpenRC 服务，删除安装目录（`/etc/flyx-agent`，旧安装为 `/etc/flux_agent`）
+
+服务器离线时，面板先删除记录，等这台服务器的 agent 下次连上面板时再自动卸载（180 天内有效）。只想把服务器换到另一个面板时，取消勾选即可，服务器上的 agent 保持原样。
+
+**Docker 安装的 agent** 无法删除自己的容器：卸载后会清空数据目录里的配置和密钥，容器保留但不再连接面板。在服务器上执行 `docker rm -f flyx-agent`（旧安装为 `flux_agent`）删除容器即可；用 Docker Compose 安装的，执行 `docker compose -f /opt/docker/flyx-agent/docker-compose.yaml down` 后删除 `/opt/docker/flyx-agent` 目录（里面的 Compose 文件含有节点密钥）。
+
+自动卸载需要 agent 3.4.2 及以上；更旧的 agent 会提示 **版本过旧**，请在服务器上运行安装脚本选择 **卸载**。

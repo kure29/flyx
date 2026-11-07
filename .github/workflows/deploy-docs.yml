@@ -1,0 +1,56 @@
+name: Deploy Docs
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'doc/**'
+      - 'vite-frontend/**'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # lastUpdated reads git history
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: doc/package-lock.json
+
+      - name: Build
+        working-directory: doc
+        run: |
+          npm ci
+          npm run build
+
+      # The online demo: the panel with recorded sample data and no backend
+      # (vite-frontend/src/demo), served at /flyx/demo/.
+      - name: Build demo
+        working-directory: vite-frontend
+        run: |
+          npm install -g pnpm@10.28.1
+          pnpm install --frozen-lockfile
+          VITE_DEMO=true VITE_BASE=/flyx/demo/ \
+          VITE_APP_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" \
+          VITE_GITHUB_REPO="https://github.com/${{ github.repository }}" \
+            pnpm exec vite build --outDir ../doc/.vitepress/dist/demo --emptyOutDir
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: doc/.vitepress/dist
+          force_orphan: true

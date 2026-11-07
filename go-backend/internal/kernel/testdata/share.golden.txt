@@ -1,0 +1,6 @@
+vless://0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e@203.0.113.10:443?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw&security=reality&sid=0123456789abcdef&sni=www.example.com&type=tcp#%E4%B8%9C%E4%BA%AC%20Reality
+ss://2022-blake3-aes-128-gcm:AAAAAAAAAAAAAAAAAAAAAA%3D%3D@[2001:db8::1]:8388#SS
+vmess://eyJhZGQiOiJjZG4uZXhhbXBsZS5jb20iLCJhaWQiOiIwIiwiZnAiOiJjaHJvbWUiLCJob3N0IjoiY2RuLmV4YW1wbGUuY29tIiwiaWQiOiIwYjZlNGMzOC04ZjBlLTRhM2UtOWQyZC03YTFjMmIzYzRkNWUiLCJuZXQiOiJ3cyIsInBhdGgiOiIvd3MiLCJwb3J0IjoiODQ0MyIsInBzIjoiQ0ROIiwic2N5IjoiYXV0byIsInNuaSI6ImNkbi5leGFtcGxlLmNvbSIsInRscyI6InRscyIsInR5cGUiOiJub25lIiwidiI6IjIifQ==
+trojan://trojan-secret@203.0.113.10:2053?allowInsecure=1&alpn=h2&fp=chrome&mode=gun&security=tls&serviceName=tun&sni=t.example.com&type=grpc#Trojan
+vless://0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e@203.0.113.10:9443?encryption=none&mode=auto&path=%2Fx&security=none&type=xhttp#XHTTP
+vless://0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e@198.51.100.7:30001?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw&security=reality&sid=0123456789abcdef&sni=www.example.com&type=tcp#%E4%B8%9C%E4%BA%AC%20Reality

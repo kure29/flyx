@@ -1,0 +1,149 @@
+{
+  "inbounds": [
+    {
+      "ignore_client_bandwidth": true,
+      "listen": "::",
+      "listen_port": 443,
+      "masquerade": "https://www.bing.com",
+      "tag": "in-1",
+      "tls": {
+        "alpn": [
+          "h3"
+        ],
+        "certificate": [
+          "-----BEGIN CERTIFICATE-----",
+          "MIIB",
+          "-----END CERTIFICATE-----"
+        ],
+        "enabled": true,
+        "key": [
+          "-----BEGIN EC PRIVATE KEY-----",
+          "MHcC",
+          "-----END EC PRIVATE KEY-----"
+        ],
+        "server_name": "www.bing.com"
+      },
+      "type": "hysteria2",
+      "users": [
+        {
+          "password": "hy2-secret"
+        }
+      ]
+    },
+    {
+      "congestion_control": "bbr",
+      "listen": "::",
+      "listen_port": 8443,
+      "tag": "in-2",
+      "tls": {
+        "alpn": [
+          "h3"
+        ],
+        "certificate": [
+          "-----BEGIN CERTIFICATE-----",
+          "MIIB",
+          "-----END CERTIFICATE-----"
+        ],
+        "enabled": true,
+        "key": [
+          "-----BEGIN EC PRIVATE KEY-----",
+          "MHcC",
+          "-----END EC PRIVATE KEY-----"
+        ],
+        "server_name": "www.bing.com"
+      },
+      "type": "tuic",
+      "users": [
+        {
+          "password": "tuic-secret",
+          "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+        }
+      ]
+    },
+    {
+      "listen": "::",
+      "listen_port": 9443,
+      "tag": "in-3",
+      "tls": {
+        "certificate": [
+          "-----BEGIN CERTIFICATE-----",
+          "MIIB",
+          "-----END CERTIFICATE-----"
+        ],
+        "enabled": true,
+        "key": [
+          "-----BEGIN EC PRIVATE KEY-----",
+          "MHcC",
+          "-----END EC PRIVATE KEY-----"
+        ],
+        "server_name": "www.bing.com"
+      },
+      "type": "anytls",
+      "users": [
+        {
+          "password": "anytls-secret"
+        }
+      ]
+    },
+    {
+      "detour": "in-4-ss",
+      "handshake": {
+        "server": "www.microsoft.com",
+        "server_port": 443
+      },
+      "listen": "::",
+      "listen_port": 10443,
+      "tag": "in-4",
+      "type": "shadowtls",
+      "users": [
+        {
+          "password": "stls-secret-123"
+        }
+      ],
+      "version": 3
+    },
+    {
+      "listen": "127.0.0.1",
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "AAAAAAAAAAAAAAAAAAAAAA==",
+      "tag": "in-4-ss",
+      "type": "shadowsocks"
+    },
+    {
+      "listen": "::",
+      "listen_port": 11443,
+      "tag": "in-5",
+      "tls": {
+        "enabled": true,
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "www.example.com",
+            "server_port": 443
+          },
+          "private_key": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+          "short_id": [
+            "0123456789abcdef"
+          ]
+        },
+        "server_name": "www.example.com"
+      },
+      "type": "vless",
+      "users": [
+        {
+          "flow": "xtls-rprx-vision",
+          "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+        }
+      ]
+    }
+  ],
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ]
+}

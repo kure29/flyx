@@ -1,0 +1,9 @@
+# Context is the repository root; send only what go-backend/Dockerfile uses.
+*
+!go-backend/
+!vite-frontend/
+**/node_modules
+**/dist
+**/dist-*
+vite-frontend/scripts/demo/__pycache__
+go-backend/internal/statustheme/builtin/dist

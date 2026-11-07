@@ -1,0 +1,345 @@
+@import "tailwindcss";
+@import "./tailwind-theme.pcss";
+@plugin "tailwindcss-animate";
+
+/* GPU acceleration helper - prevents font blurriness during transforms */
+.gpu-accelerated {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #a3a3a3;
+
+  --content1: #ffffff;
+  --divider: #ededed;
+
+  --default-50: #fafafa;
+  --default-100: #f5f5f5;
+  --default-200: #e5e5e5;
+  --default-300: #d4d4d4;
+  --default-400: #a3a3a3;
+  --default-500: #737373;
+  --default-600: #525252;
+  --default-700: #404040;
+  --default-800: #262626;
+  --default-900: #171717;
+
+  --primary-50: #fafafa;
+  --primary-100: #f5f5f5;
+  --primary-200: #e5e5e5;
+  --primary-300: #d4d4d4;
+  --primary-400: #737373;
+  --primary-500: #262626;
+  --primary-600: #0a0a0a;
+  --primary-700: #0a0a0a;
+  --primary-800: #0a0a0a;
+  --primary-900: #0a0a0a;
+
+  --secondary-50: #fafafa;
+  --secondary-100: #f5f5f5;
+  --secondary-200: #e5e5e5;
+  --secondary-300: #d4d4d4;
+  --secondary-400: #737373;
+  --secondary-500: #262626;
+  --secondary-600: #0a0a0a;
+  --secondary-700: #0a0a0a;
+  --secondary-800: #0a0a0a;
+  --secondary-900: #0a0a0a;
+
+  --danger-50: #fef2f2;
+  --danger-100: #fee2e2;
+  --danger-200: #fecaca;
+  --danger-300: #fca5a5;
+  --danger-400: #f87171;
+  --danger-500: #ef4444;
+  --danger-600: #dc2626;
+  --danger-700: #b91c1c;
+  --danger-800: #991b1b;
+  --danger-900: #7f1d1d;
+
+  --success-50: #f0fdf4;
+  --success-100: #dcfce7;
+  --success-200: #bbf7d0;
+  --success-300: #86efac;
+  --success-400: #4ade80;
+  --success-500: #22c55e;
+  --success-600: #16a34a;
+  --success-700: #15803d;
+  --success-800: #166534;
+  --success-900: #14532d;
+
+  --warning-50: #fffbeb;
+  --warning-100: #fef3c7;
+  --warning-200: #fde68a;
+  --warning-300: #fcd34d;
+  --warning-400: #fbbf24;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --warning-700: #b45309;
+  --warning-800: #92400e;
+  --warning-900: #78350f;
+
+  --primary: #0a0a0a;
+  --primary-foreground: #ffffff;
+  --secondary: #404040;
+  --secondary-foreground: #ffffff;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --warning: #d97706;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --border: #262626;
+  --input: #333333;
+  --ring: #525252;
+
+  --content1: #111111;
+  --divider: #1f1f1f;
+
+  --default-50: #171717;
+  --default-100: #1f1f1f;
+  --default-200: #262626;
+  --default-300: #404040;
+  --default-400: #525252;
+  --default-500: #737373;
+  --default-600: #a3a3a3;
+  --default-700: #d4d4d4;
+  --default-800: #e5e5e5;
+  --default-900: #f5f5f5;
+
+  --primary: #fafafa;
+  --secondary: #d4d4d4;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --primary-foreground: #0a0a0a;
+  --secondary-foreground: #0a0a0a;
+  --primary-50: #fafafa;
+  --primary-100: #f5f5f5;
+  --primary-200: #e5e5e5;
+  --primary-300: #f5f5f5;
+  --primary-400: #fafafa;
+  --primary-500: #fafafa;
+  --primary-600: #e5e5e5;
+  --primary-700: #d4d4d4;
+  --primary-800: #404040;
+  --primary-900: #262626;
+  --secondary-50: #fafafa;
+  --secondary-100: #f5f5f5;
+  --secondary-200: #e5e5e5;
+  --secondary-300: #f5f5f5;
+  --secondary-400: #fafafa;
+  --secondary-500: #fafafa;
+  --secondary-600: #e5e5e5;
+  --secondary-700: #d4d4d4;
+  --secondary-800: #404040;
+  --secondary-900: #262626;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  height: 100%;
+  overflow-x: hidden;
+}
+
+/* A plain <select> with the same chevron as the panel's own selects. */
+.select-chevron {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem;
+  padding-right: 2.25rem;
+}
+
+/* Large screens (2K and up at 100% scaling): sizes are in rem, so a larger
+   root font scales text, spacing, the sidebar and the content width
+   together instead of leaving a small page in a wide window. */
+@media (min-width: 1920px) {
+  html {
+    font-size: 112.5%;
+  }
+}
+
+@media (min-width: 2400px) {
+  html {
+    font-size: 125%;
+  }
+}
+
+.safe-top {
+  padding-top: var(--safe-area-top);
+}
+
+.safe-bottom {
+  padding-bottom: var(--safe-area-bottom);
+}
+
+.text-small {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.text-tiny {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+@supports (height: 100dvh) {
+  .h-screen {
+    height: 100dvh;
+  }
+
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  .h-screen {
+    height: -webkit-fill-available;
+  }
+
+  .min-h-screen {
+    min-height: -webkit-fill-available;
+  }
+}
+
+@media (max-width: 768px) {
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
+.captcha-modal-enter {
+  animation: captchaModalIn 0.3s ease-out forwards;
+}
+
+@keyframes captchaModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.captcha-backdrop-enter {
+  animation: backdropFadeIn 0.3s ease-out forwards;
+}
+
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Liquid Glass Variables */
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.8);
+  --glass-card: rgba(255, 255, 255, 0.7);
+  --glass-overlay: rgba(0, 0, 0, 0.3);
+}
+
+.dark {
+  --glass-bg: rgba(30, 30, 30, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-card: rgba(40, 40, 40, 0.6);
+}
+
+/* Default background: plain light / dark colour. The built-in wallpaper is
+   opt-in (app_bg_image = "wallpaper"), custom images via has-custom-bg. */
+.bg-mesh-gradient {
+  background-color: var(--background);
+  position: relative;
+  z-index: 0;
+}
+
+.bg-mesh-gradient::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.dark .bg-mesh-gradient {
+  background-color: var(--background);
+}
+
+:root.has-wallpaper-bg .bg-mesh-gradient::before {
+  background: url('/images/bg-light.jpg') no-repeat center center;
+  background-size: cover;
+}
+
+:root.dark.has-wallpaper-bg .bg-mesh-gradient::before {
+  background: url('/images/bg-dark.jpg') no-repeat center center;
+  background-size: cover;
+}
+
+:root.has-theme-bg .bg-mesh-gradient {
+  background-image: none !important;
+  background-color: var(--background) !important;
+}
+
+:root.dark.has-theme-bg .bg-mesh-gradient {
+  background-color: var(--background) !important;
+}
+
+:root.has-theme-bg .bg-mesh-gradient::before {
+  background-image: none !important;
+}
+
+:root.has-custom-bg .bg-mesh-gradient {
+  background-image: none !important;
+  background-color: var(--custom-bg-color, transparent) !important;
+}
+
+:root.has-custom-bg .bg-mesh-gradient::before {
+  background-image: var(--custom-bg-image, none) !important;
+  background-size: cover !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    /* IE and Edge */
+    -ms-overflow-style: none;
+    /* Firefox */
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+

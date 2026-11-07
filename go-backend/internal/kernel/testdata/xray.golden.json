@@ -1,0 +1,196 @@
+{
+  "inbounds": [
+    {
+      "listen": "::",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "flow": "xtls-rprx-vision",
+            "id": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+          }
+        ],
+        "decryption": "none"
+      },
+      "sniffing": {
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "enabled": true
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "realitySettings": {
+          "dest": "www.example.com:443",
+          "minClientVer": "1.0.0",
+          "privateKey": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+          "serverNames": [
+            "www.example.com"
+          ],
+          "shortIds": [
+            "0123456789abcdef"
+          ],
+          "show": false,
+          "xver": 0
+        },
+        "security": "reality"
+      },
+      "tag": "in-1"
+    },
+    {
+      "listen": "::",
+      "port": 8388,
+      "protocol": "shadowsocks",
+      "settings": {
+        "method": "2022-blake3-aes-128-gcm",
+        "network": "tcp,udp",
+        "password": "AAAAAAAAAAAAAAAAAAAAAA=="
+      },
+      "sniffing": {
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "enabled": true
+      },
+      "tag": "in-2"
+    },
+    {
+      "listen": "::",
+      "port": 8443,
+      "protocol": "vmess",
+      "settings": {
+        "clients": [
+          {
+            "id": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+          }
+        ]
+      },
+      "sniffing": {
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "enabled": true
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/ssl/a.crt",
+              "keyFile": "/etc/ssl/a.key"
+            }
+          ],
+          "serverName": "cdn.example.com"
+        },
+        "wsSettings": {
+          "host": "cdn.example.com",
+          "path": "/ws"
+        }
+      },
+      "tag": "in-3"
+    },
+    {
+      "listen": "::",
+      "port": 2053,
+      "protocol": "trojan",
+      "settings": {
+        "clients": [
+          {
+            "password": "trojan-secret"
+          }
+        ]
+      },
+      "sniffing": {
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "enabled": true
+      },
+      "streamSettings": {
+        "grpcSettings": {
+          "serviceName": "tun"
+        },
+        "network": "grpc",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": [
+            "h2"
+          ],
+          "certificates": [
+            {
+              "certificate": [
+                "-----BEGIN CERTIFICATE-----",
+                "MIIB",
+                "AAAA",
+                "-----END CERTIFICATE-----"
+              ],
+              "key": [
+                "-----BEGIN EC PRIVATE KEY-----",
+                "MHcC",
+                "-----END EC PRIVATE KEY-----"
+              ]
+            }
+          ],
+          "serverName": "t.example.com"
+        }
+      },
+      "tag": "in-4"
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 9443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+          }
+        ],
+        "decryption": "none"
+      },
+      "sniffing": {
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "enabled": false
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "none",
+        "sockopt": {
+          "tcpFastOpen": true
+        },
+        "xhttpSettings": {
+          "mode": "auto",
+          "path": "/x"
+        }
+      },
+      "tag": "in-5"
+    }
+  ],
+  "log": {
+    "loglevel": "warning"
+  },
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "block"
+    }
+  ]
+}

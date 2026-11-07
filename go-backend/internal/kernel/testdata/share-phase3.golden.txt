@@ -1,0 +1,232 @@
+hysteria2://hy2-secret@203.0.113.10:443/?insecure=1&sni=www.bing.com#hysteria2
+tuic://0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e:tuic-secret@203.0.113.10:8443?allow_insecure=1&alpn=h3&congestion_control=bbr&sni=www.bing.com&udp_relay_mode=native#tuic
+anytls://anytls-secret@203.0.113.10:9443/?allowInsecure=1&insecure=1&sni=www.bing.com#anytls
+ss://2022-blake3-aes-128-gcm:AAAAAAAAAAAAAAAAAAAAAA%3D%3D@203.0.113.10:10443?plugin=shadow-tls%3Bhost%3Dwww.microsoft.com%3Bpassword%3Dstls-secret-123%3Bversion%3D3#shadowsocks
+### clash
+mixed-port: 7890
+allow-lan: false
+mode: "rule"
+log-level: "warning"
+proxies:
+  - name: "hysteria2"
+    type: "hysteria2"
+    server: "203.0.113.10"
+    port: 443
+    udp: true
+    password: "hy2-secret"
+    alpn:
+      - "h3"
+    sni: "www.bing.com"
+    skip-cert-verify: true
+  - name: "tuic"
+    type: "tuic"
+    server: "203.0.113.10"
+    port: 8443
+    udp: true
+    uuid: "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+    password: "tuic-secret"
+    alpn:
+      - "h3"
+    congestion-controller: "bbr"
+    udp-relay-mode: "native"
+    sni: "www.bing.com"
+    skip-cert-verify: true
+  - name: "anytls"
+    type: "anytls"
+    server: "203.0.113.10"
+    port: 9443
+    udp: true
+    password: "anytls-secret"
+    client-fingerprint: "chrome"
+    sni: "www.bing.com"
+    skip-cert-verify: true
+  - name: "shadowsocks"
+    type: "ss"
+    server: "203.0.113.10"
+    port: 10443
+    udp: false
+    cipher: "2022-blake3-aes-128-gcm"
+    password: "AAAAAAAAAAAAAAAAAAAAAA=="
+    client-fingerprint: "chrome"
+    plugin: "shadow-tls"
+    plugin-opts:
+      host: "www.microsoft.com"
+      password: "stls-secret-123"
+      version: 3
+proxy-groups:
+  - name: "节点选择"
+    type: "select"
+    proxies:
+      - "自动选择"
+      - "hysteria2"
+      - "tuic"
+      - "anytls"
+      - "shadowsocks"
+  - name: "自动选择"
+    type: "url-test"
+    url: "https://www.gstatic.com/generate_204"
+    interval: 300
+    proxies:
+      - "hysteria2"
+      - "tuic"
+      - "anytls"
+      - "shadowsocks"
+rules:
+  - "GEOIP,LAN,DIRECT,no-resolve"
+  - "MATCH,节点选择"
+### singbox
+{
+  "inbounds": [
+    {
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "tag": "tun-in",
+      "type": "tun"
+    },
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "tag": "mixed-in",
+      "type": "mixed"
+    }
+  ],
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "outbounds": [
+        "自动选择",
+        "hysteria2",
+        "tuic",
+        "anytls",
+        "shadowsocks"
+      ],
+      "tag": "节点选择",
+      "type": "selector"
+    },
+    {
+      "interval": "5m",
+      "outbounds": [
+        "hysteria2",
+        "tuic",
+        "anytls",
+        "shadowsocks"
+      ],
+      "tag": "自动选择",
+      "type": "urltest",
+      "url": "https://www.gstatic.com/generate_204"
+    },
+    {
+      "password": "hy2-secret",
+      "server": "203.0.113.10",
+      "server_port": 443,
+      "tag": "hysteria2",
+      "tls": {
+        "alpn": [
+          "h3"
+        ],
+        "enabled": true,
+        "insecure": true,
+        "server_name": "www.bing.com"
+      },
+      "type": "hysteria2"
+    },
+    {
+      "congestion_control": "bbr",
+      "password": "tuic-secret",
+      "server": "203.0.113.10",
+      "server_port": 8443,
+      "tag": "tuic",
+      "tls": {
+        "alpn": [
+          "h3"
+        ],
+        "enabled": true,
+        "insecure": true,
+        "server_name": "www.bing.com"
+      },
+      "type": "tuic",
+      "udp_relay_mode": "native",
+      "uuid": "0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e"
+    },
+    {
+      "password": "anytls-secret",
+      "server": "203.0.113.10",
+      "server_port": 9443,
+      "tag": "anytls",
+      "tls": {
+        "enabled": true,
+        "insecure": true,
+        "server_name": "www.bing.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "type": "anytls"
+    },
+    {
+      "detour": "shadowsocks (shadowtls)",
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "AAAAAAAAAAAAAAAAAAAAAA==",
+      "tag": "shadowsocks",
+      "type": "shadowsocks"
+    },
+    {
+      "password": "stls-secret-123",
+      "server": "203.0.113.10",
+      "server_port": 10443,
+      "tag": "shadowsocks (shadowtls)",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.microsoft.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "type": "shadowtls",
+      "version": 3
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "final": "节点选择",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "hijack-dns",
+        "protocol": "dns"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      }
+    ]
+  }
+}
+### surge
+[Proxy]
+hysteria2 = hysteria2, 203.0.113.10, 443, password=hy2-secret, sni=www.bing.com, skip-cert-verify=true
+tuic = tuic-v5, 203.0.113.10, 8443, password=tuic-secret, uuid=0b6e4c38-8f0e-4a3e-9d2d-7a1c2b3c4d5e, alpn=h3, sni=www.bing.com, skip-cert-verify=true
+anytls = anytls, 203.0.113.10, 9443, password=anytls-secret, sni=www.bing.com, skip-cert-verify=true
+shadowsocks = ss, 203.0.113.10, 10443, encrypt-method=2022-blake3-aes-128-gcm, password=AAAAAAAAAAAAAAAAAAAAAA==, shadow-tls-password=stls-secret-123, shadow-tls-sni=www.microsoft.com, shadow-tls-version=3
+snell = snell, 203.0.113.10, 6160, psk=psk-cccccccc, version=5, reuse=true, tfo=true, shadow-tls-password=stls-pass-2, shadow-tls-sni=www.microsoft.com, shadow-tls-version=3
+
+[Proxy Group]
+节点选择 = select, hysteria2, tuic, anytls, shadowsocks, snell
+
+[Rule]
+GEOIP,LAN,DIRECT
+FINAL,节点选择

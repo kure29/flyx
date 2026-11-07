@@ -1,0 +1,288 @@
+# ==========================================
+# 操作系统生成的文件
+# ==========================================
+flutter_app/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.tmp
+*.temp
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ==========================================
+# IDE 和编辑器配置文件
+# ==========================================
+
+# IntelliJ IDEA
+.idea/
+.vitepress/dist/
+.vitepress/cache/
+*.iws
+*.iml
+*.ipr
+out/
+go-gost/ss/
+# VS Code
+.vscode/
+*.code-workspace
+
+# Eclipse
+.metadata
+.classpath
+.project
+.settings/
+
+# OpenCode session metadata
+.entire/
+bin/
+tmp/
+.worktrees/
+*.swp
+*.bak
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ==========================================
+# Java / Maven / Spring Boot
+# ==========================================
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Spring Boot
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+application-local.properties
+application-dev.properties
+
+# Java编译输出
+*.class
+
+# 日志文件
+logs/
+applog/
+*.log
+log/
+
+# ==========================================
+# Node.js / Vue.js / 前端
+# ==========================================
+
+# 依赖目录
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# 运行时数据
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# Dependency directories
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 构建输出
+dist/
+build/
+
+# ==========================================
+# Go
+# ==========================================
+
+# Go 二进制文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+your_app.exe
+go-backend/paneld
+go-gost/gost
+# Release binaries copied in to build the node agent image
+go-gost/docker/gost-*
+
+# Go 测试二进制文件
+*.test
+
+# Go 输出覆盖率
+*.out
+
+# Go 模块代理缓存
+go.work
+go.work.sum
+
+# 编译器输出
+vendor/
+
+# ==========================================
+# Docker
+# ==========================================
+
+# Docker 本地配置
+.dockerignore.local
+
+# ==========================================
+# 数据库和配置文件
+# ==========================================
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 配置文件中的敏感信息
+config-local.json
+secrets.json
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Go-gost 特定配置文件
+go-gost/config.json
+go-gost/gost.json
+
+# ==========================================
+# 备份和临时文件
+# ==========================================
+
+# 备份文件
+*.bak
+*.backup
+*.orig
+*.save
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+
+
+gitee/
+
+
+
+# ==========================================
+# 其他
+# ==========================================
+
+# 压缩文件
+*.7z
+*.dmg
+*.gz
+*.iso
+*.rar
+*.tar
+*.zip
+
+# 证书文件
+*.crt
+*.cert
+doraemon.jks
+device.id
+commit.sh
+.opencode/
+analysis/
+sql/
+!go-backend/internal/store/sqlite/sql/
+!go-backend/internal/store/sqlite/sql/schema.sql
+!go-backend/internal/store/sqlite/sql/data.sql
+!go-backend/internal/store/postgres/sql/
+!go-backend/internal/store/postgres/sql/schema.sql
+!go-backend/internal/store/postgres/sql/data.sql
+go-backend/gost.db-shm
+.gitignore
+go-backend/gost.db-wal
+go-backend/cmd/paneld/paneld
+
+# VitePress docs
+doc/node_modules/
+doc/.vitepress/dist/
+doc/.vitepress/cache/
+
+# Playwright output
+test-results/

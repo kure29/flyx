@@ -1,0 +1,107 @@
+{
+  "inbounds": [
+    {
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "tag": "tun-in",
+      "type": "tun"
+    },
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "tag": "mixed-in",
+      "type": "mixed"
+    }
+  ],
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "outbounds": [
+        "自动选择",
+        "Snell v4",
+        "Snell v6",
+        "Snell STLS"
+      ],
+      "tag": "节点选择",
+      "type": "selector"
+    },
+    {
+      "interval": "5m",
+      "outbounds": [
+        "Snell v4",
+        "Snell v6",
+        "Snell STLS"
+      ],
+      "tag": "自动选择",
+      "type": "urltest",
+      "url": "https://www.gstatic.com/generate_204"
+    },
+    {
+      "psk": "psk-aaaaaaaa",
+      "server": "127.0.0.1",
+      "server_port": 6160,
+      "tag": "Snell v4",
+      "type": "snell",
+      "version": 4
+    },
+    {
+      "mode": "unshaped",
+      "psk": "psk-bbbbbbbbbbbb",
+      "server": "127.0.0.1",
+      "server_port": 6161,
+      "tag": "Snell v6",
+      "type": "snell",
+      "version": 6
+    },
+    {
+      "detour": "Snell STLS (shadowtls)",
+      "psk": "psk-cccccccc",
+      "tag": "Snell STLS",
+      "type": "snell",
+      "version": 4
+    },
+    {
+      "password": "stls-pass-1",
+      "server": "127.0.0.1",
+      "server_port": 6162,
+      "tag": "Snell STLS (shadowtls)",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.microsoft.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "type": "shadowtls",
+      "version": 3
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "final": "节点选择",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "hijack-dns",
+        "protocol": "dns"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      }
+    ]
+  }
+}

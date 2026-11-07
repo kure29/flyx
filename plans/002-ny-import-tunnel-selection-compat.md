@@ -1,0 +1,7 @@
+- [x] Review current forward import flow and confirm ny import uses tunnel selection
+- [x] Define ny compatibility update with tunnel-first behavior and auto port assignment fallback
+- [x] Update ny parser to accept alias fields and optional `listen_port`
+- [x] Keep import execution bound to selected tunnel and remove entry-selection dependency from ux copy
+- [x] Update ny import help text to document optional port auto assignment
+- [x] Add parser tests for alias-field compatibility and missing-port auto assignment
+- [x] Validate updated import parser tests locally

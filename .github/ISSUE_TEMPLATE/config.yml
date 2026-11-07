@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Telegram 交流群
+    url: https://t.me/flyx_chat
+    about: 使用上的问题、安装求助、交流线路，可以先到群里问
+  - name: 使用文档
+    url: https://kure29.github.io/flyx/
+    about: 安装、升级、各功能的用法
+  - name: 常见问题
+    url: https://kure29.github.io/flyx/guide/faq
+    about: 节点连不上、延迟、升级失败等常见问题

@@ -1,0 +1,53 @@
+{
+  "inbounds": [
+    {
+      "listen": "::",
+      "listen_port": 6160,
+      "psk": "psk-aaaaaaaa",
+      "tag": "in-1",
+      "type": "snell",
+      "version": 5
+    },
+    {
+      "listen": "::",
+      "listen_port": 6161,
+      "psk": "psk-bbbbbbbbbbbb",
+      "tag": "in-2",
+      "type": "snell",
+      "version": 6
+    },
+    {
+      "detour": "in-3-snell",
+      "handshake": {
+        "server": "www.microsoft.com",
+        "server_port": 443
+      },
+      "listen": "::",
+      "listen_port": 6162,
+      "tag": "in-3",
+      "type": "shadowtls",
+      "users": [
+        {
+          "password": "stls-pass-1"
+        }
+      ],
+      "version": 3
+    },
+    {
+      "listen": "127.0.0.1",
+      "psk": "psk-cccccccc",
+      "tag": "in-3-snell",
+      "type": "snell",
+      "version": 5
+    }
+  ],
+  "log": {
+    "level": "warn"
+  },
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ]
+}

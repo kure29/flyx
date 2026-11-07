@@ -1,0 +1,709 @@
+package handler
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"go-backend/internal/http/response"
+	"go-backend/internal/store/model"
+	"go-backend/internal/store/repo"
+)
+
+func (h *Handler) nodeCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req map[string]interface{}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	notifyEvents, err := nodeNotifyEventsFromRequest(req)
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
+	name := asString(req["name"])
+	serverIP := asString(req["serverIp"])
+	if name == "" || serverIP == "" {
+		response.WriteJSON(w, response.ErrDefault("服务器名称和地址不能为空"))
+		return
+	}
+	if err := IsValidNodeAddress(serverIP); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
+
+	now := time.Now().UnixMilli()
+	inx := h.repo.NextIndex("node")
+	forwardMode := defaultNodeForwardMode(asString(req["forwardMode"]))
+	status := 0
+	if forwardMode == "nftables" {
+		status = 1
+	}
+	if err := h.repo.CreateNode(
+		name,
+		randomToken(16),
+		serverIP,
+		nullableText(asString(req["serverIpV4"])),
+		nullableText(asString(req["serverIpV6"])),
+		defaultString(asString(req["port"]), "1000-65535"),
+		nullableText(asString(req["interfaceName"])),
+		nullableText(""),
+		nullableText(strings.TrimSpace(asString(req["remark"]))),
+		nullableUnixMilli(asInt64(req["expiryTime"], 0)),
+		nullableText(normalizeNodeRenewalCycle(asString(req["renewalCycle"]))),
+		asInt(req["http"], 0),
+		asInt(req["tls"], 0),
+		asInt(req["socks"], 0),
+		now,
+		status,
+		defaultString(asString(req["tcpListenAddr"]), "[::]"),
+		defaultString(asString(req["udpListenAddr"]), "[::]"),
+		inx,
+		asInt(req["isRemote"], 0),
+		nullableText(asString(req["remoteUrl"])),
+		nullableText(asString(req["remoteToken"])),
+		nullableText(asString(req["remoteConfig"])),
+		nullableText(asString(req["extraIPs"])),
+		forwardMode,
+		notifyEvents,
+	); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	nodeID, err := h.findCreatedNodeID(name, serverIP)
+	if err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	if err := h.persistNodeSSHConfig(nodeID, req, forwardMode, now, false); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	response.WriteJSON(w, response.OKEmpty())
+}
+
+func (h *Handler) nodeUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req map[string]interface{}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	notifyEvents, err := nodeNotifyEventsFromRequest(req)
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
+	id := asInt64(req["id"], 0)
+	if id <= 0 {
+		response.WriteJSON(w, response.ErrDefault("服务器ID不能为空"))
+		return
+	}
+
+	currentStatus, currentHTTP, currentTLS, currentSocks, err := h.repo.GetNodeStatusFields(id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			response.WriteJSON(w, response.ErrDefault("服务器不存在"))
+			return
+		}
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+
+	newHTTP := asInt(req["http"], currentHTTP)
+	newTLS := asInt(req["tls"], currentTLS)
+	newSocks := asInt(req["socks"], currentSocks)
+	forwardMode := defaultNodeForwardMode(strings.TrimSpace(asString(req["forwardMode"])))
+	currentForwardMode, err := h.repo.GetNodeForwardMode(id)
+	if err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	serverIP := asString(req["serverIp"])
+	if serverIP != "" {
+		if err := IsValidNodeAddress(serverIP); err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+	}
+	usesNftablesRuntime := forwardMode == "nftables" || defaultNodeForwardMode(currentForwardMode) == "nftables"
+	if currentStatus == 1 && !usesNftablesRuntime && (newHTTP != currentHTTP || newTLS != currentTLS || newSocks != currentSocks) {
+		if err := h.applyNodeProtocolChange(id, newHTTP, newTLS, newSocks); err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+	}
+
+	now := time.Now().UnixMilli()
+	if err := h.repo.UpdateNode(id,
+		asString(req["name"]),
+		serverIP,
+		nullableText(asString(req["serverIpV4"])),
+		nullableText(asString(req["serverIpV6"])),
+		defaultString(asString(req["port"]), "1000-65535"),
+		nullableText(asString(req["interfaceName"])),
+		nullableText(asString(req["extraIPs"])),
+		nullableText(strings.TrimSpace(asString(req["remark"]))),
+		nullableUnixMilli(asInt64(req["expiryTime"], 0)),
+		nullableText(normalizeNodeRenewalCycle(asString(req["renewalCycle"]))),
+		forwardMode,
+		newHTTP,
+		newTLS,
+		newSocks,
+		defaultString(asString(req["tcpListenAddr"]), "[::]"),
+		defaultString(asString(req["udpListenAddr"]), "[::]"),
+		now,
+		notifyEvents,
+	); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	if err := h.persistNodeSSHConfig(id, req, forwardMode, now, true); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	if forwardMode == "nftables" && currentStatus != 1 {
+		if err := h.repo.UpdateNodeStatus(id, 1); err != nil {
+			response.WriteJSON(w, response.Err(-2, err.Error()))
+			return
+		}
+	}
+	response.WriteJSON(w, response.OKEmpty())
+}
+
+func (h *Handler) findCreatedNodeID(name, serverIP string) (int64, error) {
+	if h == nil || h.repo == nil {
+		return 0, errors.New("handler not initialized")
+	}
+	nodes, err := h.repo.ListNodes()
+	if err != nil {
+		return 0, err
+	}
+	for i := len(nodes) - 1; i >= 0; i-- {
+		item := nodes[i]
+		if asString(item["name"]) != name {
+			continue
+		}
+		if asString(item["serverIp"]) != serverIP {
+			continue
+		}
+		if nodeID := asInt64(item["id"], 0); nodeID > 0 {
+			return nodeID, nil
+		}
+	}
+	return 0, errors.New("服务器创建成功，但未能查询到服务器记录")
+}
+
+func (h *Handler) persistNodeSSHConfig(nodeID int64, req map[string]interface{}, forwardMode string, now int64, preserveSecrets bool) error {
+	if h == nil || h.repo == nil {
+		return errors.New("handler not initialized")
+	}
+	if nodeID <= 0 {
+		return errors.New("服务器ID不能为空")
+	}
+	if forwardMode != "nftables" {
+		return h.repo.DeleteNodeSSHConfig(nodeID)
+	}
+	cfgMap := asMap(req["sshConfig"])
+	host := strings.TrimSpace(asString(cfgMap["host"]))
+	if host == "" {
+		host = strings.TrimSpace(asString(req["serverIp"]))
+	}
+	port := asInt(cfgMap["port"], 22)
+	username := strings.TrimSpace(asString(cfgMap["username"]))
+	authType := strings.TrimSpace(asString(cfgMap["authType"]))
+	password := asString(cfgMap["password"])
+	privateKey := asString(cfgMap["privateKey"])
+	passphrase := asString(cfgMap["passphrase"])
+	sudoMode := strings.TrimSpace(asString(cfgMap["sudoMode"]))
+
+	if preserveSecrets {
+		existing, err := h.repo.GetNodeSSHConfig(nodeID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if existing != nil {
+			if host == "" {
+				host = strings.TrimSpace(existing.Host)
+			}
+			if port <= 0 {
+				port = existing.Port
+			}
+			if username == "" {
+				username = strings.TrimSpace(existing.Username)
+			}
+			if authType == "" {
+				authType = strings.TrimSpace(existing.AuthType)
+			}
+			if strings.TrimSpace(password) == "" && existing.Password.Valid {
+				password = existing.Password.String
+			}
+			if strings.TrimSpace(privateKey) == "" && existing.PrivateKey.Valid {
+				privateKey = existing.PrivateKey.String
+			}
+			if strings.TrimSpace(passphrase) == "" && existing.Passphrase.Valid {
+				passphrase = existing.Passphrase.String
+			}
+			if sudoMode == "" {
+				sudoMode = strings.TrimSpace(existing.SudoMode)
+			}
+		}
+	}
+
+	if host == "" || username == "" {
+		return errors.New("nftables 服务器 SSH 配置不完整")
+	}
+	if port <= 0 || port > 65535 {
+		return errors.New("nftables 服务器 SSH 端口无效")
+	}
+
+	authType = strings.ToLower(authType)
+	switch authType {
+	case "password":
+		if strings.TrimSpace(password) == "" {
+			return errors.New("nftables 服务器 SSH 密码不能为空")
+		}
+		privateKey = ""
+	case "private_key", "":
+		authType = "private_key"
+		if strings.TrimSpace(privateKey) == "" {
+			return errors.New("nftables 服务器 SSH 私钥不能为空")
+		}
+		password = ""
+	default:
+		return errors.New("nftables 服务器 SSH 认证方式无效")
+	}
+
+	switch strings.ToLower(sudoMode) {
+	case "", "none":
+		sudoMode = "none"
+	case "sudo", "sudo_su":
+	default:
+		return errors.New("nftables 服务器 sudo 模式无效")
+	}
+
+	return h.repo.UpsertNodeSSHConfig(nodeID, repo.NftSSHConfigInput{
+		Host:       host,
+		Port:       port,
+		Username:   username,
+		AuthType:   authType,
+		Password:   password,
+		PrivateKey: privateKey,
+		Passphrase: passphrase,
+		SudoMode:   sudoMode,
+	}, now)
+}
+
+func (h *Handler) nodeDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req map[string]interface{}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	id := asInt64(req["id"], 0)
+	if id <= 0 {
+		response.WriteJSON(w, response.ErrDefault("id不能为空"))
+		return
+	}
+	// Without the flag (older API clients) only the panel record is removed.
+	result, err := h.deleteNode(id, asBool(req["uninstall"], false))
+	if err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	response.WriteJSON(w, response.OK(result))
+}
+
+func (h *Handler) nodeInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+
+	var req struct {
+		ID         int64  `json:"id"`
+		Channel    string `json:"channel"`
+		Mode       string `json:"mode"`
+		Privileged bool   `json:"privileged"`
+	}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	if req.ID <= 0 {
+		response.WriteJSON(w, response.ErrDefault("参数错误"))
+		return
+	}
+
+	channel := normalizeReleaseChannel(req.Channel)
+	version, err := resolveLatestReleaseByChannel(channel)
+	if err != nil {
+		response.WriteJSON(w, response.Err(-2, fmt.Sprintf("获取最新%s失败: %v", releaseChannelLabel(channel), err)))
+		return
+	}
+
+	secret, err := h.repo.GetNodeSecret(req.ID)
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault("服务器不存在"))
+		return
+	}
+	panelAddr, err := h.repo.GetViteConfigValue("ip")
+	if err != nil {
+		if err == sql.ErrNoRows {
+			response.WriteJSON(w, response.ErrDefault("请先前往网站配置中设置ip"))
+			return
+		}
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	enabled, proxyURL := h.getGithubProxyConfig()
+
+	var cmd string
+	address := processServerAddress(panelAddr)
+	if enabled {
+		cmd = fmt.Sprintf("curl -L %s/https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && PROXY_ENABLED=true PROXY_URL=%s VERSION=%s ./install.sh -a %s -s %s",
+			proxyURL, githubRepo, version, proxyURL, version, address, secret)
+	} else {
+		cmd = fmt.Sprintf("curl -L https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && PROXY_ENABLED=false VERSION=%s ./install.sh -a %s -s %s",
+			githubRepo, version, version, address, secret)
+	}
+	switch strings.ToLower(strings.TrimSpace(req.Mode)) {
+	case "docker":
+		response.WriteJSON(w, response.OK(dockerInstallCommand(version, address, secret, req.Privileged)))
+	case "docker-compose":
+		response.WriteJSON(w, response.OK(dockerComposeInstallCommand(version, address, secret, req.Privileged)))
+	case "all":
+		response.WriteJSON(w, response.OK(nodeInstallCommands{
+			Script:                  cmd,
+			Docker:                  dockerInstallCommand(version, address, secret, false),
+			DockerPrivileged:        dockerInstallCommand(version, address, secret, true),
+			DockerCompose:           dockerComposeInstallCommand(version, address, secret, false),
+			DockerComposePrivileged: dockerComposeInstallCommand(version, address, secret, true),
+		}))
+	default:
+		response.WriteJSON(w, response.OK(cmd))
+	}
+}
+
+type nodeInstallCommands struct {
+	Script                  string `json:"script"`
+	Docker                  string `json:"docker"`
+	DockerPrivileged        string `json:"dockerPrivileged"`
+	DockerCompose           string `json:"dockerCompose"`
+	DockerComposePrivileged string `json:"dockerComposePrivileged"`
+}
+
+// legacyImageOwners are other owners FLYX images were published under (the
+// repository was briefly under seren233 for 3.9.0): agents running one are ours.
+var legacyImageOwners = []string{"seren233"}
+
+// flyxImagePattern is a shell case pattern matching this project's images:
+// "ghcr.io/<owner>/*|ghcr.io/seren233/*".
+func flyxImagePattern(owner string) string {
+	patterns := []string{"ghcr.io/" + owner + "/*"}
+	for _, legacy := range legacyImageOwners {
+		if legacy != owner {
+			patterns = append(patterns, "ghcr.io/"+legacy+"/*")
+		}
+	}
+	return strings.Join(patterns, "|")
+}
+
+// dockerInstallCommand runs the agent image published with the release.
+// Host networking lets forwards listen on any port, NET_ADMIN is for the
+// nftables counters and whitelists, and the restart policy brings the
+// container back after a one-click upgrade. An existing container of the
+// same name is replaced, so the command also reinstalls. flux-panel and FLVX
+// also run a flux_agent container; only one running our image is taken over.
+func dockerInstallCommand(version, panelAddr, secret string, privileged bool) string {
+	owner := strings.ToLower(strings.SplitN(githubRepo, "/", 2)[0])
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+	privilegedFlag := ""
+	if privileged {
+		privilegedFlag = " --privileged"
+	}
+	script := fmt.Sprintf(`set -eu
+name=flyx-agent
+data=/etc/flyx-agent
+destination=/etc/flyx-agent
+current=$(docker inspect -f '{{.Name}}' flyx-agent 2>/dev/null || true)
+legacy=$(docker inspect -f '{{.Config.Image}}' flux_agent 2>/dev/null || true)
+case "$legacy" in %s) ;; *) legacy= ;; esac
+if [ -n "$current" ] && [ -n "$legacy" ]; then
+  echo '同时发现新旧节点容器，请先确认要重装的实例' >&2
+  exit 1
+fi
+if [ -n "$legacy" ]; then name=flux_agent; destination=/etc/flux_agent; fi
+if [ -n "$current$legacy" ]; then
+  data=$(docker inspect -f '{{range .Mounts}}{{if or (eq .Destination "/etc/flyx-agent") (eq .Destination "/etc/flux_agent")}}{{if eq .Type "volume"}}{{.Name}}{{else}}{{.Source}}{{end}}{{println}}{{end}}{{end}}' "$name")
+  case "$data" in ''|*'
+'*) echo '无法唯一识别节点数据挂载，重装已停止' >&2; exit 1;; esac
+fi
+image=%s
+if ! docker pull "$image"; then
+  image=%s
+  docker pull "$image"
+  destination=/etc/flux_agent
+fi
+if [ -n "$current$legacy" ]; then docker rm -f "$name"; fi
+docker run -d --name "$name" --restart unless-stopped --network host --cap-add NET_ADMIN%s \
+  -v "$data:$destination" -e FLYX_AGENT_DATA_DIR="$destination" \
+  -e FLYX_AGENT_ADDR=%s -e FLUX_AGENT_ADDR=%s \
+  -e FLYX_AGENT_SECRET=%s -e FLUX_AGENT_SECRET=%s "$image"`,
+		flyxImagePattern(owner), quote("ghcr.io/"+owner+"/flyx-agent:"+version), quote("ghcr.io/"+owner+"/flux-agent:"+version), privilegedFlag, quote(panelAddr), quote(panelAddr), quote(secret), quote(secret))
+	return "sh -c " + quote(script)
+}
+
+// dockerComposeInstallCommand keeps the compose file under a stable directory
+// so reinstalling and changing the privileged switch only rewrites one file.
+func dockerComposeInstallCommand(version, panelAddr, secret string, privileged bool) string {
+	owner := strings.ToLower(strings.SplitN(githubRepo, "/", 2)[0])
+	privilegedLine := ""
+	if privileged {
+		privilegedLine = "    privileged: true\n"
+	}
+	// Compose interpolates "$" in values; doubling it keeps the secret intact.
+	value := func(v string) string { return strconv.Quote(strings.ReplaceAll(v, "$", "$$")) }
+	return fmt.Sprintf(`case "$(docker inspect -f '{{.Config.Image}}' flux_agent 2>/dev/null || true)" in %s)
+  echo '检测到旧版 flux_agent 容器；请先使用 Docker 安装命令升级，或停止并移除旧容器后再执行。' >&2
+  exit 1;;
+esac
+mkdir -p /opt/docker/flyx-agent
+# The file holds the node secret: create it unreadable to other users.
+(umask 077 && cat > /opt/docker/flyx-agent/docker-compose.yaml) <<'EOF'
+services:
+  flyx-agent:
+    image: ghcr.io/%s/flyx-agent:%s
+    container_name: flyx-agent
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+%s    volumes:
+      - /etc/flyx-agent:/etc/flyx-agent
+    environment:
+      FLYX_AGENT_DATA_DIR: "/etc/flyx-agent"
+      FLYX_AGENT_ADDR: %s
+      FLUX_AGENT_ADDR: %s
+      FLYX_AGENT_SECRET: %s
+      FLUX_AGENT_SECRET: %s
+EOF
+chmod 600 /opt/docker/flyx-agent/docker-compose.yaml
+if docker container inspect flyx-agent >/dev/null 2>&1; then
+  docker rm -f flyx-agent >/dev/null
+fi
+docker compose -f /opt/docker/flyx-agent/docker-compose.yaml up -d`,
+		flyxImagePattern(owner), owner, version, privilegedLine, value(panelAddr), value(panelAddr), value(secret), value(secret))
+}
+
+func (h *Handler) nodeUpdateOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req struct {
+		Nodes []struct {
+			ID  int64 `json:"id"`
+			Inx int   `json:"inx"`
+		} `json:"nodes"`
+	}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	for _, n := range req.Nodes {
+		h.repo.UpdateNodeOrder(n.ID, n.Inx, time.Now().UnixMilli())
+	}
+	response.WriteJSON(w, response.OKEmpty())
+}
+
+func (h *Handler) nodeDismissExpiryReminder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	if req.ID <= 0 {
+		response.WriteJSON(w, response.ErrDefault("服务器ID不能为空"))
+		return
+	}
+	if err := h.repo.UpdateNodeExpiryReminderDismissed(req.ID, 1); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	response.WriteJSON(w, response.OKEmpty())
+}
+
+func (h *Handler) nodeBatchDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req map[string]interface{}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	var ids []int64
+	for _, x := range asAnySlice(req["ids"]) {
+		if id := asInt64(x, 0); id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		response.WriteJSON(w, response.ErrDefault("ids不能为空"))
+		return
+	}
+	uninstall := asBool(req["uninstall"], false)
+	summary := nodeBatchDeleteResult{}
+	for _, id := range ids {
+		result, err := h.deleteNode(id, uninstall)
+		if err != nil {
+			summary.Failed++
+			continue
+		}
+		summary.add(result)
+	}
+	response.WriteJSON(w, response.OK(summary))
+}
+
+func (h *Handler) nodeCheckStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	items, err := h.repo.ListNodes()
+	if err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	for _, item := range items {
+		item["notifyEvents"] = parseNodeNotifyEvents(asString(item["notifyEvents"]))
+	}
+	response.WriteJSON(w, response.OK(items))
+}
+
+func (h *Handler) deleteNodeByID(id int64) error {
+	return h.repo.DeleteNodeCascade(id)
+}
+
+// Agent uninstall outcomes reported to the panel when a server is deleted.
+const (
+	nodeUninstallDone        = "done"        // the agent confirmed and is removing itself
+	nodeUninstallPending     = "pending"     // offline: it uninstalls when it reconnects
+	nodeUninstallUnsupported = "unsupported" // the agent is too old to uninstall itself
+)
+
+type nodeDeleteResult struct {
+	Uninstall string   `json:"uninstall,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
+}
+
+type nodeBatchDeleteResult struct {
+	Deleted     int      `json:"deleted"`
+	Failed      int      `json:"failed"`
+	Uninstalled int      `json:"uninstalled"`
+	Pending     int      `json:"pending"`
+	Unsupported int      `json:"unsupported"`
+	Warnings    []string `json:"warnings,omitempty"`
+}
+
+func (s *nodeBatchDeleteResult) add(r nodeDeleteResult) {
+	s.Deleted++
+	switch r.Uninstall {
+	case nodeUninstallDone:
+		s.Uninstalled++
+	case nodeUninstallPending:
+		s.Pending++
+	case nodeUninstallUnsupported:
+		s.Unsupported++
+	}
+	s.Warnings = append(s.Warnings, r.Warnings...)
+}
+
+// deleteNode uninstalls the agent first, when asked, while the server record
+// and its SSH configuration still exist.
+func (h *Handler) deleteNode(id int64, uninstall bool) (nodeDeleteResult, error) {
+	var result nodeDeleteResult
+	if uninstall {
+		node, err := h.repo.GetNodeByID(id)
+		if err != nil {
+			return result, err
+		}
+		if node != nil {
+			result = h.uninstallNodeAgent(node)
+		}
+	}
+	return result, h.deleteNodeByID(id)
+}
+
+func (h *Handler) uninstallNodeAgent(node *model.Node) nodeDeleteResult {
+	var result nodeDeleteResult
+	warn := func(format string, args ...interface{}) {
+		result.Warnings = append(result.Warnings, node.Name+"："+fmt.Sprintf(format, args...))
+	}
+	// nftables forwards are applied over SSH by the panel, not by the agent.
+	if _, err := h.repo.GetNodeSSHConfig(node.ID); err == nil {
+		if err := h.clearNftablesNode(node.ID); err != nil {
+			warn("清理 nftables 转发规则失败：%v", err)
+		}
+	}
+	if h.wsServer != nil && h.wsServer.IsNodeOnline(node.ID) {
+		_, err := h.wsServer.SendCommand(node.ID, "UninstallAgent", nil, 15*time.Second)
+		if err == nil {
+			result.Uninstall = nodeUninstallDone
+			return result
+		}
+		if strings.Contains(err.Error(), "未知命令") {
+			warn("agent 版本过旧，不支持自动卸载，请在服务器上手动卸载")
+			result.Uninstall = nodeUninstallUnsupported
+			return result
+		}
+		warn("卸载命令未确认（%v），将在 agent 重新连接时卸载", err)
+	}
+	if err := h.repo.AddNodeUninstall(node.Secret, node.Name, time.Now()); err != nil {
+		warn("记录待卸载失败：%v，请在服务器上手动卸载", err)
+		return result
+	}
+	result.Uninstall = nodeUninstallPending
+	return result
+}
+
+func normalizeNodeRenewalCycle(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "month", "quarter", "year":
+		return strings.ToLower(strings.TrimSpace(v))
+	default:
+		return ""
+	}
+}
+
+func defaultNodeForwardMode(mode string) string {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "nftables":
+		return "nftables"
+	default:
+		return "agent"
+	}
+}
