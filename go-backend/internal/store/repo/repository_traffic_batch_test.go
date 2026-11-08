@@ -68,3 +68,44 @@ func TestNodeTrafficUpgradeUsesLastSavedRawSample(t *testing.T) {
 		t.Fatalf("upgrade lost the saved baseline: %v", totals)
 	}
 }
+
+// A counter that drops while the node stays up (a container's interface
+// went away) adds nothing; a reboot counts what was sent since boot.
+func TestNodeTrafficCounterDropsAndReboots(t *testing.T) {
+	r, err := Open(filepath.Join(t.TempDir(), "drops.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	const day = int64(86400)
+	up := 239 * day // seconds the node has been up at the first sample
+	t0 := int64(1_800_000_000_000)
+	sample := func(sec, uptime, in, out int64) *model.NodeMetric {
+		return &model.NodeMetric{NodeID: 3, Timestamp: t0 + sec*1000, Uptime: uptime, NetInBytes: in, NetOutBytes: out}
+	}
+	const tb = int64(1) << 40
+	steps := [][]*model.NodeMetric{
+		{sample(0, up, 10*tb, 20*tb)},
+		// +1000 / +2000 bytes.
+		{sample(60, up+60, 10*tb+1000, 20*tb+2000)},
+		// A veth with 1 TB went away: the sum drops, the node is still up.
+		{sample(120, up+120, 9*tb+1500, 19*tb+2500)},
+		// +500 / +500 after the drop.
+		{sample(180, up+180, 9*tb+2000, 19*tb+3000)},
+		// Rebooted, then offline a day: uptime is larger than before the
+		// first sample would allow, but the boot time moved.
+		{sample(180+2*day, day, 7000, 8000)},
+	}
+	for i, batch := range steps {
+		if err := r.SaveNodeMetricBatch("drops", int64(i+1), batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	totals, err := r.NodeTrafficSince(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := totals[3], [2]int64{1000 + 500 + 7000, 2000 + 500 + 8000}; got != want {
+		t.Fatalf("traffic %v, want %v (a dropped interface must not add its total again)", got, want)
+	}
+}

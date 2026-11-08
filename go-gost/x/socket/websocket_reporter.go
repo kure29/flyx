@@ -1771,6 +1771,29 @@ func getUptime() uint64 {
 	return uptime
 }
 
+// virtualInterfacePrefixes name interfaces whose traffic also crosses a real
+// one (containers, bridges, tunnels, VPNs) or never leaves the host. Counting
+// them would count the same bytes two or three times, and when one goes away
+// (a container restarts) the sum would drop.
+var virtualInterfacePrefixes = []string{
+	"lo", "docker", "veth", "br-", "virbr", "vnet", "cni", "flannel", "cali",
+	"cilium", "vxlan", "kube", "podman", "lxcbr", "lxdbr", "tun", "tap", "wg",
+	"warp", "tailscale", "zt", "ifb", "dummy", "teql", "sit", "ip6tnl", "gre",
+	"erspan", "ipip", "nlmon",
+}
+
+// virtualInterface reports whether an interface is left out of the node's
+// traffic: only real network cards count, as the provider bills them. Inside
+// an LXC container the card is a veth named eth0, which still counts.
+func virtualInterface(name string) bool {
+	for _, p := range virtualInterfacePrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // getNetworkStats 获取网络统计信息
 func getNetworkStats() NetworkStats {
 	var stats NetworkStats
@@ -1782,7 +1805,7 @@ func getNetworkStats() NetworkStats {
 	}
 
 	for _, io := range ioCounters {
-		if io.Name == "lo" || strings.HasPrefix(io.Name, "lo") {
+		if virtualInterface(io.Name) {
 			continue
 		}
 		stats.BytesReceived += io.BytesRecv
