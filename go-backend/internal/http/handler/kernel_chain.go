@@ -105,8 +105,13 @@ func (h *Handler) resolveTarget(row model.NodeInbound, targetID int64, what stri
 	return &e, nil
 }
 
-// inboundVia resolves the chained outbound of an inbound for rendering.
+// inboundVia resolves the chained outbound of an inbound for rendering. A
+// default exit of 拦截 is an empty endpoint, like a deleted target: the
+// kernel drops what no 分流 rule sent elsewhere.
 func (h *Handler) inboundVia(row model.NodeInbound) (*kernel.Endpoint, error) {
+	if row.DefaultBlock == 1 {
+		return &kernel.Endpoint{}, nil
+	}
 	if row.OutboundID == 0 {
 		return nil, nil
 	}
@@ -184,7 +189,7 @@ func (h *Handler) validateChainFor(row model.NodeInbound, kernelType, version st
 			return err
 		}
 	}
-	if kernelType == kernel.TypeSnell && strings.TrimSpace(row.SplitRules) != "" {
+	if kernelType == kernel.TypeSnell && (strings.TrimSpace(row.SplitRules) != "" || row.DefaultBlock == 1) {
 		return errors.New("Snell 内核不支持分流")
 	}
 	return nil
@@ -336,14 +341,24 @@ func changedTargets(before, after []int64) []int64 {
 }
 
 // setInboundRouting sets an inbound's default exit and 分流 rules and checks
-// that its kernel can reach every target.
-func (h *Handler) setInboundRouting(row *model.NodeInbound, kernelType, version string, outboundID int64, rules []kernel.SplitRule) error {
+// that its kernel can reach every target. defaultBlock (nil keeps the stored
+// choice) makes the default exit 拦截, which has no outbound.
+func (h *Handler) setInboundRouting(row *model.NodeInbound, kernelType, version string, outboundID int64, rules []kernel.SplitRule, defaultBlock *bool) error {
 	if outboundID < 0 {
+		outboundID = 0
+	}
+	if defaultBlock != nil {
+		row.DefaultBlock = boolToInt(*defaultBlock)
+	}
+	if row.DefaultBlock == 1 {
 		outboundID = 0
 	}
 	split, err := kernel.NormalizeSplitRules(rules)
 	if err != nil {
 		return err
+	}
+	if row.DefaultBlock == 1 && !splitLetsThrough(split) {
+		return errors.New("默认去向是阻断时，至少要有一条直连或走节点的分流规则，否则所有流量都会被丢弃")
 	}
 	row.OutboundID = outboundID
 	row.SplitRules = ""
@@ -352,6 +367,16 @@ func (h *Handler) setInboundRouting(row *model.NodeInbound, kernelType, version 
 		row.SplitRules = string(raw)
 	}
 	return h.validateChainFor(*row, kernelType, version)
+}
+
+// splitLetsThrough reports whether a rule sends traffic out (not 阻断).
+func splitLetsThrough(rules []kernel.SplitRule) bool {
+	for _, r := range rules {
+		if r.Action != kernel.SplitBlock {
+			return true
+		}
+	}
+	return false
 }
 
 // applyChangedTargets re-applies the whitelists of targets the inbound
@@ -374,6 +399,7 @@ func (h *Handler) inboundSplitSave(w http.ResponseWriter, r *http.Request) {
 		ID                 int64              `json:"id"`
 		OutboundID         int64              `json:"outboundId"`
 		SplitRules         []kernel.SplitRule `json:"splitRules"`
+		DefaultBlock       *bool              `json:"defaultBlock"`
 		OutboundIPStrategy *string            `json:"outboundIpStrategy"`
 	}
 	if err := decodeJSON(r.Body, &req); err != nil {
@@ -407,7 +433,7 @@ func (h *Handler) inboundSplitSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prevTargets := outboundTargets(*row)
-	if err := h.setInboundRouting(row, k.KernelType, k.Version, req.OutboundID, req.SplitRules); err != nil {
+	if err := h.setInboundRouting(row, k.KernelType, k.Version, req.OutboundID, req.SplitRules, req.DefaultBlock); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}

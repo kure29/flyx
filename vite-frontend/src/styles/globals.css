@@ -620,3 +620,14 @@ body {
 .dark .h5-shell .phone-sticky-bar {
   background-color: var(--background);
 }
+
+/* Country flags: Windows has no flag emoji, so the Twemoji Country Flags
+   font is loaded there (utils/flags.ts) and named first, before Tailwind's
+   default stack. It holds only the flags; all other text falls through to
+   the usual fonts, and elsewhere the font is never loaded. */
+html {
+  font-family:
+    "Twemoji Country Flags", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+}

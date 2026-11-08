@@ -10,9 +10,11 @@ import "@/themes/loader";
 import { initThemeSystem } from "@/themes/registry";
 import { ErrorBoundary } from "@/components/error-boundary";
 import "@/styles/globals.css";
+import { loadFlagFont } from "@/utils/flags";
 
 // The panel's look (colour tokens, light/dark) as this browser last chose it.
 initThemeSystem();
+loadFlagFont();
 
 // The charts (recharts) load only on a node's page.
 const NodeDetail = lazy(() => import("./node-detail"));

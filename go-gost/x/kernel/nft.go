@@ -45,7 +45,7 @@ var nftRunner = func(ctx context.Context, stdin string, args ...string) ([]byte,
 // errNftDenied: nft is installed but the agent may not use it, as in
 // unprivileged LXC/OpenVZ containers. Permissions do not change while the
 // agent runs, so this is probed once.
-var errNftDenied = errors.New("本机没有 nftables 权限（常见于 LXC、OpenVZ 等容器），无法使用流量统计、入站白名单和端口跳跃")
+var errNftDenied = errors.New("本机没有 nftables 权限（常见于 LXC、OpenVZ 等容器），无法使用流量统计、入站白名单、端口跳跃和限速")
 
 var nftProbe struct {
 	sync.Mutex
@@ -214,6 +214,36 @@ func expandGuards(ports []Port) map[int64]allowGuard {
 	return guards
 }
 
+// rateLimit is one inbound's speed limits in Mbit/s (0 = none).
+type rateLimit struct {
+	Up, Down int
+}
+
+// expandLimits collects the speed limits keyed by inbound.
+func expandLimits(ports []Port) map[int64]rateLimit {
+	limits := make(map[int64]rateLimit)
+	for _, p := range ports {
+		if p.LimitUpMbps <= 0 && p.LimitDownMbps <= 0 {
+			continue
+		}
+		l := limits[p.InboundID]
+		l.Up = max(l.Up, max(p.LimitUpMbps, 0))
+		l.Down = max(l.Down, max(p.LimitDownMbps, 0))
+		limits[p.InboundID] = l
+	}
+	return limits
+}
+
+// limitSpec renders a speed limit as an nft limit object body. The bucket
+// holds about 0.2 s of traffic (at least 64 KiB): enough for TCP to ramp up
+// against a policer on long-distance paths without letting bursts through
+// for long.
+func limitSpec(mbps int) string {
+	rate := int64(mbps) * 125000 // bytes per second
+	burst := max(rate/5, 65536)
+	return fmt.Sprintf("rate over %d bytes/second burst %d bytes", rate, burst)
+}
+
 func writeSet(b *strings.Builder, name, typ string, elems []string) {
 	fmt.Fprintf(b, "\tset %s {\n\t\ttype %s\n\t\tflags interval\n\t\tauto-merge\n", name, typ)
 	if len(elems) > 0 {
@@ -229,7 +259,14 @@ func writeSet(b *strings.Builder, name, typ string, elems []string) {
 // Hop ranges are redirected before filtering, so counters and whitelists see
 // the inbound port. Only traffic addressed to this host is redirected; the
 // output hook covers clients running on the node itself.
-func nftScript(rules []counterRule, guards map[int64]allowGuard, hops []hopRule, users []int64) string {
+//
+// Speed limits are named limit objects, one per direction and inbound, so the
+// TCP and UDP rules of an inbound share one budget. Packets over it are
+// dropped (policing; TCP backs off), before they are counted: upload in the
+// input chain by destination port, download in the output chain by source
+// port. Replies to port-hopped packets still carry the inbound port there
+// (NAT is undone later, in postrouting), so hopping is limited too.
+func nftScript(rules []counterRule, guards map[int64]allowGuard, hops []hopRule, users []int64, limits map[int64]rateLimit) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "table inet %s {}\n", nftTable)
 	fmt.Fprintf(&b, "delete table inet %s\n", nftTable)
@@ -244,6 +281,19 @@ func nftScript(rules []counterRule, guards map[int64]allowGuard, hops []hopRule,
 	for _, id := range users {
 		fmt.Fprintf(&b, "\tcounter %s {}\n", userCounterName("up", id))
 		fmt.Fprintf(&b, "\tcounter %s {}\n", userCounterName("down", id))
+	}
+	limited := make([]int64, 0, len(limits))
+	for id := range limits {
+		limited = append(limited, id)
+	}
+	sort.Slice(limited, func(i, j int) bool { return limited[i] < limited[j] })
+	for _, id := range limited {
+		if l := limits[id]; l.Up > 0 {
+			fmt.Fprintf(&b, "\tlimit rl_up_%d { %s }\n", id, limitSpec(l.Up))
+		}
+		if l := limits[id]; l.Down > 0 {
+			fmt.Fprintf(&b, "\tlimit rl_down_%d { %s }\n", id, limitSpec(l.Down))
+		}
 	}
 	guarded := make([]int64, 0, len(guards))
 	for id := range guards {
@@ -263,12 +313,22 @@ func nftScript(rules []counterRule, guards map[int64]allowGuard, hops []hopRule,
 		fmt.Fprintf(&b, "\t\tmeta nfproto ipv6 %s dport %d ip6 saddr != @allow6_%d drop\n", r.Proto, r.Port, r.InboundID)
 	}
 	for _, r := range rules {
+		if limits[r.InboundID].Up > 0 {
+			fmt.Fprintf(&b, "\t\t%s dport %d limit name \"rl_up_%d\" drop\n", r.Proto, r.Port, r.InboundID)
+		}
+	}
+	for _, r := range rules {
 		fmt.Fprintf(&b, "\t\t%s dport %d counter name %s\n", r.Proto, r.Port, r.name("in"))
 	}
 	for _, id := range users {
 		fmt.Fprintf(&b, "\t\tct mark 0x%08x counter name %s\n", userMarkBase|id, userCounterName("down", id))
 	}
 	b.WriteString("\t}\n\tchain output {\n\t\ttype filter hook output priority -150; policy accept;\n")
+	for _, r := range rules {
+		if limits[r.InboundID].Down > 0 {
+			fmt.Fprintf(&b, "\t\t%s sport %d limit name \"rl_down_%d\" drop\n", r.Proto, r.Port, r.InboundID)
+		}
+	}
 	for _, r := range rules {
 		fmt.Fprintf(&b, "\t\t%s sport %d counter name %s\n", r.Proto, r.Port, r.name("out"))
 	}
@@ -405,7 +465,7 @@ func (n *nftCounters) sync(ports []Port, users []int64) error {
 	}
 	rules := expandPorts(ports)
 	users = sortedUsers(users)
-	script := nftScript(rules, expandGuards(ports), expandHops(ports), users)
+	script := nftScript(rules, expandGuards(ports), expandHops(ports), users, expandLimits(ports))
 	if table == legacyNftTable {
 		script = strings.ReplaceAll(script, nftTable, legacyNftTable)
 	}

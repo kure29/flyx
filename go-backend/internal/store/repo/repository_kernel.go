@@ -185,6 +185,9 @@ func (r *Repository) SaveNodeInbound(in *model.NodeInbound) error {
 		"enabled":               in.Enabled,
 		"outbound_id":           in.OutboundID,
 		"split_rules":           in.SplitRules,
+		"default_block":         in.DefaultBlock,
+		"rate_up_mbps":          in.RateUpMbps,
+		"rate_down_mbps":        in.RateDownMbps,
 		"outbound_ip_strategy":  in.OutboundIPStrategy,
 		"updated_time":          in.UpdatedTime,
 	}).Error

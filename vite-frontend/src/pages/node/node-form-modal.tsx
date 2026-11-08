@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Input } from "@/shadcn-bridge/heroui/input";
@@ -11,12 +11,11 @@ import {
   ModalFooter,
 } from "@/shadcn-bridge/heroui/modal";
 import { Switch } from "@/shadcn-bridge/heroui/switch";
-import { Alert } from "@/shadcn-bridge/heroui/alert";
 import { Accordion, AccordionItem } from "@/shadcn-bridge/heroui/accordion";
 import { Select, SelectItem } from "@/shadcn-bridge/heroui/select";
-import { type NodeRenewalCycle } from "@/pages/node/renewal";
 import { nodeRegionLabel, nodeRegionOptions } from "@/pages/node/region";
-import { NodeForm } from "@/pages/node/types";
+import { NodeForm, TrafficCalc } from "@/pages/node/types";
+import { BillingFields, type BillingValue } from "@/pages/node/billing-fields";
 import { NODE_NOTIFY_EVENTS } from "@/utils/notification-events";
 
 export interface NodeFormModalProps {
@@ -24,6 +23,8 @@ export interface NodeFormModalProps {
   dialogVisible: boolean;
   errors: Record<string, string>;
   form: NodeForm;
+  /** Groups other servers use, offered as suggestions. */
+  groups: string[];
   handleSubmit: () => Promise<void>;
   protocolControlsDisabled: boolean;
   protocolControlsReason: string;
@@ -32,8 +33,68 @@ export interface NodeFormModalProps {
   submitLoading: boolean;
 }
 
-// Select keys can't be empty strings; this one stands for "detect".
+// Select keys can't be empty strings; these stand for "detect" / "up + down".
 const REGION_AUTO = "auto";
+const CALC_SUM = "sum";
+
+const TRAFFIC_CALCS: Array<[TrafficCalc, string, string]> = [
+  ["", "上下行相加", "上传和下载都算"],
+  ["max", "取较大值", "上传、下载取多的一边"],
+  ["up", "只算上行", "只算服务器发出的流量"],
+  ["down", "只算下行", "只算服务器收到的流量"],
+];
+
+/** A titled part of the form; the first has no rule above it. */
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3 border-t border-divider pt-5 first:border-t-0 first:pt-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {hint && <p className="text-xs text-default-400">{hint}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A switch with its label and a line of help, in a bordered tile. */
+function SwitchTile({
+  label,
+  help,
+  isSelected,
+  isDisabled,
+  onChange,
+}: {
+  label: string;
+  help: string;
+  isSelected: boolean;
+  isDisabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-divider px-3.5 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-default-500">{help}</p>
+      </div>
+      <Switch
+        aria-label={label}
+        isDisabled={isDisabled}
+        isSelected={isSelected}
+        size="sm"
+        onValueChange={onChange}
+      />
+    </div>
+  );
+}
 
 /** Create or edit a node. */
 export function NodeFormModal({
@@ -41,6 +102,7 @@ export function NodeFormModal({
   dialogVisible,
   errors,
   form,
+  groups,
   handleSubmit,
   protocolControlsDisabled,
   protocolControlsReason,
@@ -48,12 +110,22 @@ export function NodeFormModal({
   setForm,
   submitLoading,
 }: NodeFormModalProps) {
+  const set = <K extends keyof NodeForm>(key: K, value: NodeForm[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
   const regionOptionLabel = (code: string) =>
     code !== REGION_AUTO
       ? nodeRegionLabel(code)
       : form.regionDetected
-        ? `自动识别（${nodeRegionLabel(form.regionDetected)}）`
+        ? `自动（${form.regionDetected}）`
         : "自动识别";
+  const offlineNotify = form.notifyEvents.node_offline !== false;
+  const groupSuggestions = groups.filter((g) => g && g !== form.group.trim());
+  const billing: BillingValue = {
+    price: form.price,
+    currency: form.currency,
+    renewalCycle: form.renewalCycle,
+    expiryTime: form.expiryTime,
+  };
 
   return (
     <Modal
@@ -63,230 +135,430 @@ export function NodeFormModal({
       isOpen={dialogVisible}
       placement="center"
       scrollBehavior="inside"
-      size="2xl"
+      size="4xl"
       onClose={() => setDialogVisible(false)}
     >
       <ModalContent>
         <ModalHeader>{dialogTitle}</ModalHeader>
         <ModalBody>
-          <div className="space-y-4">
-            <Input
-              errorMessage={errors.name}
-              isInvalid={!!errors.name}
-              label="服务器名称"
-              placeholder="请输入服务器名称"
-              value={form.name}
-              variant="bordered"
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, name: e.target.value }))
-              }
-            />
+          <div className="space-y-5">
+            <Section title="基本">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  errorMessage={errors.name}
+                  isInvalid={!!errors.name}
+                  label="名称"
+                  placeholder="例如：香港 HKT"
+                  value={form.name}
+                  variant="bordered"
+                  onChange={(e) => set("name", e.target.value)}
+                />
+                <div className="space-y-1.5">
+                  <Input
+                    description="公开页按它分组，留空为未分组"
+                    errorMessage={errors.group}
+                    isInvalid={!!errors.group}
+                    label="分组"
+                    maxLength={50}
+                    placeholder="未分组"
+                    value={form.group}
+                    variant="bordered"
+                    onChange={(e) => set("group", e.target.value)}
+                  />
+                  {groupSuggestions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {groupSuggestions.slice(0, 8).map((g) => (
+                        <button
+                          key={g}
+                          className="rounded-md border border-dashed border-divider px-2 py-0.5 text-xs text-default-600 transition-colors hover:bg-default-100"
+                          type="button"
+                          onClick={() => set("group", g)}
+                        >
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <Input
+                  description="公开页可见"
+                  errorMessage={errors.publicNote}
+                  isInvalid={!!errors.publicNote}
+                  label="公开备注"
+                  maxLength={200}
+                  placeholder="例如：CN2 GIA 三网直连"
+                  value={form.publicNote}
+                  variant="bordered"
+                  onChange={(e) => set("publicNote", e.target.value)}
+                />
+                <Textarea
+                  // One line like the fields beside it; grows as typed.
+                  className="field-sizing-content min-h-9 resize-none"
+                  description="仅管理员可见"
+                  label="私有备注"
+                  maxRows={4}
+                  minRows={1}
+                  placeholder="例如：搬瓦工年付，日本中转"
+                  value={form.remark}
+                  variant="bordered"
+                  onChange={(e) => set("remark", e.target.value)}
+                />
+                <SwitchTile
+                  help="关闭后只在管理后台可见"
+                  isSelected={form.statusVisible}
+                  label="公开显示"
+                  onChange={(v) => set("statusVisible", v)}
+                />
+                <SwitchTile
+                  help="掉线、恢复时各推一条"
+                  isSelected={offlineNotify}
+                  label="离线通知"
+                  onChange={(v) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      notifyEvents: { ...prev.notifyEvents, node_offline: v },
+                    }))
+                  }
+                />
+              </div>
+            </Section>
 
-            <Textarea
-              description="可记录供应商、用途、续费说明等补充信息"
-              label="备注"
-              maxRows={4}
-              minRows={3}
-              placeholder="例如: 搬瓦工年付，2026-12 续费，日本中转"
-              value={form.remark}
-              variant="bordered"
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, remark: e.target.value }))
-              }
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select
-                label="续费周期"
-                placeholder="选择续费周期"
-                selectedKeys={form.renewalCycle ? [form.renewalCycle] : []}
-                variant="bordered"
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as
-                    | NodeRenewalCycle
-                    | undefined;
-
-                  setForm((prev) => ({
-                    ...prev,
-                    renewalCycle: selected || "",
-                  }));
-                }}
-              >
-                <SelectItem key="month" textValue="month">
-                  月付
-                </SelectItem>
-                <SelectItem key="quarter" textValue="quarter">
-                  季付
-                </SelectItem>
-                <SelectItem key="year" textValue="year">
-                  年付
-                </SelectItem>
-              </Select>
-              <Select
-                description={
-                  form.region
-                    ? "状态页显示这里选的地区"
-                    : form.regionDetected
-                      ? `按服务器地址识别为 ${nodeRegionLabel(form.regionDetected)}`
-                      : "按服务器地址自动识别，保存后稍等片刻生效"
-                }
-                label="地区"
-                selectedKeys={[form.region || REGION_AUTO]}
-                variant="bordered"
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as string | undefined;
-
-                  setForm((prev) => ({
-                    ...prev,
-                    region:
-                      !selected || selected === REGION_AUTO ? "" : selected,
-                  }));
-                }}
-              >
-                {[
-                  REGION_AUTO,
-                  ...nodeRegionOptions(form.region, form.regionDetected),
-                ].map((code) => (
-                  <SelectItem key={code} textValue={regionOptionLabel(code)}>
-                    {regionOptionLabel(code)}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-
-            <Input
-              description="填写最近一次续费时间或周期起始时间，系统会按月/季/年自动推算下次续费"
-              errorMessage={errors.expiryTime}
-              isInvalid={!!errors.expiryTime}
-              label="续费基准时间"
-              max="9999-12-31"
-              type="date"
-              value={
-                form.expiryTime > 0
-                  ? new Date(form.expiryTime).toISOString().slice(0, 10)
-                  : ""
-              }
-              variant="bordered"
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  expiryTime: e.target.value
-                    ? new Date(e.target.value).getTime()
-                    : 0,
-                }))
-              }
-            />
-
-            <Alert
-              color="primary"
-              description="例如选择月付并填写 2026-03-01，系统会自动按每月同日推算下次续费时间。"
-              variant="flat"
-            />
-
-            <Input
-              description="可选：不带协议、不带端口。建议在 IPv4 和 IPv6 都未填写时使用。至少填写一个 IPv4/IPv6 域名"
-              errorMessage={errors.serverHost}
-              isInvalid={!!errors.serverHost}
-              label="域名/主机名"
-              placeholder="例如: test.example.com"
-              value={form.serverHost}
-              variant="bordered"
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, serverHost: e.target.value }))
-              }
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                description="填写一个 IPv4 地址"
-                errorMessage={errors.serverIpV4}
-                isInvalid={!!errors.serverIpV4}
-                label="IPv4 地址"
-                placeholder="例如: 192.168.1.100"
-                value={form.serverIpV4}
-                variant="bordered"
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, serverIpV4: e.target.value }))
-                }
+            <Section title="价格与到期">
+              <BillingFields
+                errors={errors}
+                value={billing}
+                onChange={(next) => setForm((prev) => ({ ...prev, ...next }))}
               />
+            </Section>
 
-              <Input
-                description="填写一个 IPv6 地址"
-                errorMessage={errors.serverIpV6}
-                isInvalid={!!errors.serverIpV6}
-                label="IPv6 地址"
-                placeholder="例如: 2001:db8::10"
-                value={form.serverIpV6}
-                variant="bordered"
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, serverIpV6: e.target.value }))
-                }
-              />
-            </div>
+            <Section title="流量">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Input
+                  description="留空或 0 不限"
+                  errorMessage={errors.trafficQuotaGb}
+                  inputMode="numeric"
+                  isInvalid={!!errors.trafficQuotaGb}
+                  label="每月额度（GB）"
+                  placeholder="不限"
+                  value={form.trafficQuotaGb}
+                  variant="bordered"
+                  onChange={(e) =>
+                    set("trafficQuotaGb", e.target.value.replace(/[^\d]/g, ""))
+                  }
+                />
+                <Select
+                  description={
+                    TRAFFIC_CALCS.find(([k]) => k === form.trafficCalc)?.[2]
+                  }
+                  label="计算方式"
+                  selectedKeys={[form.trafficCalc || CALC_SUM]}
+                  variant="bordered"
+                  onSelectionChange={(keys) => {
+                    const k = Array.from(keys)[0] as string | undefined;
 
-            <Input
-              classNames={{
-                input: "font-mono",
-              }}
-              description="支持单个端口(80)、多个端口(80,443)或端口范围(10000-65535)，多个可用逗号分隔"
-              errorMessage={errors.port}
-              isInvalid={!!errors.port}
-              label="可用端口"
-              placeholder="例如: 80,443,10000-65535"
-              value={form.port}
-              variant="bordered"
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, port: e.target.value }))
-              }
-            />
+                    set(
+                      "trafficCalc",
+                      !k || k === CALC_SUM ? "" : (k as TrafficCalc),
+                    );
+                  }}
+                >
+                  {TRAFFIC_CALCS.map(([k, label]) => (
+                    <SelectItem key={k || CALC_SUM} textValue={label}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </Select>
+                <Input
+                  description="1–31，月份没有这天时按月底"
+                  errorMessage={errors.trafficResetDay}
+                  inputMode="numeric"
+                  isInvalid={!!errors.trafficResetDay}
+                  label="每月重置日"
+                  placeholder="1"
+                  value={form.trafficResetDay}
+                  variant="bordered"
+                  onChange={(e) =>
+                    set("trafficResetDay", e.target.value.replace(/[^\d]/g, ""))
+                  }
+                />
+              </div>
+              {form.id && (
+                <details className="group rounded-xl border border-divider px-3.5 py-2.5 [&_summary::-webkit-details-marker]:hidden">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm">
+                    <span className="text-default-400 transition-transform group-open:rotate-90">
+                      ▸
+                    </span>
+                    流量校正
+                    <span className="text-xs text-default-400">
+                      统计和服务商对不上时，填服务商显示的本期用量
+                    </span>
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Input
+                      errorMessage={errors.correctUpGb}
+                      inputMode="decimal"
+                      isInvalid={!!errors.correctUpGb}
+                      label="本期上行（GB）"
+                      placeholder="留空不改"
+                      value={form.correctUpGb}
+                      variant="bordered"
+                      onChange={(e) =>
+                        set(
+                          "correctUpGb",
+                          e.target.value.replace(/[^\d.]/g, ""),
+                        )
+                      }
+                    />
+                    <Input
+                      errorMessage={errors.correctDownGb}
+                      inputMode="decimal"
+                      isInvalid={!!errors.correctDownGb}
+                      label="本期下行（GB）"
+                      placeholder="留空不改"
+                      value={form.correctDownGb}
+                      variant="bordered"
+                      onChange={(e) =>
+                        set(
+                          "correctDownGb",
+                          e.target.value.replace(/[^\d.]/g, ""),
+                        )
+                      }
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-default-400">
+                    保存后本期流量改为这里的数值，之后照常累加；只影响本期，到下个重置日自动失效
+                  </p>
+                </details>
+              )}
+            </Section>
 
-            <Select
-              label="转发模式"
-              selectedKeys={[form.forwardMode]}
-              variant="bordered"
-              onSelectionChange={(keys) => {
-                const selected = Array.from(keys)[0] as
-                  | NodeForm["forwardMode"]
-                  | undefined;
-
-                setForm((prev) => ({
-                  ...prev,
-                  forwardMode: selected || "agent",
-                }));
-              }}
+            <Section
+              hint="至少填一个；是这台服务器自己的地址，不是面板的"
+              title="地址与地区"
             >
-              <SelectItem key="agent" textValue="agent">
-                agent 模式
-              </SelectItem>
-              <SelectItem key="nftables" textValue="nftables">
-                nftables 模式
-              </SelectItem>
-            </Select>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem]">
+                <Input
+                  errorMessage={errors.serverIpV4}
+                  isInvalid={!!errors.serverIpV4}
+                  label="IPv4"
+                  placeholder="203.0.113.10"
+                  value={form.serverIpV4}
+                  variant="bordered"
+                  onChange={(e) => set("serverIpV4", e.target.value)}
+                />
+                <Input
+                  errorMessage={errors.serverIpV6}
+                  isInvalid={!!errors.serverIpV6}
+                  label="IPv6"
+                  placeholder="2001:db8::10"
+                  value={form.serverIpV6}
+                  variant="bordered"
+                  onChange={(e) => set("serverIpV6", e.target.value)}
+                />
+                <Select
+                  label="国家/地区"
+                  selectedKeys={[form.region || REGION_AUTO]}
+                  variant="bordered"
+                  onSelectionChange={(keys) => {
+                    const selected = Array.from(keys)[0] as string | undefined;
 
-            {form.forwardMode === "nftables" ? (
-              <Alert
-                color="warning"
-                description="nftables 模式仅支持纯转发，不支持隧道、流量控制和 agent 安装，规则将由面板通过 SSH 下发。"
-                variant="flat"
-              />
-            ) : (
-              <Alert
-                color="primary"
-                description="agent 模式会继续使用服务器 agent 执行转发与管理操作。"
-                variant="flat"
-              />
-            )}
+                    set(
+                      "region",
+                      !selected || selected === REGION_AUTO ? "" : selected,
+                    );
+                  }}
+                >
+                  {[
+                    REGION_AUTO,
+                    ...nodeRegionOptions(form.region, form.regionDetected),
+                  ].map((code) => (
+                    <SelectItem key={code} textValue={regionOptionLabel(code)}>
+                      {regionOptionLabel(code)}
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  description="没有固定 IP 时填，不带协议和端口"
+                  errorMessage={errors.serverHost}
+                  isInvalid={!!errors.serverHost}
+                  label="域名"
+                  placeholder="node.example.com"
+                  value={form.serverHost}
+                  variant="bordered"
+                  onChange={(e) => set("serverHost", e.target.value)}
+                />
+                <Input
+                  classNames={{ input: "font-mono" }}
+                  description="单个、多个或范围，逗号分隔"
+                  errorMessage={errors.port}
+                  isInvalid={!!errors.port}
+                  label="可用端口"
+                  placeholder="80,443,10000-65535"
+                  value={form.port}
+                  variant="bordered"
+                  onChange={(e) => set("port", e.target.value)}
+                />
+              </div>
+            </Section>
 
-            {/* 高级配置 */}
+            <Section title="转发方式">
+              <div
+                aria-label="转发方式"
+                className="grid grid-cols-2 gap-2"
+                role="radiogroup"
+              >
+                {(
+                  [
+                    ["agent", "agent", "服务器装 agent，支持全部功能（推荐）"],
+                    ["nftables", "nftables", "面板经 SSH 下发规则，只能纯转发"],
+                  ] as const
+                ).map(([key, label, help]) => {
+                  const on = form.forwardMode === key;
+
+                  return (
+                    <button
+                      key={key}
+                      aria-checked={on}
+                      className={`rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+                        on
+                          ? "border-foreground bg-default-50"
+                          : "border-divider hover:bg-default-50"
+                      }`}
+                      role="radio"
+                      type="button"
+                      onClick={() => set("forwardMode", key)}
+                    >
+                      <p className="text-sm font-medium">{label}</p>
+                      <p className="text-xs text-default-500">{help}</p>
+                    </button>
+                  );
+                })}
+              </div>
+              {form.forwardMode === "nftables" && (
+                <div className="space-y-4 rounded-xl border border-warning-200 bg-warning-50/40 p-3.5 dark:border-warning-900/40 dark:bg-warning-950/20">
+                  <p className="text-xs text-default-600">
+                    面板通过 SSH 下发 nftables 规则，不安装
+                    agent；不支持隧道、流量控制和节点内核
+                  </p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_7rem]">
+                    <Input
+                      errorMessage={errors.sshHost}
+                      isInvalid={!!errors.sshHost}
+                      label="SSH 主机"
+                      placeholder="192.0.2.10"
+                      value={form.sshHost}
+                      variant="bordered"
+                      onChange={(e) => set("sshHost", e.target.value)}
+                    />
+                    <Input
+                      errorMessage={errors.sshPort}
+                      isInvalid={!!errors.sshPort}
+                      label="端口"
+                      placeholder="22"
+                      value={form.sshPort}
+                      variant="bordered"
+                      onChange={(e) => set("sshPort", e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <Input
+                      errorMessage={errors.sshUsername}
+                      isInvalid={!!errors.sshUsername}
+                      label="用户名"
+                      placeholder="root"
+                      value={form.sshUsername}
+                      variant="bordered"
+                      onChange={(e) => set("sshUsername", e.target.value)}
+                    />
+                    <Select
+                      label="认证方式"
+                      selectedKeys={[form.sshAuthType]}
+                      variant="bordered"
+                      onSelectionChange={(keys) =>
+                        set(
+                          "sshAuthType",
+                          (Array.from(keys)[0] as NodeForm["sshAuthType"]) ||
+                            "private_key",
+                        )
+                      }
+                    >
+                      <SelectItem key="private_key" textValue="私钥">
+                        私钥
+                      </SelectItem>
+                      <SelectItem key="password" textValue="密码">
+                        密码
+                      </SelectItem>
+                    </Select>
+                    <Select
+                      label="提权方式"
+                      selectedKeys={[form.sshSudoMode]}
+                      variant="bordered"
+                      onSelectionChange={(keys) =>
+                        set(
+                          "sshSudoMode",
+                          (Array.from(keys)[0] as NodeForm["sshSudoMode"]) ||
+                            "none",
+                        )
+                      }
+                    >
+                      <SelectItem key="none" textValue="无需提权">
+                        无需提权
+                      </SelectItem>
+                      <SelectItem key="sudo" textValue="sudo">
+                        sudo
+                      </SelectItem>
+                      <SelectItem key="sudo_su" textValue="sudo su">
+                        sudo su
+                      </SelectItem>
+                    </Select>
+                  </div>
+                  {form.sshAuthType === "password" ? (
+                    <Input
+                      errorMessage={errors.sshPassword}
+                      isInvalid={!!errors.sshPassword}
+                      label="SSH 密码"
+                      type="password"
+                      value={form.sshPassword}
+                      variant="bordered"
+                      onChange={(e) => set("sshPassword", e.target.value)}
+                    />
+                  ) : (
+                    <>
+                      <Textarea
+                        errorMessage={errors.sshPrivateKey}
+                        isInvalid={!!errors.sshPrivateKey}
+                        label="SSH 私钥"
+                        minRows={4}
+                        placeholder="粘贴 PEM 格式私钥"
+                        value={form.sshPrivateKey}
+                        variant="bordered"
+                        onChange={(e) => set("sshPrivateKey", e.target.value)}
+                      />
+                      <Input
+                        label="私钥密码短语"
+                        placeholder="可选"
+                        type="password"
+                        value={form.sshPassphrase}
+                        variant="bordered"
+                        onChange={(e) => set("sshPassphrase", e.target.value)}
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+            </Section>
+
             <Accordion className="px-0" variant="light">
               <AccordionItem
                 key="notifications"
                 aria-label="通知设置"
                 className="[&_[data-slot=accordion-trigger]]:no-underline [&_[data-slot=accordion-trigger]]:hover:no-underline"
                 title={
-                  <span className="text-small text-default-500 font-medium">
-                    通知设置
-                    <span className="ml-2 text-xs font-normal">
+                  <span className="text-sm font-semibold">
+                    通知
+                    <span className="ml-2 text-xs font-normal text-default-400">
                       {Object.keys(form.notifyEvents).length
                         ? `已自定义 ${Object.keys(form.notifyEvents).length} 项`
                         : "跟随全局"}
@@ -296,8 +568,8 @@ export function NodeFormModal({
               >
                 <div className="space-y-3 pb-3">
                   <p className="text-xs text-default-500">
-                    仅对这台服务器生效，使用全局推送渠道。需先在「设置 →
-                    通知」启用通知总开关；跟随全局时使用全局事件选择。
+                    只对这台服务器生效，使用全局推送渠道；需先在「设置 →
+                    通知」打开通知
                   </p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {NODE_NOTIFY_EVENTS.map((event) => (
@@ -344,415 +616,89 @@ export function NodeFormModal({
               </AccordionItem>
               <AccordionItem
                 key="advanced"
-                aria-label="高级配置"
+                aria-label="高级"
                 className="border-b-0 [&_[data-slot=accordion-trigger]]:no-underline [&_[data-slot=accordion-trigger]]:hover:no-underline"
                 title={
-                  <span className="text-small text-default-500 font-medium">
-                    高级配置
+                  <span className="text-sm font-semibold">
+                    高级
+                    <span className="ml-2 text-xs font-normal text-default-400">
+                      出口网卡、额外 IP、监听地址、屏蔽协议
+                    </span>
                   </span>
                 }
               >
                 <div className="space-y-4 pb-2">
-                  {form.forwardMode === "nftables" ? (
-                    <div className="space-y-4 border-l-2 border-warning py-1 pl-3">
-                      <div>
-                        <div className="text-sm font-medium text-warning-700 dark:text-warning-300">
-                          SSH 配置
-                        </div>
-                        <div className="text-xs text-default-500">
-                          面板会通过 SSH 下发 nftables 规则，不会安装 agent。
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Input
-                          errorMessage={errors.sshHost}
-                          isInvalid={!!errors.sshHost}
-                          label="SSH 主机"
-                          placeholder="例如: 192.0.2.10"
-                          value={form.sshHost}
-                          variant="bordered"
-                          onChange={(e) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              sshHost: e.target.value,
-                            }))
-                          }
-                        />
-
-                        <Input
-                          errorMessage={errors.sshPort}
-                          isInvalid={!!errors.sshPort}
-                          label="SSH 端口"
-                          placeholder="22"
-                          value={form.sshPort}
-                          variant="bordered"
-                          onChange={(e) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              sshPort: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Input
-                          errorMessage={errors.sshUsername}
-                          isInvalid={!!errors.sshUsername}
-                          label="SSH 用户名"
-                          placeholder="例如: root"
-                          value={form.sshUsername}
-                          variant="bordered"
-                          onChange={(e) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              sshUsername: e.target.value,
-                            }))
-                          }
-                        />
-
-                        <Select
-                          label="SSH 认证方式"
-                          selectedKeys={[form.sshAuthType]}
-                          variant="bordered"
-                          onSelectionChange={(keys) => {
-                            const selected = Array.from(keys)[0] as
-                              | "password"
-                              | "private_key"
-                              | undefined;
-
-                            setForm((prev) => ({
-                              ...prev,
-                              sshAuthType: selected || "private_key",
-                            }));
-                          }}
-                        >
-                          <SelectItem key="private_key" textValue="private_key">
-                            私钥
-                          </SelectItem>
-                          <SelectItem key="password" textValue="password">
-                            密码
-                          </SelectItem>
-                        </Select>
-                      </div>
-
-                      {form.sshAuthType === "password" ? (
-                        <Input
-                          errorMessage={errors.sshPassword}
-                          isInvalid={!!errors.sshPassword}
-                          label="SSH 密码"
-                          placeholder="请输入 SSH 密码"
-                          type="password"
-                          value={form.sshPassword}
-                          variant="bordered"
-                          onChange={(e) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              sshPassword: e.target.value,
-                            }))
-                          }
-                        />
-                      ) : (
-                        <Textarea
-                          errorMessage={errors.sshPrivateKey}
-                          isInvalid={!!errors.sshPrivateKey}
-                          label="SSH 私钥"
-                          minRows={6}
-                          placeholder="粘贴 PEM 格式私钥内容"
-                          value={form.sshPrivateKey}
-                          variant="bordered"
-                          onChange={(e) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              sshPrivateKey: e.target.value,
-                            }))
-                          }
-                        />
-                      )}
-
-                      <Input
-                        label="SSH 私钥密码短语"
-                        placeholder="可选"
-                        type="password"
-                        value={form.sshPassphrase}
-                        variant="bordered"
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            sshPassphrase: e.target.value,
-                          }))
-                        }
-                      />
-
-                      <Select
-                        label="sudo 提权方式"
-                        selectedKeys={[form.sshSudoMode]}
-                        variant="bordered"
-                        onSelectionChange={(keys) => {
-                          const selected = Array.from(keys)[0] as
-                            | "none"
-                            | "sudo"
-                            | "sudo_su"
-                            | undefined;
-
-                          setForm((prev) => ({
-                            ...prev,
-                            sshSudoMode: selected || "none",
-                          }));
-                        }}
-                      >
-                        <SelectItem key="none" textValue="none">
-                          无需提权
-                        </SelectItem>
-                        <SelectItem key="sudo" textValue="sudo">
-                          sudo
-                        </SelectItem>
-                        <SelectItem key="sudo_su" textValue="sudo_su">
-                          sudo su
-                        </SelectItem>
-                      </Select>
-                    </div>
-                  ) : (
-                    <Alert
-                      color="primary"
-                      description="agent 模式下无需填写 SSH 配置；服务器安装 agent 后会自行接管转发。"
-                      variant="flat"
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Input
+                      description="多 IP 服务器指定用哪个出去，不懂留空"
+                      errorMessage={errors.interfaceName}
+                      isInvalid={!!errors.interfaceName}
+                      label="出口网卡名或 IP"
+                      value={form.interfaceName}
+                      variant="bordered"
+                      onChange={(e) => set("interfaceName", e.target.value)}
                     />
-                  )}
-
-                  <Input
-                    description="用于多IP服务器指定使用那个IP请求远程地址，不懂的默认为空就行"
-                    errorMessage={errors.interfaceName}
-                    isInvalid={!!errors.interfaceName}
-                    label="出口网卡名或IP"
-                    placeholder="请输入出口网卡名或IP"
-                    value={form.interfaceName}
-                    variant="bordered"
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        interfaceName: e.target.value,
-                      }))
-                    }
-                  />
-
-                  <Input
-                    description="多IP服务器可填写额外IP地址，逗号分隔"
-                    label="额外IP地址"
-                    placeholder="例如: 192.168.1.100, 10.0.0.5"
-                    value={form.extraIPs}
-                    variant="bordered"
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        extraIPs: e.target.value,
-                      }))
-                    }
-                  />
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      description="多 IP 服务器的其他 IP，逗号分隔"
+                      label="额外 IP"
+                      placeholder="192.0.2.11, 192.0.2.12"
+                      value={form.extraIPs}
+                      variant="bordered"
+                      onChange={(e) => set("extraIPs", e.target.value)}
+                    />
                     <Input
                       errorMessage={errors.tcpListenAddr}
                       isInvalid={!!errors.tcpListenAddr}
-                      label="TCP监听地址"
-                      placeholder="请输入TCP监听地址"
-                      startContent={
-                        <div className="pointer-events-none flex items-center">
-                          <span className="text-default-400 text-small">
-                            TCP
-                          </span>
-                        </div>
-                      }
+                      label="TCP 监听地址"
                       value={form.tcpListenAddr}
                       variant="bordered"
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          tcpListenAddr: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => set("tcpListenAddr", e.target.value)}
                     />
-
                     <Input
                       errorMessage={errors.udpListenAddr}
                       isInvalid={!!errors.udpListenAddr}
-                      label="UDP监听地址"
-                      placeholder="请输入UDP监听地址"
-                      startContent={
-                        <div className="pointer-events-none flex items-center">
-                          <span className="text-default-400 text-small">
-                            UDP
-                          </span>
-                        </div>
-                      }
+                      label="UDP 监听地址"
                       value={form.udpListenAddr}
                       variant="bordered"
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          udpListenAddr: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => set("udpListenAddr", e.target.value)}
                     />
                   </div>
-                  {/* 屏蔽协议 */}
-                  <div>
-                    <div className="text-sm font-medium text-default-700 mb-2">
-                      屏蔽协议
-                    </div>
-                    <div className="text-xs text-default-500 mb-2">
-                      开启开关以屏蔽对应协议
-                    </div>
-                    {protocolControlsDisabled && (
-                      <Alert
-                        className="mb-2"
-                        color="warning"
-                        description={protocolControlsReason}
-                        variant="flat"
-                      />
-                    )}
-                    <div
-                      className={`grid grid-cols-1 sm:grid-cols-3 gap-3 bg-content1/30 dark:bg-content1/20 p-3 rounded-md border border-divider ${protocolControlsDisabled ? "opacity-70" : ""}`}
-                    >
-                      {/* HTTP tile */}
-                      <div className="py-3 border-b border-divider">
-                        <div className="flex items-center gap-2 mb-2">
-                          <svg
-                            aria-hidden="true"
-                            className="w-4 h-4 text-default-500"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <rect height="16" rx="2" width="20" x="2" y="4" />
-                            <path d="M2 10h20" />
-                          </svg>
-                          <div className="text-sm font-medium text-default-700">
-                            HTTP
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-default-500">
-                            禁用/启用
-                          </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">屏蔽协议</p>
+                    <p className="text-xs text-default-500">
+                      {protocolControlsDisabled
+                        ? protocolControlsReason
+                        : "打开即屏蔽该协议；只在入口服务器上开，出口服务器开了会影响转发"}
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["http", "HTTP"],
+                          ["tls", "TLS"],
+                          ["socks", "SOCKS"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <div
+                          key={key}
+                          className={`flex items-center justify-between rounded-xl border border-divider px-3 py-2 ${
+                            protocolControlsDisabled ? "opacity-60" : ""
+                          }`}
+                        >
+                          <span className="text-sm">{label}</span>
                           <Switch
+                            aria-label={`屏蔽 ${label}`}
                             isDisabled={protocolControlsDisabled}
-                            isSelected={form.http === 1}
+                            isSelected={form[key] === 1}
                             size="sm"
-                            onValueChange={(v) =>
-                              setForm((prev) => ({
-                                ...prev,
-                                http: v ? 1 : 0,
-                              }))
-                            }
+                            onValueChange={(v) => set(key, v ? 1 : 0)}
                           />
                         </div>
-                        <div className="mt-1 text-xs text-default-400">
-                          {form.http === 1 ? "已开启" : "已关闭"}
-                        </div>
-                      </div>
-
-                      {/* TLS tile */}
-                      <div className="py-3 border-b border-divider">
-                        <div className="flex items-center gap-2 mb-2">
-                          <svg
-                            aria-hidden="true"
-                            className="w-4 h-4 text-default-500"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M6 10V7a6 6 0 1 1 12 0v3" />
-                            <rect height="10" rx="2" width="16" x="4" y="10" />
-                          </svg>
-                          <div className="text-sm font-medium text-default-700">
-                            TLS
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-default-500">
-                            禁用/启用
-                          </div>
-                          <Switch
-                            isDisabled={protocolControlsDisabled}
-                            isSelected={form.tls === 1}
-                            size="sm"
-                            onValueChange={(v) =>
-                              setForm((prev) => ({ ...prev, tls: v ? 1 : 0 }))
-                            }
-                          />
-                        </div>
-                        <div className="mt-1 text-xs text-default-400">
-                          {form.tls === 1 ? "已开启" : "已关闭"}
-                        </div>
-                      </div>
-
-                      {/* SOCKS tile */}
-                      <div className="py-3 border-b border-divider">
-                        <div className="flex items-center gap-2 mb-2">
-                          <svg
-                            aria-hidden="true"
-                            className="w-4 h-4 text-default-500"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" x2="12" y1="15" y2="3" />
-                          </svg>
-                          <div className="text-sm font-medium text-default-700">
-                            SOCKS
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-default-500">
-                            禁用/启用
-                          </div>
-                          <Switch
-                            isDisabled={protocolControlsDisabled}
-                            isSelected={form.socks === 1}
-                            size="sm"
-                            onValueChange={(v) =>
-                              setForm((prev) => ({
-                                ...prev,
-                                socks: v ? 1 : 0,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="mt-1 text-xs text-default-400">
-                          {form.socks === 1 ? "已开启" : "已关闭"}
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
-
-                  <Alert
-                    color="danger"
-                    description="请不要在出口服务器执行屏蔽协议，否则可能影响转发；屏蔽协议仅需在入口服务器执行。"
-                    variant="flat"
-                  />
                 </div>
               </AccordionItem>
             </Accordion>
-
-            <Alert
-              className="mt-4"
-              color="primary"
-              description="服务器ip地址是你要添加的入口/出口的ip地址，不是面板的ip地址。"
-              variant="flat"
-            />
           </div>
         </ModalBody>
         <ModalFooter>

@@ -682,7 +682,7 @@ export function InboundFormModal({
                   高级设置
                   {!showAdvanced && (
                     <span className="hidden text-xs text-default-400 sm:inline">
-                      （协议、传输、UUID、密钥、监听与中转；留空自动生成）
+                      （协议、传输、UUID、密钥、监听、中转与限速；留空自动生成）
                     </span>
                   )}
                 </button>
@@ -1191,6 +1191,56 @@ export function InboundFormModal({
                             }
                           />
                         )}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-3">
+                          <Input
+                            endContent={
+                              <span className="text-xs text-default-400">
+                                Mbps
+                              </span>
+                            }
+                            inputMode="numeric"
+                            label="下载限速"
+                            placeholder="不限"
+                            value={form.rateDownMbps}
+                            variant="bordered"
+                            onChange={(e) =>
+                              set(
+                                "rateDownMbps",
+                                e.target.value.replace(/[^\d]/g, ""),
+                              )
+                            }
+                          />
+                          <Input
+                            endContent={
+                              <span className="text-xs text-default-400">
+                                Mbps
+                              </span>
+                            }
+                            inputMode="numeric"
+                            label="上传限速"
+                            placeholder="不限"
+                            value={form.rateUpMbps}
+                            variant="bordered"
+                            onChange={(e) =>
+                              set(
+                                "rateUpMbps",
+                                e.target.value.replace(/[^\d]/g, ""),
+                              )
+                            }
+                          />
+                        </div>
+                        <p className="text-xs text-default-500">
+                          这个节点所有设备共用的总带宽，留空不限。在服务器上按端口限流，任何协议、经中转的连接都有效；需要服务器安装
+                          nftables，agent 3.9.4 及以上
+                        </p>
+                        {selectedNode?.nftError &&
+                        (form.rateUpMbps || form.rateDownMbps) ? (
+                          <p className="text-xs text-danger">
+                            该服务器无法使用：{selectedNode.nftError}
+                          </p>
+                        ) : null}
                       </div>
                       <Input
                         label="备注"

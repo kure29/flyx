@@ -59,8 +59,10 @@ func (r *Repository) ListStatusPageNodes() ([]model.Node, error) {
 		return nil, errors.New("repository not initialized")
 	}
 	var nodes []model.Node
-	err := r.db.Select("id", "inx", "name", "status", "expiry_time",
-		"host_os", "host_arch", "host_virtualization", "host_cpu_name", "region", "region_detected").
+	err := r.db.Select("id", "inx", "name", "status", "expiry_time", "renewal_cycle",
+		"host_os", "host_arch", "host_virtualization", "host_cpu_name", "region", "region_detected",
+		"group_name", "public_note", "price", "currency", "traffic_quota_gb", "traffic_calc",
+		"traffic_reset_day", "traffic_adjust_up", "traffic_adjust_down", "traffic_adjust_period").
 		Where("is_remote = ?", 0).
 		Order("inx ASC, id ASC").
 		Find(&nodes).Error

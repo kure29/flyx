@@ -92,6 +92,7 @@ export function TargetPicker({
   value,
   targets,
   withBlock,
+  blockHint,
   onPick,
   onClose,
 }: {
@@ -100,6 +101,8 @@ export function TargetPicker({
   value: TargetKey;
   targets: InboundApiItem[];
   withBlock?: boolean;
+  /** What 阻断 does here (default: drops the matched traffic). */
+  blockHint?: string;
   onPick: (k: TargetKey) => void;
   onClose: () => void;
 }) {
@@ -178,7 +181,7 @@ export function TargetPicker({
           {!q && (
             <div className="rounded-xl bg-content1">
               {row("direct", "直连", "从本服务器出去")}
-              {withBlock && row("block", "阻断", "丢弃匹配的流量")}
+              {withBlock && row("block", "阻断", blockHint ?? "丢弃匹配的流量")}
             </div>
           )}
           {groups.map((g) => (

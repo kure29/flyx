@@ -30,6 +30,11 @@ const (
 	statusPageShowTrafficKey = "status_page_show_traffic"
 	// Off by default: the system, architecture, virtualization and CPU model.
 	statusPageShowHostKey = "status_page_show_host"
+	// Off by default: each server's price and renewal cycle.
+	statusPageShowPriceKey = "status_page_show_price"
+	// How servers are grouped: "auto" (default: by the admin's groups when
+	// any server has one, else by region), "group" or "region".
+	statusPageGroupModeKey = "status_page_group_mode"
 
 	// uptimeBucketSeconds is the size of a node_uptime bucket; a sample is
 	// taken every minute, so a full bucket holds 10 samples.
@@ -52,6 +57,8 @@ var statusPageConfigKeys = []string{
 	statusPageShowExpiryKey,
 	statusPageShowTrafficKey,
 	statusPageShowHostKey,
+	statusPageShowPriceKey,
+	statusPageGroupModeKey,
 }
 
 // statusLiveStore keeps the latest system info each node reported.
@@ -204,6 +211,21 @@ type statusPageNode struct {
 	// Ping is the latency to the node's reference points over the last
 	// hour: names the admin gave them only, never their addresses or errors.
 	Ping []statusPagePing `json:"ping,omitempty"`
+	// Group is the admin's group for the server ("" = none); Note its
+	// public note.
+	Group string `json:"group,omitempty"`
+	Note  string `json:"note,omitempty"`
+	// Price per Cycle ("month", "quarter", "year", "<n>m", "<n>y") in
+	// Currency, only while the admin shows prices.
+	Price    *float64 `json:"price,omitempty"`
+	Currency string   `json:"currency,omitempty"`
+	Cycle    string   `json:"cycle,omitempty"`
+	// Quota is the monthly traffic allowance in bytes and QuotaUsed what
+	// counts against it this period, while traffic is shown and a quota is
+	// set; PeriodStart (ms) is when the period began.
+	Quota       int64 `json:"quota,omitempty"`
+	QuotaUsed   int64 `json:"quotaUsed,omitempty"`
+	PeriodStart int64 `json:"periodStart,omitempty"`
 }
 
 type statusPagePing struct {
@@ -233,13 +255,16 @@ type statusPageTotals struct {
 }
 
 type statusPagePayload struct {
-	Title       string           `json:"title"`
-	Timezone    string           `json:"timezone"`
-	GeneratedAt int64            `json:"generatedAt"`
-	Days        []string         `json:"days"`
-	ShowTraffic bool             `json:"showTraffic"`
-	Nodes       []statusPageNode `json:"nodes"`
-	Totals      statusPageTotals `json:"totals"`
+	Title       string   `json:"title"`
+	Timezone    string   `json:"timezone"`
+	GeneratedAt int64    `json:"generatedAt"`
+	Days        []string `json:"days"`
+	ShowTraffic bool     `json:"showTraffic"`
+	// GroupBy is how the page groups servers: "group" (the admin's groups)
+	// or "region".
+	GroupBy string           `json:"groupBy"`
+	Nodes   []statusPageNode `json:"nodes"`
+	Totals  statusPageTotals `json:"totals"`
 }
 
 // publicStatus serves the status page's data, without a login.
@@ -304,6 +329,7 @@ func (h *Handler) buildStatusPage(cfg map[string]string, now time.Time) (*status
 	showTraffic := strings.TrimSpace(cfg[statusPageShowTrafficKey]) != "false"
 	showExpiry := strings.TrimSpace(cfg[statusPageShowExpiryKey]) == "true"
 	showHost := strings.TrimSpace(cfg[statusPageShowHostKey]) == "true"
+	showPrice := strings.TrimSpace(cfg[statusPageShowPriceKey]) == "true"
 	hidden := parseStatusHiddenNodes(cfg[statusPageHiddenNodesKey])
 
 	out := &statusPagePayload{
@@ -335,13 +361,14 @@ func (h *Handler) buildStatusPage(cfg map[string]string, now time.Time) (*status
 	}
 	avail := computeStatusAvailability(uptime, out.Days, now, loc)
 
-	var month map[int64][2]int64
+	// Each server's traffic since its own reset day, corrected by the admin.
+	var month map[int64]nodeTraffic
 	if showTraffic {
-		start := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
-		if month, err = h.repo.NodeTrafficSince(start.UnixMilli()); err != nil {
+		if month, err = h.periodTraffic(shown, local); err != nil {
 			return nil, err
 		}
 	}
+	out.GroupBy = statusGroupBy(cfg[statusPageGroupModeKey], shown)
 
 	samples, err := h.repo.ListLatencySamplesSince(now.Add(-statusPingWindow).UnixMilli())
 	if err != nil {
@@ -391,11 +418,20 @@ func (h *Handler) buildStatusPage(cfg map[string]string, now time.Time) (*status
 		}
 		if showTraffic {
 			t := month[n.ID]
-			// node_traffic in = received, out = sent
-			down, up := t[0], t[1]
+			up, down := t.Up, t.Down
 			v.MonthUp, v.MonthDown = &up, &down
 			out.Totals.MonthUp += up
 			out.Totals.MonthDown += down
+			if n.TrafficQuotaGB > 0 {
+				v.Quota = n.TrafficQuotaGB << 30
+				v.QuotaUsed = model.TrafficUsed(n.TrafficCalc, up, down)
+				v.PeriodStart = t.Start.UnixMilli()
+			}
+		}
+		v.Group, v.Note = n.GroupName, n.PublicNote
+		if showPrice && n.Price > 0 {
+			price := n.Price
+			v.Price, v.Currency, v.Cycle = &price, firstNonEmpty(n.Currency, "CNY"), n.RenewalCycle.String
 		}
 		if v.Availability.D30 != nil {
 			d30Sum += *v.Availability.D30
@@ -420,6 +456,21 @@ func (h *Handler) buildStatusPage(cfg map[string]string, now time.Time) (*status
 		out.Totals.D30 = &avg
 	}
 	return out, nil
+}
+
+// statusGroupBy resolves the grouping mode: "auto" groups by the admin's
+// groups when any shown server has one, else by region.
+func statusGroupBy(mode string, nodes []model.Node) string {
+	switch strings.TrimSpace(mode) {
+	case "group", "region":
+		return strings.TrimSpace(mode)
+	}
+	for _, n := range nodes {
+		if n.GroupName != "" {
+			return "group"
+		}
+	}
+	return "region"
 }
 
 // statusZoneLabel names the panel's time zone for visitors: the IANA name

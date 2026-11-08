@@ -314,7 +314,7 @@ export function Shell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4 sm:px-8">
+        <div className="mx-auto flex h-14 max-w-[87.5rem] items-center gap-3 px-4 sm:px-8">
           <a className="flex min-w-0 items-center gap-2" href={home}>
             <BrandLogo className="h-6 w-6 shrink-0" size={24} />
             <span className="truncate font-semibold tracking-tight">
@@ -328,7 +328,7 @@ export function Shell({
           </a>
         </div>
       </header>
-      <main className="mx-auto flex max-w-[1400px] flex-col gap-4 px-4 py-6 sm:px-8 sm:py-8">
+      <main className="mx-auto flex max-w-[87.5rem] flex-col gap-4 px-4 py-6 sm:px-8 sm:py-8">
         {children}
       </main>
     </div>
@@ -403,4 +403,77 @@ export function usePolling(load: () => void, ms: number) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load, ms]);
+}
+
+// ---------------------------------------------------------------- price, groups
+
+const CURRENCY_SIGNS: Record<string, string> = {
+  CNY: "¥",
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  HKD: "HK$",
+  JPY: "JP¥",
+  TWD: "NT$",
+  SGD: "S$",
+  KRW: "₩",
+};
+
+/** "年", "季", "月", "6 个月", "2 年" for a renewal cycle. */
+export function cycleText(cycle?: string): string {
+  switch (cycle) {
+    case "month":
+      return "月";
+    case "quarter":
+      return "季";
+    case "year":
+      return "年";
+  }
+  const m = (cycle ?? "").match(/^(\d+)([my])$/);
+
+  if (!m) return "";
+
+  return m[2] === "y" ? `${m[1]} 年` : `${m[1]} 个月`;
+}
+
+/** "¥151.2/年", or "" when the server has no price shown. */
+export function priceText(node: PublicStatusNode): string {
+  if (!node.price) return "";
+  const cur = node.currency || "CNY";
+  const sign = CURRENCY_SIGNS[cur];
+  const amount = `${sign ?? `${cur} `}${node.price}`;
+  const cycle = cycleText(node.cycle);
+
+  return cycle ? `${amount}/${cycle}` : amount;
+}
+
+/**
+ * The group a server is listed under: the admin's group, or its region,
+ * as the page groups them; "其他" for servers without one.
+ */
+export function groupOf(
+  node: PublicStatusNode,
+  by: PublicStatus["groupBy"],
+): { key: string; label: string; flag: string } {
+  if (by === "group") {
+    const g = node.group?.trim() ?? "";
+
+    return { key: g || "其他", label: g || "其他", flag: "" };
+  }
+  const [flag, code] = nodeFlag(node);
+
+  return { key: code || "其他", label: code || "其他", flag };
+}
+
+/** "300 GB / 1 TB" and the share used, when the server has a quota. */
+export function quotaOf(
+  node: PublicStatusNode,
+): { text: string; pct: number } | null {
+  if (!node.quota) return null;
+  const used = node.quotaUsed ?? 0;
+
+  return {
+    text: `${bytesText(used)} / ${bytesText(node.quota)}`,
+    pct: Math.min((used / node.quota) * 100, 100),
+  };
 }

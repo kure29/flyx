@@ -88,7 +88,7 @@ func TestNftIdentityApplyFailureKeepsPreviousEpoch(t *testing.T) {
 func TestLegacyNftIdentityDoesNotResetCountersOnUpgrade(t *testing.T) {
 	rec := stubNft(t)
 	ports := []Port{{InboundID: 7, Port: 443, Network: "tcp"}}
-	script := strings.ReplaceAll(nftScript(expandPorts(ports), expandGuards(ports), nil, nil), nftTable, legacyNftTable)
+	script := strings.ReplaceAll(nftScript(expandPorts(ports), expandGuards(ports), nil, nil, nil), nftTable, legacyNftTable)
 	rec.scripts = []string{script}
 	dir := t.TempDir()
 	state := map[string]string{"signature": hashString(script), "epoch": "existing-epoch"}

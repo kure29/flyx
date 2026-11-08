@@ -28,3 +28,12 @@ Node region detection uses the IP to Country Lite database by DB-IP
 International License (https://creativecommons.org/licenses/by/4.0/).
 The database is downloaded at run time and is not part of this repository.
 -------------------------------------------------------------------------
+
+-------------------------------------------------------------------------
+Country flags on Windows (which has no flag emoji) are drawn with the
+Twemoji Country Flags font from country-flag-emoji-polyfill (MIT,
+https://github.com/talkjs/country-flag-emoji-polyfill). The flag graphics
+are Twemoji by Twitter, Inc and other contributors, licensed under the
+Creative Commons Attribution 4.0 International License
+(https://creativecommons.org/licenses/by/4.0/).
+-------------------------------------------------------------------------

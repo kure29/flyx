@@ -24,6 +24,7 @@ export default defineConfig({
           { text: "快速上手", link: "/guide/getting-started" },
           { text: "安装面板", link: "/guide/install" },
           { text: "安装 agent", link: "/guide/agent" },
+          { text: "服务器设置", link: "/guide/servers" },
           { text: "升级", link: "/guide/upgrade" },
         ],
       },

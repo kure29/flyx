@@ -74,8 +74,13 @@ function SplitForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // "" is 直连, "block" is 阻断, else the id of the inbound to chain through.
   const [outboundId, setOutboundId] = useState(
-    item.outboundId ? String(item.outboundId) : "",
+    item.defaultBlock
+      ? "block"
+      : item.outboundId
+        ? String(item.outboundId)
+        : "",
   );
   const [rules, setRules] = useState<SplitRuleForm[]>(() =>
     splitFormFromItem(item),
@@ -90,8 +95,11 @@ function SplitForm({
   // Any other inbound can carry this one's traffic; the backend rejects
   // loops and protocols the kernel cannot dial.
   const targets = inbounds.filter((i) => i.id !== item.id);
+  const defaultBlock = outboundId === "block";
   const outboundMissing =
-    outboundId !== "" && !targets.some((i) => String(i.id) === outboundId);
+    outboundId !== "" &&
+    !defaultBlock &&
+    !targets.some((i) => String(i.id) === outboundId);
 
   const submit = async () => {
     if (rules.some((r) => r.action === "proxy" && !r.outboundId)) {
@@ -99,12 +107,20 @@ function SplitForm({
 
       return;
     }
+    if (defaultBlock && !rules.some((r) => r.action !== "block")) {
+      toast.error(
+        "默认去向是阻断时，至少要有一条分流规则放行（直连或走某个节点），否则所有流量都会被丢弃",
+      );
+
+      return;
+    }
     setSaving(true);
     try {
       const res = await updateInboundSplit({
         id: item.id,
-        outboundId: Number(outboundId) || 0,
+        outboundId: defaultBlock ? 0 : Number(outboundId) || 0,
         splitRules: splitPayload(rules) ?? [],
+        defaultBlock,
         outboundIpStrategy,
       });
 
@@ -159,7 +175,9 @@ function SplitForm({
           >
             {outboundMissing
               ? "原出站节点已被删除，该入站的流量会被丢弃，请重新选择"
-              : "没命中规则的流量从这里出去；选节点即链式代理"}
+              : defaultBlock
+                ? "只放行分流规则选中的流量，其他的一律丢弃；例如只允许访问 Claude"
+                : "没命中规则的流量从这里出去；选节点即链式代理"}
           </p>
         </section>
         <section className="space-y-2">
@@ -181,6 +199,10 @@ function SplitForm({
           />
         </section>
         <TargetPicker
+          withBlock
+          blockHint={
+            picking === "default" ? "只放行分流规则选中的流量" : undefined
+          }
           isOpen={picking !== null}
           targets={targets}
           title={picking === "default" ? "默认去向" : "去向"}
@@ -191,7 +213,6 @@ function SplitForm({
                 ? ruleTarget(rules[picking])
                 : ""
           }
-          withBlock={picking !== "default"}
           onClose={() => setPicking(null)}
           onPick={(key) => {
             if (picking === "default") {

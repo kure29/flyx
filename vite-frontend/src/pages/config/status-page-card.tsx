@@ -135,9 +135,51 @@ export function StatusPageSettings({
       {toggle(
         "status_page_show_expiry",
         "显示到期日",
-        "服务器设了到期时间时显示日期（不显示价格）",
+        "服务器设了到期时间时显示日期",
         configs.status_page_show_expiry === "true",
       )}
+      {toggle(
+        "status_page_show_price",
+        "显示价格",
+        "服务器填了价格时显示价格和付款周期，例如 ¥151.2/年",
+        configs.status_page_show_price === "true",
+      )}
+      <Field
+        help="自动：有服务器填了分组就按分组，否则按地区；没填分组的服务器归入「其他」"
+        label="分组方式"
+      >
+        <div
+          className="flex gap-1 rounded-lg bg-default-100 p-[3px]"
+          role="radiogroup"
+        >
+          {(
+            [
+              ["auto", "自动"],
+              ["group", "按分组"],
+              ["region", "按地区"],
+            ] as const
+          ).map(([key, label]) => {
+            const on = (configs.status_page_group_mode || "auto") === key;
+
+            return (
+              <button
+                key={key}
+                aria-checked={on}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  on
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-default-500 hover:text-foreground"
+                }`}
+                role="radio"
+                type="button"
+                onClick={() => onChange("status_page_group_mode", key)}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
 
       <SubHeading>主题</SubHeading>
       <StatusThemeManager />

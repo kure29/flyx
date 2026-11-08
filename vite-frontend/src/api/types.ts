@@ -12,7 +12,7 @@ export interface NodeApiItem {
   nftError?: string;
   remark?: string;
   expiryTime?: number;
-  renewalCycle?: "month" | "quarter" | "year" | "";
+  renewalCycle?: string;
   region?: string;
   regionDetected?: string;
   expiryReminderDismissed?: number;
@@ -221,9 +221,21 @@ export interface NodeMutationPayload {
   notifyEvents?: NodeNotifyEvents | null;
   remark?: string;
   expiryTime?: number;
-  renewalCycle?: "month" | "quarter" | "year" | "";
+  /** "month", "quarter", "year", "<n>m" or "<n>y"; "" for none. */
+  renewalCycle?: string;
   /** 地区代码，空字符串为自动识别；不传则不修改。 */
   region?: string;
+  /** Profile fields; absent ones are left as they are. */
+  group?: string;
+  publicNote?: string;
+  statusVisible?: boolean;
+  price?: number;
+  currency?: string;
+  trafficQuotaGb?: number;
+  trafficCalc?: string;
+  trafficResetDay?: number;
+  /** Sets this period's traffic to what the provider shows (GB). */
+  trafficCorrection?: { upGb?: number; downGb?: number };
   serverIp?: string;
   serverIpV4?: string;
   serverIpV6?: string;
@@ -737,6 +749,11 @@ export interface InboundApiItem {
   outboundMissing?: boolean;
   /** 分流 rules, tried in order before the default exit. */
   splitRules: SplitRule[];
+  /** The default exit is 阻断: only what a 分流 rule sends elsewhere gets out. */
+  defaultBlock?: boolean;
+  /** Speed limits in Mbit/s, the inbound's total; 0 = none. */
+  rateUpMbps?: number;
+  rateDownMbps?: number;
   /** The user's labels, for telling nodes apart in the list. */
   tags?: string[];
 }
@@ -768,6 +785,8 @@ export interface InboundMutationPayload {
   whitelistExtra: string;
   outboundId: number;
   splitRules: SplitRule[];
+  rateUpMbps?: number;
+  rateDownMbps?: number;
   enabled?: boolean;
 }
 

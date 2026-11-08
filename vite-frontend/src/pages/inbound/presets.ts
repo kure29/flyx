@@ -129,6 +129,9 @@ export interface InboundForm {
   acceptProxyProtocol: boolean;
   relayWhitelist: boolean;
   whitelistExtra: string;
+  /** Speed limits in Mbit/s as typed; "" is no limit. */
+  rateUpMbps: string;
+  rateDownMbps: string;
   /** Chained outbound inbound id; "" leaves directly. */
   outboundId: string;
   outboundIpStrategy:
@@ -374,6 +377,8 @@ export function emptyForm(
     acceptProxyProtocol: false,
     relayWhitelist: false,
     whitelistExtra: "",
+    rateUpMbps: "",
+    rateDownMbps: "",
     outboundId: "",
     outboundIpStrategy: "auto",
     splitRules: [],
@@ -481,6 +486,8 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     acceptProxyProtocol: item.acceptProxyProtocol,
     relayWhitelist: item.relayWhitelist,
     whitelistExtra: item.whitelistExtra,
+    rateUpMbps: item.rateUpMbps ? String(item.rateUpMbps) : "",
+    rateDownMbps: item.rateDownMbps ? String(item.rateDownMbps) : "",
     outboundId: item.outboundId ? String(item.outboundId) : "",
     outboundIpStrategy: item.outboundIpStrategy || "auto",
     splitRules: splitFormFromItem(item),
@@ -653,6 +660,8 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
     acceptProxyProtocol: form.acceptProxyProtocol,
     relayWhitelist: form.relayWhitelist,
     whitelistExtra: form.relayWhitelist ? form.whitelistExtra.trim() : "",
+    rateUpMbps: rateMbps(form.rateUpMbps),
+    rateDownMbps: rateMbps(form.rateDownMbps),
     outboundId: Number(form.outboundId) || 0,
     outboundIpStrategy: form.outboundIpStrategy,
     splitRules: splitPayload(form.splitRules),
@@ -709,4 +718,11 @@ export function describeInbound(item: InboundApiItem): string {
   }
 
   return parts.join(" + ");
+}
+
+/** A typed speed limit as whole Mbit/s; blank or invalid is 0 (no limit). */
+export function rateMbps(v: string): number {
+  const n = Math.round(Number(v.trim()));
+
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }

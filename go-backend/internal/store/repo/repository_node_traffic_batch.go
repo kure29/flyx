@@ -55,13 +55,7 @@ func (r *Repository) SaveNodeMetricBatch(stream string, sequence int64, samples 
 					continue
 				}
 				if baseline.Timestamp > 0 {
-					in, out := sample.NetInBytes-baseline.InBytes, sample.NetOutBytes-baseline.OutBytes
-					if in < 0 || (sample.Uptime > 0 && baseline.Uptime > sample.Uptime) {
-						in = sample.NetInBytes
-					}
-					if out < 0 || (sample.Uptime > 0 && baseline.Uptime > sample.Uptime) {
-						out = sample.NetOutBytes
-					}
+					in, out := trafficDelta(baseline, sample)
 					hour := sample.Timestamp - sample.Timestamp%int64(15*time.Minute/time.Millisecond)
 					total := traffic[hour]
 					total[0] += in
@@ -92,4 +86,40 @@ func (r *Repository) SaveNodeMetricBatch(stream string, sequence int64, samples 
 		return tx.InsertNodeMetricBatch(copies)
 	})
 	return err
+}
+
+// rebootSlackSeconds is how far the computed boot time may move between two
+// samples (clock jitter, report delay) before it counts as a reboot.
+const rebootSlackSeconds = 120
+
+// trafficDelta is the traffic between two counter samples of a node. The
+// counters are the sums over the node's network interfaces since boot.
+//
+// After a reboot they restart from zero, so the new sample is all new
+// traffic. A counter that goes down without a reboot means an interface went
+// away (a container's veth, a VPN tunnel): its bytes were already counted, so
+// that step adds nothing. Treating it as a reboot added the whole total since
+// boot again, terabytes on a long-running server.
+func trafficDelta(prev model.NodeTrafficBaseline, sample *model.NodeMetric) (int64, int64) {
+	if nodeRebooted(prev, sample) {
+		return sample.NetInBytes, sample.NetOutBytes
+	}
+	return max(sample.NetInBytes-prev.InBytes, 0), max(sample.NetOutBytes-prev.OutBytes, 0)
+}
+
+// nodeRebooted reports whether the node booted again between the samples:
+// its uptime went back, or its boot time (sample time minus uptime) moved
+// later, which also catches a reboot while the node was offline for longer
+// than it had been up. Without uptimes, a counter going back is taken as a
+// reboot, as before.
+func nodeRebooted(prev model.NodeTrafficBaseline, sample *model.NodeMetric) bool {
+	if sample.Uptime <= 0 || prev.Uptime <= 0 {
+		return sample.NetInBytes < prev.InBytes || sample.NetOutBytes < prev.OutBytes
+	}
+	if sample.Uptime < prev.Uptime {
+		return true
+	}
+	prevBoot := prev.Timestamp/1000 - prev.Uptime
+	boot := sample.Timestamp/1000 - sample.Uptime
+	return boot > prevBoot+rebootSlackSeconds
 }
