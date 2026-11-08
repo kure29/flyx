@@ -45,6 +45,12 @@ import { AnimatedPage } from "@/components/animated-page";
 import { PageHeader, PageTabs } from "@/components/page-kit";
 import { ThemeSettings } from "@/components/theme-settings";
 import { useH5Mode } from "@/hooks/useH5Mode";
+import {
+  consumeInAppBack,
+  historyIndex,
+  isBrowserBack,
+  markInAppBack,
+} from "@/hooks/useRouteTransition";
 import { NotifySettings, notifySummary } from "@/pages/config/notify-card";
 import {
   StatusPageSettings,
@@ -476,13 +482,19 @@ export default function ConfigPage() {
   const [transition, setTransition] = useState<"push" | "pop" | null>(null);
   const [query, setQuery] = useState("");
   const prevShown = useRef(shown);
+  const prevIndex = useRef(historyIndex());
 
   useLayoutEffect(() => {
     if (shown && !visited.has(shown)) {
       setVisited((v) => new Set(v).add(shown));
     }
     if (prevShown.current === shown) return;
-    if (isH5) setTransition(shown ? "push" : "pop");
+    // A browser back (iOS swipe back) is animated by the browser already.
+    const browserBack = isBrowserBack(prevIndex.current, historyIndex());
+
+    consumeInAppBack();
+    prevIndex.current = historyIndex();
+    if (isH5 && !browserBack) setTransition(shown ? "push" : "pop");
     prevShown.current = shown;
     // The phone scrolls the document, the desktop layout its <main>.
     window.scrollTo({ top: 0 });
@@ -497,6 +509,7 @@ export default function ConfigPage() {
     );
   const backToIndex = () => {
     if ((location.state as { fromIndex?: boolean } | null)?.fromIndex) {
+      markInAppBack();
       navigate(-1);
     } else {
       setSearchParams({}, { replace: true });

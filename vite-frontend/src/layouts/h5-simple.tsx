@@ -1,10 +1,11 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { BackIcon } from "@/components/icons";
 import { BrandLogo } from "@/components/brand-logo";
 import { siteConfig } from "@/config/site";
+import { useRouteTransition } from "@/hooks/useRouteTransition";
 import { useScrollTopOnPathChange } from "@/hooks/useScrollTopOnPathChange";
 
 export default function H5SimpleLayout({
@@ -15,6 +16,8 @@ export default function H5SimpleLayout({
   const navigate = useNavigate();
 
   useScrollTopOnPathChange();
+  const { pathname } = useLocation();
+  const transition = useRouteTransition();
 
   const handleBack = () => {
     navigate("/profile");
@@ -38,7 +41,11 @@ export default function H5SimpleLayout({
       </header>
 
       {/* 主内容区域 */}
-      <main className="flex-1 pb-0">{children}</main>
+      <main className="flex-1 overflow-x-clip pb-0">
+        <div key={pathname} className={transition}>
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

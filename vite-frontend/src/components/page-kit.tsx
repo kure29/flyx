@@ -1,5 +1,6 @@
 import type * as React from "react";
 
+import { useLayoutEffect, useRef, useState } from "react";
 import { MoreHorizontal, Search, X } from "lucide-react";
 
 import { AnimatedPage } from "@/components/animated-page";
@@ -99,11 +100,69 @@ export function PageTabs<T extends string>({
   tabs: Array<PageTab<T>>;
   onChange: (key: T) => void;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  // The phone's sliding pill: where the selected tab is. "ready" places it
+  // without a slide (first paint), "moving" slides it to a new tab.
+  const [pill, setPill] = useState<{ x: number; w: number } | null>(null);
+  const [moving, setMoving] = useState(false);
+  const lastValue = useRef(value);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+
+    if (!list) return;
+    const place = () => {
+      const tab = list.querySelector<HTMLElement>('[aria-selected="true"]');
+
+      if (tab) setPill({ x: tab.offsetLeft, w: tab.offsetWidth });
+    };
+
+    place();
+    const ro = new ResizeObserver(place);
+
+    ro.observe(list);
+    list
+      .querySelectorAll<HTMLElement>('[role="tab"]')
+      .forEach((t) => ro.observe(t));
+
+    return () => ro.disconnect();
+  }, [value, tabs.length]);
+
+  // After a switch: slide the pill, fade in what is under the tabs.
+  useLayoutEffect(() => {
+    if (lastValue.current === value) return;
+    lastValue.current = value;
+    setMoving(true);
+    // A mark on the parent fades whatever sits after the tabs, including a
+    // loading state replaced by the content while the mark is on.
+    const parent = listRef.current?.parentElement;
+
+    if (!parent) return;
+    parent.classList.remove("tabs-switched");
+    void parent.offsetWidth;
+    parent.classList.add("tabs-switched");
+    const timer = window.setTimeout(
+      () => parent.classList.remove("tabs-switched"),
+      400,
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [value]);
+
   return (
     <div
+      ref={listRef}
       className="page-tabs mb-4 flex gap-5 overflow-x-auto border-b border-divider scrollbar-hide"
+      data-indicator={pill ? (moving ? "moving" : "ready") : undefined}
       role="tablist"
     >
+      {pill && (
+        <span
+          aria-hidden
+          className="page-tabs-indicator"
+          style={{ width: pill.w, transform: `translateX(${pill.x}px)` }}
+        />
+      )}
       {tabs.map((t) => (
         <button
           key={t.key}

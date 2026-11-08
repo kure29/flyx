@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { siteConfig } from "@/config/site";
+import { useRouteTransition } from "@/hooks/useRouteTransition";
 import { useScrollTopOnPathChange } from "@/hooks/useScrollTopOnPathChange";
 
 interface TabItem {
@@ -52,6 +53,7 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useScrollTopOnPathChange();
+  const transition = useRouteTransition();
 
   return (
     <div className="h5-shell flex flex-col min-h-screen bg-mesh-gradient">
@@ -68,7 +70,13 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* 主内容区域 */}
-      <main className="flex-1">{children}</main>
+      {/* overflow-x: clip keeps a page sliding in from the side from adding
+          a horizontal scrollbar, without breaking sticky bars inside. */}
+      <main className="flex-1 overflow-x-clip">
+        <div key={location.pathname} className={transition}>
+          {children}
+        </div>
+      </main>
 
       {/* 给悬浮 Tabbar 腾出空间 */}
       <div aria-hidden className="h-[calc(5rem+var(--safe-area-bottom))]" />

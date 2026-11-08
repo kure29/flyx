@@ -250,9 +250,54 @@ body {
   }
 }
 
+/* The phone's page transitions (hooks/useRouteTransition.ts): a page one
+   level down slides in like a settings group, back slides the other way,
+   and switching tab-bar pages fades. */
+.h5-shell .route-push {
+  animation: configPanePush 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.h5-shell .route-pop {
+  animation: configPanePop 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.h5-shell .route-fade {
+  animation: routeFade 0.22s ease-out;
+}
+
+@keyframes routeFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Content under a segmented tab, after the tab changes (PageTabs marks the
+   parent for a moment). */
+.h5-shell .tabs-switched > .page-tabs ~ * {
+  animation: tabContentIn 0.2s ease-out;
+}
+
+@keyframes tabContentIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .config-pane-push,
-  .config-pane-pop {
+  .config-pane-pop,
+  .h5-shell .route-push,
+  .h5-shell .route-pop,
+  .h5-shell .route-fade,
+  .h5-shell .tabs-switched > .page-tabs ~ * {
     animation-duration: 0.01ms;
   }
 }
@@ -502,14 +547,54 @@ body {
   padding: 0.3125rem 0.875rem;
 }
 
-.h5-shell .page-tabs > [role="tab"][aria-selected="true"] {
+/* The selected tab's white pill is one element that slides between tabs
+   (PageTabs measures the selected tab); until it is measured, the tab
+   itself carries the pill. */
+.h5-shell .page-tabs {
+  position: relative;
+}
+
+.h5-shell .page-tabs > [role="tab"] {
+  position: relative;
+  z-index: 1;
+}
+
+.h5-shell .page-tabs:not([data-indicator]) > [role="tab"][aria-selected="true"],
+.h5-shell .page-tabs-indicator {
   background-color: var(--content1);
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
 }
 
-.dark .h5-shell .page-tabs > [role="tab"][aria-selected="true"] {
+.dark .h5-shell .page-tabs:not([data-indicator]) > [role="tab"][aria-selected="true"],
+.dark .h5-shell .page-tabs-indicator {
   background-color: var(--default-300);
   box-shadow: none;
+}
+
+.page-tabs-indicator {
+  display: none;
+}
+
+.h5-shell .page-tabs-indicator {
+  display: block;
+  position: absolute;
+  top: 0.1875rem;
+  bottom: 0.1875rem;
+  left: 0;
+  border-radius: 0.5625rem;
+  pointer-events: none;
+}
+
+.h5-shell .page-tabs[data-indicator="moving"] .page-tabs-indicator {
+  transition:
+    transform 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .h5-shell .page-tabs[data-indicator="moving"] .page-tabs-indicator {
+    transition: none;
+  }
 }
 
 .h5-shell .page-search {
