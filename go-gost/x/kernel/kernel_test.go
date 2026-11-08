@@ -689,7 +689,8 @@ func TestNftScriptSpeedLimits(t *testing.T) {
 	if nftScript(expandPorts(ports[2:]), nil, nil, nil, expandLimits(ports[2:])) != nftScript(expandPorts(ports[2:]), nil, nil, nil, nil) {
 		t.Fatal("no limit objects without limits")
 	}
-	if _, err := exec.LookPath("nft"); err == nil {
+	// nft needs root to read the ruleset cache, as in the hopping test.
+	if _, err := exec.LookPath("nft"); err == nil && os.Geteuid() == 0 {
 		cmd := exec.Command("nft", "-c", "-f", "-")
 		cmd.Stdin = strings.NewReader(script)
 		if out, err := cmd.CombinedOutput(); err != nil {
