@@ -385,6 +385,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/federation/node/import", h.nodeImport)
 
 	mux.HandleFunc("/api/v1/node/traffic/month", h.nodeTrafficMonth)
+	mux.HandleFunc("/api/v1/node/billing", h.nodeBilling)
 	mux.HandleFunc("/api/v1/monitor/nodes/", h.monitorNodeMetricsHandler)
 	mux.HandleFunc("/api/v1/monitor/nodes", h.monitorNodeListHandler)
 	mux.HandleFunc("/api/v1/monitor/tunnels", h.monitorTunnelListHandler)
@@ -591,8 +592,11 @@ func (h *Handler) nodeList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.syncRemoteNodeStatuses(items)
+	hiddenCfg, _ := h.repo.GetConfigsByNames([]string{statusPageHiddenNodesKey})
+	hidden := parseStatusHiddenNodes(hiddenCfg[statusPageHiddenNodesKey])
 	for _, item := range items {
 		id := asInt64(item["id"], 0)
+		item["statusVisible"] = !hidden[id]
 		item["notifyEvents"] = parseNodeNotifyEvents(asString(item["notifyEvents"]))
 		if c := parseNodeTargetChoice(asString(item["latencyTargets"])); c != nil {
 			item["latencyTargets"] = c

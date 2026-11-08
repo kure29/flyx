@@ -137,6 +137,13 @@ func (r *Repository) ListNodes() ([]map[string]interface{}, error) {
 			"hostVirtualization":      n.HostVirtualization,
 			"region":                  n.Region,
 			"regionDetected":          n.RegionDetected,
+			"group":                   n.GroupName,
+			"publicNote":              n.PublicNote,
+			"price":                   n.Price,
+			"currency":                n.Currency,
+			"trafficQuotaGb":          n.TrafficQuotaGB,
+			"trafficCalc":             n.TrafficCalc,
+			"trafficResetDay":         n.TrafficResetDay,
 		})
 	}
 	return items, nil

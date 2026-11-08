@@ -387,6 +387,8 @@ const SEARCH_EXTRA: Array<[SectionKey, string, string?]> = [
   ["statuspage", "状态页", "开启公开状态页"],
   ["statuspage", "标题"],
   ["statuspage", "显示哪些服务器"],
+  ["statuspage", "显示价格", "价格和付款周期"],
+  ["statuspage", "分组方式", "按分组或按地区"],
   ["statuspage", "主题", "状态页主题"],
   ["backup", "导出数据", "JSON 备份"],
   ["backup", "导入数据"],

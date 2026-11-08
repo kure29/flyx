@@ -118,6 +118,7 @@ interface PublicStatus {
   generatedAt: number;    // 毫秒时间戳
   days: string[];         // 近 30 天日期 "YYYY-MM-DD"，从旧到新
   showTraffic: boolean;   // 管理员是否允许显示网速和流量
+  groupBy: "group" | "region";   // 按管理员填的分组还是按地区分组（面板 3.9.4 起）
   nodes: PublicStatusNode[];
   totals: {
     nodes: number; online: number;
@@ -144,7 +145,7 @@ interface PublicStatusNode {
   cores?: number;
   memUsed?: number; memTotal?: number;        // 字节
   diskUsed?: number; diskTotal?: number;      // 字节
-  monthUp?: number; monthDown?: number;       // 字节，showTraffic 为 false 时没有
+  monthUp?: number; monthDown?: number;       // 本期（从服务器的每月重置日起）字节，含管理员的流量校正；showTraffic 为 false 时没有
   expiry?: string;                            // "YYYY-MM-DD"，管理员开启显示到期日时才有
   region?: string;                            // 国家或地区代码（ISO 3166-1，如 "HK"、"JP"），管理员选的或按地址识别的；没有时不出现
   swap?: number;                              // Swap 使用率 %（agent 3.9.0 起；没有 Swap 时不出现）
@@ -163,10 +164,19 @@ interface PublicStatusNode {
     route?: string;       // 回程线路，如 "CN2 GIA"、"9929"、"4837"（面板 3.9.0 起，每天检测，检测过才有）
     routeV6?: string;     // 双栈服务器 IPv6 回程与 IPv4 不同时才有
   }>;
+  // 面板 3.9.4 起：
+  group?: string;         // 管理员填的分组，没填时不出现
+  note?: string;          // 公开备注
+  price?: number;         // 每个付款周期的价格，管理员开启「显示价格」且填了价格时才有
+  currency?: string;      // 货币代码（ISO 4217，如 "CNY"、"USD"），和 price 一起出现
+  cycle?: string;         // 付款周期："month"、"quarter"、"year"，或 "6m"（6 个月）、"2y"（2 年）
+  quota?: number;         // 每月流量额度（字节），设了额度且 showTraffic 时才有
+  quotaUsed?: number;     // 本期计入额度的流量（字节，按管理员选的计算方式）
+  periodStart?: number;   // 本期开始时间（毫秒）
 }
 ```
 
-接口不会返回 IP、端口、密钥、用户和协议；回程只给线路名，不给每一跳的地址。
+接口不会返回 IP、端口、密钥、用户和协议；回程只给线路名，不给每一跳的地址；价格只在管理员开启「显示价格」时返回，私有备注从不返回。
 
 节点的 `id` 是它在状态页上的位置（从 1 开始），不是面板里的编号；服务器被隐藏或调整顺序后会变。
 

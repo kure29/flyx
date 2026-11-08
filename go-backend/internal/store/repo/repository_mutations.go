@@ -1016,15 +1016,8 @@ func (r *Repository) AdvanceNodeRenewalCycles(now int64) (int, error) {
 			continue
 		}
 
-		cycleMonths := 0
-		switch node.RenewalCycle.String {
-		case "month":
-			cycleMonths = 1
-		case "quarter":
-			cycleMonths = 3
-		case "year":
-			cycleMonths = 12
-		default:
+		cycleMonths := model.RenewalCycleMonths(node.RenewalCycle.String)
+		if cycleMonths == 0 {
 			continue
 		}
 
@@ -1054,4 +1047,39 @@ func advanceByMonths(timestamp int64, months int) int64 {
 	t := time.Unix(timestamp/1000, 0)
 	next := t.AddDate(0, months, 0)
 	return next.UnixMilli()
+}
+
+// nodeProfileColumns are the node columns UpdateNodeColumns may set.
+var nodeProfileColumns = map[string]bool{
+	"group_name": true, "public_note": true, "price": true, "currency": true,
+	"renewal_cycle": true, "expiry_time": true, "expiry_reminder_dismissed": true,
+	"traffic_quota_gb": true, "traffic_calc": true, "traffic_reset_day": true,
+	"traffic_adjust_up": true, "traffic_adjust_down": true, "traffic_adjust_period": true,
+	"updated_time": true,
+}
+
+// UpdateNodeColumns sets profile columns of a node (group, price, traffic
+// plan ...); other columns are refused.
+func (r *Repository) UpdateNodeColumns(id int64, updates map[string]interface{}) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	for k := range updates {
+		if !nodeProfileColumns[k] {
+			return fmt.Errorf("node column %q cannot be updated here", k)
+		}
+	}
+	return r.db.Model(&model.Node{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// ListNodeTrafficPlans returns every node with the columns its traffic
+// period needs.
+func (r *Repository) ListNodeTrafficPlans() ([]model.Node, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var nodes []model.Node
+	err := r.db.Select("id", "traffic_quota_gb", "traffic_calc", "traffic_reset_day",
+		"traffic_adjust_up", "traffic_adjust_down", "traffic_adjust_period").Find(&nodes).Error
+	return nodes, err
 }

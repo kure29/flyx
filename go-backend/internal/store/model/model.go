@@ -3,7 +3,10 @@
 // transparently with both SQLite and PostgreSQL.
 package model
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+)
 
 // ─── Core Business Tables ────────────────────────────────────────────
 
@@ -116,6 +119,103 @@ type Node struct {
 	Region             string `gorm:"column:region;type:varchar(8);not null;default:''"`
 	RegionDetected     string `gorm:"column:region_detected;type:varchar(8);not null;default:''"`
 	RegionDetectedFrom string `gorm:"column:region_detected_from;type:varchar(100);not null;default:''"`
+	// GroupName is the admin's own grouping (香港, 家宽, ...), shown on the
+	// status page instead of regions when set; "" is no group.
+	GroupName string `gorm:"column:group_name;type:varchar(50);not null;default:''"`
+	// PublicNote is shown on the status page (Remark stays private).
+	PublicNote string `gorm:"column:public_note;type:varchar(200);not null;default:''"`
+	// Price per renewal period (RenewalCycle) in Currency (ISO 4217, CNY by
+	// default); 0 is free / not set.
+	Price    float64 `gorm:"column:price;not null;default:0"`
+	Currency string  `gorm:"column:currency;type:varchar(10);not null;default:''"`
+	// The node's traffic plan: TrafficQuotaGB a month (0 = no quota),
+	// counted per TrafficCalc (TrafficCalc* constants), the period starting
+	// on TrafficResetDay (1-31; a short month resets on its last day).
+	TrafficQuotaGB  int64  `gorm:"column:traffic_quota_gb;not null;default:0"`
+	TrafficCalc     string `gorm:"column:traffic_calc;type:varchar(10);not null;default:''"`
+	TrafficResetDay int    `gorm:"column:traffic_reset_day;not null;default:0"`
+	// Traffic correction: bytes added to the period starting at
+	// TrafficAdjustPeriod (ms), so the admin can set what was really used;
+	// it lapses when the next period starts.
+	TrafficAdjustUp     int64 `gorm:"column:traffic_adjust_up;not null;default:0"`
+	TrafficAdjustDown   int64 `gorm:"column:traffic_adjust_down;not null;default:0"`
+	TrafficAdjustPeriod int64 `gorm:"column:traffic_adjust_period;not null;default:0"`
+}
+
+// How a node's traffic counts against its quota.
+const (
+	TrafficCalcSum  = ""     // upload + download
+	TrafficCalcMax  = "max"  // the larger of the two
+	TrafficCalcUp   = "up"   // upload (sent) only
+	TrafficCalcDown = "down" // download (received) only
+)
+
+// TrafficUsed is the traffic that counts against the quota.
+func TrafficUsed(calc string, up, down int64) int64 {
+	switch calc {
+	case TrafficCalcMax:
+		return max(up, down)
+	case TrafficCalcUp:
+		return up
+	case TrafficCalcDown:
+		return down
+	}
+	return up + down
+}
+
+// RenewalCycleMonths is the length of a renewal cycle in months: "month",
+// "quarter", "year", or "<n>m" / "<n>y" (1-120 months); 0 for none.
+func RenewalCycleMonths(cycle string) int {
+	switch cycle {
+	case "month":
+		return 1
+	case "quarter":
+		return 3
+	case "year":
+		return 12
+	}
+	if len(cycle) < 2 {
+		return 0
+	}
+	n := 0
+	for _, c := range cycle[:len(cycle)-1] {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+		if n > 120 {
+			return 0
+		}
+	}
+	months := 0
+	switch cycle[len(cycle)-1] {
+	case 'm':
+		months = n
+	case 'y':
+		months = n * 12
+	}
+	if months < 1 || months > 120 {
+		return 0
+	}
+	return months
+}
+
+// CanonicalRenewalCycle stores a cycle of months the way older panels read
+// it where possible ("month", "quarter", "year"), else "<n>m" or "<n>y".
+func CanonicalRenewalCycle(months int) string {
+	switch {
+	case months <= 0 || months > 120:
+		return ""
+	case months == 1:
+		return "month"
+	case months == 3:
+		return "quarter"
+	case months == 12:
+		return "year"
+	case months%12 == 0:
+		return fmt.Sprintf("%dy", months/12)
+	}
+	return fmt.Sprintf("%dm", months)
 }
 
 // EffectiveRegion is the country shown for the node: the admin's choice,
@@ -665,6 +765,20 @@ type NodeBackup struct {
 	NotifyEvents *string `json:"notifyEvents,omitempty"`
 	// Region is the country the admin chose; older backups have none.
 	Region *string `json:"region,omitempty"`
+	// Profile: group, notes, price and traffic plan (3.9.4 on).
+	Profile *NodeProfileBackup `json:"profile,omitempty"`
+}
+
+// NodeProfileBackup is a server's profile in a backup. The traffic
+// correction is left out: it only applies to the period it was made in.
+type NodeProfileBackup struct {
+	Group           string  `json:"group,omitempty"`
+	PublicNote      string  `json:"publicNote,omitempty"`
+	Price           float64 `json:"price,omitempty"`
+	Currency        string  `json:"currency,omitempty"`
+	TrafficQuotaGB  int64   `json:"trafficQuotaGb,omitempty"`
+	TrafficCalc     string  `json:"trafficCalc,omitempty"`
+	TrafficResetDay int     `json:"trafficResetDay,omitempty"`
 }
 
 type TunnelBackup struct {

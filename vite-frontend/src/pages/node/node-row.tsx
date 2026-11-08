@@ -98,6 +98,7 @@ const NodeRowContent = memo(function NodeRowContent({
   );
 
   const upgrading = progress && progress.percent < 100;
+  const quota = quotaUsage(node, month);
   const address =
     node.serverIpV4?.trim() || node.serverIpV6?.trim() || node.serverIp.trim();
   const meta = isRemoteNode
@@ -143,6 +144,28 @@ const NodeRowContent = memo(function NodeRowContent({
             >
               {expiryMeta.label}
             </Chip>
+          )}
+          {quota && (
+            <Chip
+              className="shrink-0"
+              color={
+                quota.pct >= 100
+                  ? "danger"
+                  : quota.pct >= 90
+                    ? "warning"
+                    : "default"
+              }
+              size="sm"
+              title={`本期已用 ${quota.used} / 每月额度 ${quota.total}`}
+              variant="flat"
+            >
+              {quota.used} / {quota.total}
+            </Chip>
+          )}
+          {node.group?.trim() && (
+            <span className="hidden shrink-0 text-xs text-default-400 sm:inline">
+              {node.group.trim()}
+            </span>
           )}
         </>
       }
@@ -230,4 +253,36 @@ function hostSummary(node: Node): { short: string; full: string } | null {
     .join("\n");
 
   return { short: short || os, full };
+}
+
+const gbText = (bytes: number) => {
+  const gb = bytes / 2 ** 30;
+
+  if (gb >= 1024) return `${(gb / 1024).toFixed(gb >= 10240 ? 0 : 1)} TB`;
+
+  return `${gb >= 100 ? Math.round(gb) : gb.toFixed(1)} GB`;
+};
+
+/** This period's traffic against the monthly quota, as the node counts it. */
+function quotaUsage(
+  node: Node,
+  month?: [number, number],
+): { used: string; total: string; pct: number } | null {
+  if (!node.trafficQuotaGb || !month) return null;
+  const [down, up] = month;
+  const used =
+    node.trafficCalc === "max"
+      ? Math.max(up, down)
+      : node.trafficCalc === "up"
+        ? up
+        : node.trafficCalc === "down"
+          ? down
+          : up + down;
+  const total = node.trafficQuotaGb * 2 ** 30;
+
+  return {
+    used: gbText(used),
+    total: gbText(total),
+    pct: (used / total) * 100,
+  };
 }

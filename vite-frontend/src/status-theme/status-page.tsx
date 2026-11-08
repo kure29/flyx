@@ -1,15 +1,7 @@
 import type { PublicStatus, PublicStatusNode, PublicStatusPing } from "@/api";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Activity,
-  CircleCheck,
-  LayoutGrid,
-  List,
-  Server,
-  TriangleAlert,
-  ArrowUpRight,
-} from "lucide-react";
+import { LayoutGrid, List, TriangleAlert } from "lucide-react";
 
 import {
   availabilityText,
@@ -39,6 +31,9 @@ import {
   uptimeShort,
   usageText,
   usePolling,
+  groupOf,
+  priceText,
+  quotaOf,
 } from "./ui";
 
 import { Spinner } from "@/shadcn-bridge/heroui/spinner";
@@ -51,41 +46,48 @@ type View = "cards" | "list";
 
 // ---------------------------------------------------------------- pieces
 
-function Stat({
-  label,
-  icon,
-  value,
-  unit,
-  sub,
-  valueClass = "",
-}: {
+interface StatItem {
   label: string;
-  icon: React.ReactNode;
   value: string;
   unit?: string;
   sub?: string;
   valueClass?: string;
-}) {
+}
+
+/** The page's headline figures in one card, split by hairlines. */
+function StatStrip({ items }: { items: StatItem[] }) {
+  // 1px gaps over the border colour draw the hairlines: 2 × 2 on a phone,
+  // one row on a desktop.
   return (
-    <Card className="flex min-w-0 flex-col gap-1 p-4 sm:p-6">
-      <div className="flex items-center justify-between gap-2 text-sm font-medium">
-        <span className="truncate">{label}</span>
-        <span className="text-default-500">{icon}</span>
-      </div>
-      <div className="mt-1 flex items-baseline gap-1 truncate">
-        <span
-          className={`text-xl font-bold tracking-tight tabular-nums sm:text-2xl ${valueClass}`}
+    <div
+      className={`${cardClass} grid grid-cols-2 gap-px overflow-hidden bg-border dark:bg-border ${
+        items.length > 2 ? "lg:grid-cols-4" : ""
+      }`}
+    >
+      {items.map((it) => (
+        <div
+          key={it.label}
+          className="flex min-w-0 flex-col gap-0.5 bg-background px-4 py-3 sm:px-5 dark:bg-content1"
         >
-          {value}
-        </span>
-        {unit && <span className="text-sm text-default-500">{unit}</span>}
-      </div>
-      {sub && (
-        <span className="truncate text-xs tabular-nums text-default-500">
-          {sub}
-        </span>
-      )}
-    </Card>
+          <span className="truncate text-xs text-default-500">{it.label}</span>
+          <span className="flex items-baseline gap-1 truncate">
+            <span
+              className={`text-xl font-semibold tracking-tight tabular-nums ${it.valueClass ?? ""}`}
+            >
+              {it.value}
+            </span>
+            {it.unit && (
+              <span className="text-xs text-default-500">{it.unit}</span>
+            )}
+          </span>
+          {it.sub && (
+            <span className="truncate text-xs tabular-nums text-default-500">
+              {it.sub}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -206,6 +208,8 @@ function NodeCard({
   const live = node.online && node.cpu !== undefined;
   const remaining = node.expiry ? daysUntil(node.expiry) : null;
   const host = hostLine(node);
+  const quota = showTraffic ? quotaOf(node) : null;
+  const price = priceText(node);
 
   return (
     <a
@@ -227,6 +231,11 @@ function NodeCard({
         >
           {host || (node.online ? " " : "离线中，暂无实时数据")}
         </span>
+        {node.note && (
+          <span className="truncate text-xs text-default-600" title={node.note}>
+            {node.note}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -268,6 +277,18 @@ function NodeCard({
                   <Up /> {bytesText(node.monthUp)} <Down />{" "}
                   {bytesText(node.monthDown)}
                 </Row>
+                {quota && (
+                  <div
+                    className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2.5 text-[13px]"
+                    title="本期已用 / 每月额度"
+                  >
+                    <span className="text-default-500">额度</span>
+                    <Bar value={quota.pct} />
+                    <span className="font-medium tabular-nums">
+                      {quota.text}
+                    </span>
+                  </div>
+                )}
               </>
             )}
             <Row label="连接">
@@ -301,8 +322,9 @@ function NodeCard({
       <div className="mt-auto flex flex-col gap-1.5 pt-1">
         <Days days={days} node={node} />
         <div className="flex items-center justify-between text-xs text-default-500">
-          <span>
+          <span className="min-w-0 truncate">
             {days.length} 天
+            {price && <span className="ml-2 text-foreground">{price}</span>}
             {remaining !== null && (
               <span className={`ml-2 ${expiryText(remaining)}`}>
                 {remaining < 0 ? "已过期" : `${remaining} 天后到期`}
@@ -353,15 +375,27 @@ function Resources({ node, live }: { node: PublicStatusNode; live: boolean }) {
   );
 }
 
+/** Servers listed under one heading (a group or a region). */
+interface Section {
+  key: string;
+  label: string;
+  flag: string;
+  nodes: PublicStatusNode[];
+}
+
 function NodeTable({
-  nodes,
+  sections,
   days,
   showTraffic,
 }: {
-  nodes: PublicStatusNode[];
+  /** One section without a heading lists the servers plainly. */
+  sections: Section[];
   days: string[];
   showTraffic: boolean;
 }) {
+  const all = sections.flatMap((x) => x.nodes);
+  const showPrice = all.some((n) => priceText(n));
+  const columns = 6 + (showTraffic ? 2 : 0) + (showPrice ? 1 : 0);
   const th =
     "h-10 whitespace-nowrap px-3 text-left text-[13px] font-medium text-default-500";
   const td = "whitespace-nowrap px-3 py-3 align-middle";
@@ -378,122 +412,160 @@ function NodeTable({
             {showTraffic && <th className={th}>本月流量</th>}
             <th className={th}>TCP / UDP</th>
             <th className={th}>延迟</th>
+            {showPrice && <th className={th}>价格</th>}
             <th className={th}>{days.length} 天可用率</th>
           </tr>
         </thead>
-        <tbody>
-          {nodes.map((node) => {
-            const [flag, , name] = nodeFlag(node);
-            const live = node.online && node.cpu !== undefined;
+        {sections.map((section) => (
+          <tbody key={section.key}>
+            {sections.length > 1 && (
+              <tr className="border-b border-border bg-default-50/60">
+                <th
+                  className="px-4 py-2 text-left text-xs font-medium text-default-500"
+                  colSpan={columns}
+                >
+                  {section.flag && (
+                    <span className="mr-1.5">{section.flag}</span>
+                  )}
+                  {section.label}
+                  <span className="ml-1.5 tabular-nums opacity-60">
+                    {section.nodes.length}
+                  </span>
+                </th>
+              </tr>
+            )}
+            {section.nodes.map((node) => {
+              const [flag, , name] = nodeFlag(node);
+              const live = node.online && node.cpu !== undefined;
 
-            return (
-              // The name's link stretches over the whole row (::after), so a
-              // row opens like a link: keyboard, middle click, new tab.
-              <tr
-                key={node.id}
-                className="relative border-b border-border last:border-0 hover:bg-default-50"
-              >
-                <td className={`${td} pl-4`}>
-                  <a
-                    className="flex items-center gap-2.5 rounded-sm outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary"
-                    href={nodeHref(node.id)}
-                  >
-                    {flag && <span className="text-lg">{flag}</span>}
-                    <span className="flex min-w-0 max-w-[13rem] flex-col">
-                      <span className="truncate font-medium" title={name}>
-                        {name}
-                      </span>
-                      {hostLine(node) && (
-                        <span
-                          className="truncate text-xs text-default-500"
-                          title={hostLine(node)}
-                        >
-                          {hostLine(node)}
+              return (
+                // The name's link stretches over the whole row (::after), so a
+                // row opens like a link: keyboard, middle click, new tab.
+                <tr
+                  key={node.id}
+                  className="relative border-b border-border last:border-0 hover:bg-default-50"
+                >
+                  <td className={`${td} pl-4`}>
+                    <a
+                      className="flex items-center gap-2.5 rounded-sm outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary"
+                      href={nodeHref(node.id)}
+                    >
+                      {flag && <span className="text-lg">{flag}</span>}
+                      <span className="flex min-w-0 max-w-[13rem] flex-col">
+                        <span className="truncate font-medium" title={name}>
+                          {name}
                         </span>
+                        {(hostLine(node) || node.note) && (
+                          <span
+                            className="truncate text-xs text-default-500"
+                            title={[hostLine(node), node.note]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          >
+                            {[hostLine(node), node.note]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        )}
+                      </span>
+                    </a>
+                  </td>
+                  <td className={td}>{statusBadge(node)}</td>
+                  <td className={td}>
+                    <Resources live={live} node={node} />
+                  </td>
+                  {showTraffic && (
+                    <td className={`${td} tabular-nums`}>
+                      {live ? (
+                        <>
+                          <div>
+                            <Up /> {speedText(node.speedUp)}
+                          </div>
+                          <div>
+                            <Down /> {speedText(node.speedDown)}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-default-400">—</span>
                       )}
-                    </span>
-                  </a>
-                </td>
-                <td className={td}>{statusBadge(node)}</td>
-                <td className={td}>
-                  <Resources live={live} node={node} />
-                </td>
-                {showTraffic && (
+                    </td>
+                  )}
+                  {showTraffic && (
+                    <td className={`${td} tabular-nums`}>
+                      <div>
+                        <Up /> {bytesText(node.monthUp)}
+                      </div>
+                      <div>
+                        <Down /> {bytesText(node.monthDown)}
+                      </div>
+                      {quotaOf(node) && (
+                        <div
+                          className="mt-1 w-28"
+                          title={`额度 ${quotaOf(node)?.text}`}
+                        >
+                          <Bar value={quotaOf(node)?.pct ?? 0} />
+                        </div>
+                      )}
+                    </td>
+                  )}
                   <td className={`${td} tabular-nums`}>
                     {live ? (
-                      <>
-                        <div>
-                          <Up /> {speedText(node.speedUp)}
-                        </div>
-                        <div>
-                          <Down /> {speedText(node.speedDown)}
-                        </div>
-                      </>
+                      <span>
+                        {node.tcp ?? 0}
+                        <span className="text-default-400"> / </span>
+                        {node.udp ?? 0}
+                      </span>
                     ) : (
                       <span className="text-default-400">—</span>
                     )}
                   </td>
-                )}
-                {showTraffic && (
-                  <td className={`${td} tabular-nums`}>
-                    <div>
-                      <Up /> {bytesText(node.monthUp)}
-                    </div>
-                    <div>
-                      <Down /> {bytesText(node.monthDown)}
+                  <td className={td}>
+                    <div className="flex flex-col gap-1">
+                      {(node.ping ?? []).map((p) => (
+                        <div key={p.name} className="flex items-center gap-1.5">
+                          <span
+                            className="max-w-[4.5rem] truncate text-default-500"
+                            title={p.name}
+                          >
+                            {p.name}
+                          </span>
+                          <b
+                            className={`font-medium tabular-nums ${latencyText(p.ms)}`}
+                          >
+                            {p.ms === null ? "超时" : p.ms}
+                          </b>
+                          <RouteTag route={p.route} v6={p.routeV6} />
+                        </div>
+                      ))}
+                      {!node.ping?.length && (
+                        <span className="text-default-400">—</span>
+                      )}
                     </div>
                   </td>
-                )}
-                <td className={`${td} tabular-nums`}>
-                  {live ? (
-                    <span>
-                      {node.tcp ?? 0}
-                      <span className="text-default-400"> / </span>
-                      {node.udp ?? 0}
-                    </span>
-                  ) : (
-                    <span className="text-default-400">—</span>
+                  {showPrice && (
+                    <td className={`${td} tabular-nums`}>
+                      {priceText(node) || (
+                        <span className="text-default-400">—</span>
+                      )}
+                    </td>
                   )}
-                </td>
-                <td className={td}>
-                  <div className="flex flex-col gap-1">
-                    {(node.ping ?? []).map((p) => (
-                      <div key={p.name} className="flex items-center gap-1.5">
-                        <span
-                          className="max-w-[4.5rem] truncate text-default-500"
-                          title={p.name}
-                        >
-                          {p.name}
-                        </span>
-                        <b
-                          className={`font-medium tabular-nums ${latencyText(p.ms)}`}
-                        >
-                          {p.ms === null ? "超时" : p.ms}
-                        </b>
-                        <RouteTag route={p.route} v6={p.routeV6} />
+                  <td className={`${td} pr-4`}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-20">
+                        <Days days={days} node={node} />
                       </div>
-                    ))}
-                    {!node.ping?.length && (
-                      <span className="text-default-400">—</span>
-                    )}
-                  </div>
-                </td>
-                <td className={`${td} pr-4`}>
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-20">
-                      <Days days={days} node={node} />
+                      <span
+                        className={`text-xs tabular-nums ${availabilityText(node.availability.d30)}`}
+                      >
+                        {pct(node.availability.d30)}
+                      </span>
                     </div>
-                    <span
-                      className={`text-xs tabular-nums ${availabilityText(node.availability.d30)}`}
-                    >
-                      {pct(node.availability.d30)}
-                    </span>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        ))}
       </table>
     </Card>
   );
@@ -567,36 +639,59 @@ export default function StatusPage() {
     }
   };
 
-  const regions = useMemo(() => {
-    const m = new Map<string, { flag: string; count: number }>();
+  const groupBy = data?.groupBy ?? "region";
+
+  // The groups (the admin's, or regions) in the order the servers are
+  // listed, "其他" last.
+  const groups = useMemo(() => {
+    const m = new Map<string, { label: string; flag: string; count: number }>();
 
     for (const n of data?.nodes ?? []) {
-      const [flag, code] = nodeFlag(n);
-      const key = code || "其他";
-      const r = m.get(key) ?? { flag, count: 0 };
+      const g = groupOf(n, groupBy);
+      const r = m.get(g.key) ?? { label: g.label, flag: g.flag, count: 0 };
 
       r.count++;
-      m.set(key, r);
+      m.set(g.key, r);
     }
 
-    return [...m.entries()].sort((a, b) => b[1].count - a[1].count);
-  }, [data]);
+    return [...m.entries()].sort(
+      (a, b) => Number(a[0] === "其他") - Number(b[0] === "其他"),
+    );
+  }, [data, groupBy]);
 
   const nodes = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return (data?.nodes ?? []).filter(
       (n) =>
-        (!region || (nodeFlag(n)[1] || "其他") === region) &&
-        (!q || n.name.toLowerCase().includes(q)),
+        (!region || groupOf(n, groupBy).key === region) &&
+        (!q ||
+          n.name.toLowerCase().includes(q) ||
+          (n.group ?? "").toLowerCase().includes(q) ||
+          (n.note ?? "").toLowerCase().includes(q)),
     );
-  }, [data, region, query]);
+  }, [data, region, query, groupBy]);
+
+  // "全部" with several groups lists them under headings.
+  const sections: Section[] = useMemo(() => {
+    if (region || groups.length < 2) {
+      return [{ key: "all", label: "", flag: "", nodes }];
+    }
+
+    return groups
+      .map(([key, g]) => ({
+        key,
+        label: g.label,
+        flag: g.flag,
+        nodes: nodes.filter((n) => groupOf(n, groupBy).key === key),
+      }))
+      .filter((x) => x.nodes.length > 0);
+  }, [groups, nodes, region, groupBy]);
 
   const t = data?.totals;
   const offline = (data?.nodes ?? []).filter((n) => !n.online);
   const [monthV, monthU] = splitBytes(t ? t.monthUp + t.monthDown : 0);
   const [bwV, bwU] = splitBytes(t ? t.speedUp + t.speedDown : 0);
-  const statCols = data?.showTraffic ? "lg:grid-cols-4" : "lg:grid-cols-2";
 
   return (
     <Shell title={title}>
@@ -614,16 +709,12 @@ export default function StatusPage() {
         )
       ) : (
         <>
-          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-            <div className="min-w-0">
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                服务器状态
-              </h1>
-              <p className="mt-1 text-sm text-default-500">
-                {t.nodes} 台服务器的实时状态，每 {REFRESH_MS / 1000} 秒自动刷新
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-[13px] text-default-500">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <h1 className="text-xl font-semibold tracking-tight">服务器状态</h1>
+            <div
+              className="flex items-center gap-2 text-[13px] text-default-500"
+              title={`每 ${REFRESH_MS / 1000} 秒自动刷新`}
+            >
               {error ? (
                 <Badge title={error} tone="warn">
                   未刷新
@@ -661,45 +752,45 @@ export default function StatusPage() {
             </div>
           )}
 
-          <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${statCols}`}>
-            <Stat
-              icon={<Server size={16} />}
-              label="在线服务器"
-              sub={
-                t.online === t.nodes
-                  ? "全部在线"
-                  : `${t.nodes - t.online} 台离线`
-              }
-              unit={`/ ${t.nodes}`}
-              value={String(t.online)}
-            />
-            {data.showTraffic && (
-              <Stat
-                icon={<Activity size={16} />}
-                label="实时带宽"
-                sub={`↑ ${speedText(t.speedUp)} · ↓ ${speedText(t.speedDown)}`}
-                unit={`${bwU}/s`}
-                value={bwV}
-              />
-            )}
-            {data.showTraffic && (
-              <Stat
-                icon={<ArrowUpRight size={16} />}
-                label="本月流量"
-                sub={`↑ ${bytesText(t.monthUp)} · ↓ ${bytesText(t.monthDown)}`}
-                unit={monthU}
-                value={monthV}
-              />
-            )}
-            <Stat
-              icon={<CircleCheck size={16} />}
-              label={`${data.days.length} 天可用率`}
-              sub="所有服务器平均"
-              unit={t.d30 === null ? "" : "%"}
-              value={t.d30 === null ? "—" : t.d30.toFixed(t.d30 >= 100 ? 0 : 2)}
-              valueClass={availabilityText(t.d30)}
-            />
-          </div>
+          <StatStrip
+            items={[
+              {
+                label: "在线服务器",
+                value: String(t.online),
+                unit: `/ ${t.nodes}`,
+                sub:
+                  t.online === t.nodes
+                    ? "全部在线"
+                    : `${t.nodes - t.online} 台离线`,
+                valueClass:
+                  t.online < t.nodes ? "text-red-600 dark:text-red-400" : "",
+              },
+              ...(data.showTraffic
+                ? [
+                    {
+                      label: "实时带宽",
+                      value: bwV,
+                      unit: `${bwU}/s`,
+                      sub: `↑ ${speedText(t.speedUp)} · ↓ ${speedText(t.speedDown)}`,
+                    },
+                    {
+                      label: "本月流量",
+                      value: monthV,
+                      unit: monthU,
+                      sub: `↑ ${bytesText(t.monthUp)} · ↓ ${bytesText(t.monthDown)}`,
+                    },
+                  ]
+                : []),
+              {
+                label: `${data.days.length} 天可用率`,
+                value:
+                  t.d30 === null ? "—" : t.d30.toFixed(t.d30 >= 100 ? 0 : 2),
+                unit: t.d30 === null ? "" : "%",
+                sub: "所有服务器平均",
+                valueClass: availabilityText(t.d30),
+              },
+            ]}
+          />
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold">服务器</h2>
@@ -740,14 +831,17 @@ export default function StatusPage() {
             />
           </div>
 
-          {regions.length > 1 && (
+          {groups.length > 1 && (
             <nav
-              aria-label="按地区筛选"
+              aria-label={groupBy === "group" ? "按分组筛选" : "按地区筛选"}
               className="-mt-1 flex flex-wrap gap-1.5"
             >
               {[
-                ["", { flag: "", count: data.nodes.length }] as const,
-                ...regions,
+                [
+                  "",
+                  { label: "全部", flag: "", count: data.nodes.length },
+                ] as const,
+                ...groups,
               ].map(([key, r]) => (
                 <button
                   key={key || "all"}
@@ -763,7 +857,7 @@ export default function StatusPage() {
                   {r.flag && (
                     <span className="text-sm leading-none">{r.flag}</span>
                   )}
-                  {key || "全部"}
+                  {r.label}
                   <span className="tabular-nums opacity-60">{r.count}</span>
                 </button>
               ))}
@@ -775,22 +869,35 @@ export default function StatusPage() {
           ) : view === "list" ? (
             <NodeTable
               days={data.days}
-              nodes={nodes}
+              sections={sections}
               showTraffic={data.showTraffic}
             />
           ) : (
-            // As many columns as fit cards at least 18 rem wide: 4 on a
-            // desktop page, so names and latency lines are not cut off.
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] gap-3">
-              {nodes.map((node) => (
-                <NodeCard
-                  key={node.id}
-                  days={data.days}
-                  node={node}
-                  showTraffic={data.showTraffic}
-                />
-              ))}
-            </div>
+            sections.map((section) => (
+              <section key={section.key} className="flex flex-col gap-2.5">
+                {sections.length > 1 && (
+                  <h3 className="flex items-center gap-1.5 pt-1 text-sm font-medium text-default-600">
+                    {section.flag && <span>{section.flag}</span>}
+                    {section.label}
+                    <span className="tabular-nums text-default-400">
+                      {section.nodes.length}
+                    </span>
+                  </h3>
+                )}
+                {/* As many columns as fit cards at least 18 rem wide: 4 on
+                    a desktop page, so names and latency lines fit. */}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] gap-3">
+                  {section.nodes.map((node) => (
+                    <NodeCard
+                      key={node.id}
+                      days={data.days}
+                      node={node}
+                      showTraffic={data.showTraffic}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))
           )}
 
           <footer className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-default-500">

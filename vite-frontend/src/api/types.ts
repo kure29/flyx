@@ -12,7 +12,7 @@ export interface NodeApiItem {
   nftError?: string;
   remark?: string;
   expiryTime?: number;
-  renewalCycle?: "month" | "quarter" | "year" | "";
+  renewalCycle?: string;
   region?: string;
   regionDetected?: string;
   expiryReminderDismissed?: number;
@@ -221,9 +221,21 @@ export interface NodeMutationPayload {
   notifyEvents?: NodeNotifyEvents | null;
   remark?: string;
   expiryTime?: number;
-  renewalCycle?: "month" | "quarter" | "year" | "";
+  /** "month", "quarter", "year", "<n>m" or "<n>y"; "" for none. */
+  renewalCycle?: string;
   /** 地区代码，空字符串为自动识别；不传则不修改。 */
   region?: string;
+  /** Profile fields; absent ones are left as they are. */
+  group?: string;
+  publicNote?: string;
+  statusVisible?: boolean;
+  price?: number;
+  currency?: string;
+  trafficQuotaGb?: number;
+  trafficCalc?: string;
+  trafficResetDay?: number;
+  /** Sets this period's traffic to what the provider shows (GB). */
+  trafficCorrection?: { upGb?: number; downGb?: number };
   serverIp?: string;
   serverIpV4?: string;
   serverIpV6?: string;

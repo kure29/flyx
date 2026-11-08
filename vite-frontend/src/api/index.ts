@@ -142,13 +142,21 @@ export const unbindGithub = (password: string) =>
 export const createNode = (data: NodeMutationPayload) =>
   Network.post("/node/create", data);
 export const getNodeList = () => Network.post<NodeApiItem[]>("/node/list");
-/** Each node's traffic since the 1st of this month (viewer's time zone): id → [in, out]. */
+/** Each node's traffic in its current period (from its reset day, panel time zone), corrected: id → [in, out]. */
 export const getNodeMonthTraffic = () =>
   Network.post<Record<string, [number, number]>>("/node/traffic/month", {
     tzOffset: -new Date().getTimezoneOffset(),
   });
 export const getDashboardNodeExpiryList = () =>
   Network.post<NodeApiItem[]>("/node/list", {});
+/** Only a server's price and renewal (the 价格与到期 dialog). */
+export const updateNodeBilling = (data: {
+  id: number;
+  price: number;
+  currency: string;
+  renewalCycle: string;
+  expiryTime: number;
+}) => Network.post("/node/billing", data);
 export const updateNode = (data: NodeMutationPayload) =>
   Network.post("/node/update", data);
 /** Outcome of uninstalling the agent while deleting a server. */
@@ -1302,6 +1310,17 @@ export interface PublicStatusNode {
   memTotal?: number;
   diskUsed?: number;
   diskTotal?: number;
+  /** The admin's group ("" or absent = none) and the public note. */
+  group?: string;
+  note?: string;
+  /** Price per cycle ("month", "quarter", "year", "6m", "2y"), when shown. */
+  price?: number;
+  currency?: string;
+  cycle?: string;
+  /** Monthly traffic quota and what counts against it, in bytes. */
+  quota?: number;
+  quotaUsed?: number;
+  periodStart?: number;
   monthUp?: number;
   monthDown?: number;
   expiry?: string;
@@ -1374,6 +1393,8 @@ export interface PublicStatus {
   generatedAt: number;
   days: string[];
   showTraffic: boolean;
+  /** How the page groups servers: the admin's groups or regions. */
+  groupBy?: "group" | "region";
   nodes: PublicStatusNode[];
   totals: {
     nodes: number;

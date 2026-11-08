@@ -260,6 +260,10 @@ func (r *Repository) exportNodes() ([]model.NodeBackup, error) {
 			LatencyTargets: n.LatencyTargets,
 			NotifyEvents:   &n.NotifyEvents,
 			Region:         &n.Region,
+			Profile: &model.NodeProfileBackup{
+				Group: n.GroupName, PublicNote: n.PublicNote, Price: n.Price, Currency: n.Currency,
+				TrafficQuotaGB: n.TrafficQuotaGB, TrafficCalc: n.TrafficCalc, TrafficResetDay: n.TrafficResetDay,
+			},
 		}
 		if n.ExpiryTime.Valid {
 			b.ExpiryTime = n.ExpiryTime.Int64
@@ -767,6 +771,20 @@ func importNodes(tx *gorm.DB, nodes []model.NodeBackup, now int64) (int, error) 
 		if n.Region != nil {
 			item.Region = *n.Region
 			columns = append(columns, "region")
+		}
+		if p := n.Profile; p != nil {
+			item.GroupName, item.PublicNote, item.Currency, item.TrafficCalc = p.Group, p.PublicNote, p.Currency, p.TrafficCalc
+			if p.Price >= 0 {
+				item.Price = p.Price
+			}
+			if p.TrafficQuotaGB >= 0 {
+				item.TrafficQuotaGB = p.TrafficQuotaGB
+			}
+			if p.TrafficResetDay >= 0 && p.TrafficResetDay <= 31 {
+				item.TrafficResetDay = p.TrafficResetDay
+			}
+			columns = append(columns, "group_name", "public_note", "price", "currency",
+				"traffic_quota_gb", "traffic_calc", "traffic_reset_day")
 		}
 		err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},

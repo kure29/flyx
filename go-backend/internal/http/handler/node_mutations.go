@@ -29,6 +29,10 @@ func (h *Handler) nodeCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
+	if _, err := nodeProfileUpdates(req); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
 	name := asString(req["name"])
 	serverIP := asString(req["serverIp"])
 	if name == "" || serverIP == "" {
@@ -91,6 +95,10 @@ func (h *Handler) nodeCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
+	if err := h.applyNodeProfileRequest(nodeID, req); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
 	h.nudgeNodeRegions()
 	response.WriteJSON(w, response.OKEmpty())
 }
@@ -117,6 +125,10 @@ func (h *Handler) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	notifyEvents, err := nodeNotifyEventsFromRequest(req)
 	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
+	if _, err := nodeProfileUpdates(req); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
@@ -190,6 +202,10 @@ func (h *Handler) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.applyNodeRegionRequest(id, req); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	if err := h.applyNodeProfileRequest(id, req); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
 	h.nudgeNodeRegions()
@@ -710,13 +726,10 @@ func (h *Handler) uninstallNodeAgent(node *model.Node) nodeDeleteResult {
 	return result
 }
 
+// normalizeNodeRenewalCycle accepts "month", "quarter", "year" and "<n>m" /
+// "<n>y"; "" for anything else (no cycle).
 func normalizeNodeRenewalCycle(v string) string {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "month", "quarter", "year":
-		return strings.ToLower(strings.TrimSpace(v))
-	default:
-		return ""
-	}
+	return model.CanonicalRenewalCycle(model.RenewalCycleMonths(strings.ToLower(strings.TrimSpace(v))))
 }
 
 func defaultNodeForwardMode(mode string) string {

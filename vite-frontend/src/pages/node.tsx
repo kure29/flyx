@@ -52,6 +52,7 @@ import {
 } from "@/components/page-kit";
 import { getRemoteSyncErrorMessage } from "@/pages/node/display";
 import { NodeTuneModal } from "@/pages/node/tune-modal";
+import { NodeBillingModal } from "@/pages/node/billing-modal";
 import { copyWithToast } from "@/utils/clipboard";
 import {
   formatNodeRenewalTime,
@@ -112,6 +113,9 @@ const validateIpv6Literal = (ip: string): boolean => ipv6Regex.test(ip.trim());
 // Hostname/domain validation (no scheme/port)
 const hostnameRegex =
   /^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/;
+
+// The 分组 filter value for servers without a group.
+const NO_GROUP = "\u0000";
 
 const PAGE = "node";
 const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 8 } };
@@ -174,6 +178,9 @@ export default function NodePage({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [rollbackModalOpen, setRollbackModalOpen] = useState(false);
   const [tuneNode, setTuneNode] = useState<Node | null>(null);
+  const [billingNode, setBillingNode] = useState<Node | null>(null);
+  // The 分组 chip picked above the list ("" = all, "\u0000" = no group).
+  const [groupFilter, setGroupFilter] = useState("");
   const [nodeToRollback, setNodeToRollback] = useState<Node | null>(null);
   const [nodeToDelete, setNodeToDelete] = useState<Node | null>(null);
   const [protocolDisabled, setProtocolDisabled] = useState(false);
@@ -187,6 +194,16 @@ export default function NodePage({
     renewalCycle: "",
     region: "",
     regionDetected: "",
+    group: "",
+    publicNote: "",
+    statusVisible: true,
+    price: "",
+    currency: "",
+    trafficQuotaGb: "",
+    trafficCalc: "",
+    trafficResetDay: "",
+    correctUpGb: "",
+    correctDownGb: "",
     serverHost: "",
     serverIpV4: "",
     serverIpV6: "",
@@ -282,6 +299,18 @@ export default function NodePage({
     if (active) void loadMonthTraffic();
   }, [active, loadMonthTraffic]);
   useVisiblePolling(loadMonthTraffic, 60_000, active);
+  // The groups servers use, most used first, offered when editing.
+  const nodeGroups = useMemo(() => {
+    const count = new Map<string, number>();
+
+    for (const n of nodeList) {
+      const g = n.group?.trim();
+
+      if (g) count.set(g, (count.get(g) ?? 0) + 1);
+    }
+
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
+  }, [nodeList]);
 
   const [upgradeProgress, setUpgradeProgress] = useState<
     Record<number, { stage: string; percent: number; message: string }>
@@ -556,7 +585,20 @@ export default function NodePage({
       (form.renewalCycle && !form.expiryTime) ||
       (!form.renewalCycle && form.expiryTime)
     ) {
-      newErrors.expiryTime = "请同时设置续费周期和续费基准时间";
+      newErrors.expiryTime = "付款周期和到期时间要一起填";
+    }
+    if (form.price.trim() && !(Number(form.price) >= 0)) {
+      newErrors.price = "请填写数字";
+    }
+    const resetDay = Number(form.trafficResetDay || 1);
+
+    if (!(resetDay >= 1 && resetDay <= 31)) {
+      newErrors.trafficResetDay = "填 1 到 31";
+    }
+    for (const key of ["correctUpGb", "correctDownGb"] as const) {
+      if (form[key].trim() && !(Number(form[key]) >= 0)) {
+        newErrors[key] = "请填写数字";
+      }
     }
 
     const v4 = form.serverIpV4.trim();
@@ -650,6 +692,19 @@ export default function NodePage({
       renewalCycle: node.renewalCycle || "",
       region: node.region || "",
       regionDetected: node.regionDetected || "",
+      group: node.group || "",
+      publicNote: node.publicNote || "",
+      statusVisible: node.statusVisible !== false,
+      price: node.price ? String(node.price) : "",
+      currency: node.currency || "",
+      trafficQuotaGb: node.trafficQuotaGb ? String(node.trafficQuotaGb) : "",
+      trafficCalc: node.trafficCalc || "",
+      trafficResetDay:
+        node.trafficResetDay && node.trafficResetDay > 1
+          ? String(node.trafficResetDay)
+          : "",
+      correctUpGb: "",
+      correctDownGb: "",
       serverHost: normalizedHost,
       serverIpV4: normalizedV4,
       serverIpV6: normalizedV6,
@@ -937,7 +992,16 @@ export default function NodePage({
 
     try {
       const apiCall = isEdit ? updateNode : createNode;
-      const { serverHost, ...rest } = form;
+      const { serverHost, correctUpGb, correctDownGb, ...rest } = form;
+      const correction =
+        correctUpGb.trim() || correctDownGb.trim()
+          ? {
+              ...(correctUpGb.trim() ? { upGb: Number(correctUpGb) } : {}),
+              ...(correctDownGb.trim()
+                ? { downGb: Number(correctDownGb) }
+                : {}),
+            }
+          : undefined;
       const sshConfig =
         form.forwardMode === "nftables"
           ? {
@@ -963,6 +1027,15 @@ export default function NodePage({
         expiryTime: form.expiryTime,
         renewalCycle: form.renewalCycle,
         region: form.region,
+        group: form.group.trim(),
+        publicNote: form.publicNote.trim(),
+        statusVisible: form.statusVisible,
+        price: Number(form.price) || 0,
+        currency: form.currency,
+        trafficQuotaGb: Number(form.trafficQuotaGb) || 0,
+        trafficCalc: form.trafficCalc,
+        trafficResetDay: Number(form.trafficResetDay) || 0,
+        ...(correction ? { trafficCorrection: correction } : {}),
         extraIPs: form.extraIPs,
         forwardMode: form.forwardMode,
         sshConfig,
@@ -977,6 +1050,7 @@ export default function NodePage({
 
       if (res.code === 0) {
         toast.success(isEdit ? "更新成功" : "创建成功");
+        if (correction || isEdit) void loadMonthTraffic();
         setDialogVisible(false);
 
         if (isEdit) {
@@ -991,6 +1065,14 @@ export default function NodePage({
                     expiryTime: form.expiryTime,
                     renewalCycle: form.renewalCycle,
                     region: form.region,
+                    group: form.group.trim(),
+                    publicNote: form.publicNote.trim(),
+                    statusVisible: form.statusVisible,
+                    price: Number(form.price) || 0,
+                    currency: form.currency,
+                    trafficQuotaGb: Number(form.trafficQuotaGb) || 0,
+                    trafficCalc: form.trafficCalc,
+                    trafficResetDay: Number(form.trafficResetDay) || 0,
                     serverIp:
                       form.serverIpV4?.trim() ||
                       form.serverIpV6?.trim() ||
@@ -1035,6 +1117,16 @@ export default function NodePage({
       renewalCycle: "",
       region: "",
       regionDetected: "",
+      group: "",
+      publicNote: "",
+      statusVisible: true,
+      price: "",
+      currency: "",
+      trafficQuotaGb: "",
+      trafficCalc: "",
+      trafficResetDay: "",
+      correctUpGb: "",
+      correctDownGb: "",
       serverHost: "",
       serverIpV4: "",
       serverIpV6: "",
@@ -1311,6 +1403,12 @@ export default function NodePage({
     const keywordFiltered = filterNodesByKeyword(
       localNodes,
       localSearchKeyword,
+    ).filter(
+      (n) =>
+        !groupFilter ||
+        (groupFilter === NO_GROUP
+          ? !n.group?.trim()
+          : n.group?.trim() === groupFilter),
     );
 
     if (nodeFilterMode === "all") {
@@ -1331,7 +1429,13 @@ export default function NodePage({
           return true;
       }
     });
-  }, [filterNodesByKeyword, localNodes, localSearchKeyword, nodeFilterMode]);
+  }, [
+    filterNodesByKeyword,
+    localNodes,
+    localSearchKeyword,
+    nodeFilterMode,
+    groupFilter,
+  ]);
 
   const filteredRemoteNodes = useMemo(
     () => filterNodesByKeyword(remoteNodes, remoteSearchKeyword),
@@ -1354,7 +1458,9 @@ export default function NodePage({
   const hasKeywordSearch = currentSearchKeyword.trim().length > 0;
   const hasActiveFilters = nodeFilterMode !== "all";
   const isDisplayFiltered =
-    hasKeywordSearch || (canUseExpiryFilter && hasActiveFilters);
+    hasKeywordSearch ||
+    (canUseExpiryFilter && hasActiveFilters) ||
+    (activeTab === "local" && groupFilter !== "");
 
   const sortableNodeIds = useMemo(
     () => displayNodes.map((n) => n.id),
@@ -1474,6 +1580,45 @@ export default function NodePage({
             </ToolbarButton>
           )}
         </PageToolbar>
+      )}
+
+      {activeTab === "local" && nodeGroups.length > 0 && (
+        // The admin's 分组: pick one to list only its servers.
+        <nav aria-label="按分组筛选" className="mb-2 flex flex-wrap gap-1.5">
+          {[
+            ["", "全部", localNodes.length] as const,
+            ...nodeGroups.map(
+              (g) =>
+                [
+                  g,
+                  g,
+                  localNodes.filter((n) => n.group?.trim() === g).length,
+                ] as const,
+            ),
+            [
+              NO_GROUP,
+              "未分组",
+              localNodes.filter((n) => !n.group?.trim()).length,
+            ] as const,
+          ]
+            .filter(([key, , count]) => key === "" || count > 0)
+            .map(([key, label, count]) => (
+              <button
+                key={key || "all"}
+                aria-pressed={groupFilter === key}
+                className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+                  groupFilter === key
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-dashed border-divider text-default-600 hover:bg-default-100"
+                }`}
+                type="button"
+                onClick={() => setGroupFilter(key)}
+              >
+                {label}
+                <span className="tabular-nums opacity-60">{count}</span>
+              </button>
+            ))}
+        </nav>
       )}
 
       {/* A connection that comes up within a moment needs no notice. */}
@@ -1638,6 +1783,11 @@ export default function NodePage({
                         onPress: () => handleEdit(node),
                       },
                       {
+                        key: "billing",
+                        label: "价格与到期",
+                        onPress: () => setBillingNode(node),
+                      },
+                      {
                         key: "targets",
                         label: "测试点",
                         onPress: () => setTargetNodes([node]),
@@ -1728,6 +1878,7 @@ export default function NodePage({
         dialogVisible={dialogVisible}
         errors={errors}
         form={form}
+        groups={nodeGroups}
         handleSubmit={handleSubmit}
         protocolControlsDisabled={protocolControlsDisabled}
         protocolControlsReason={protocolControlsReason}
@@ -1737,6 +1888,15 @@ export default function NodePage({
       />
 
       <NodeTuneModal node={tuneNode} onClose={() => setTuneNode(null)} />
+      <NodeBillingModal
+        node={billingNode}
+        onClose={() => setBillingNode(null)}
+        onSaved={(id, value) =>
+          setNodeList((prev) =>
+            prev.map((n) => (n.id === id ? { ...n, ...value } : n)),
+          )
+        }
+      />
 
       {/* 回退确认模态框 */}
       <RollbackNodeModal

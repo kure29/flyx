@@ -8,7 +8,9 @@ import { ErrorBoundary, reloadOnce } from "./components/error-boundary";
 import { IS_DEMO, installDemo } from "./demo";
 import { DemoBanner } from "./demo/banner";
 import { Provider } from "./provider.tsx";
+
 import "@/styles/globals.css";
+import { loadFlagFont } from "@/utils/flags";
 
 // A page chunk from the previous build is gone after an upgrade: reload
 // to pick up the new build. When that already happened in the last
@@ -82,6 +84,8 @@ const updateSW = registerSW({
     );
   },
 });
+
+loadFlagFont();
 
 // The demo is static files on GitHub Pages: hash routes need no server.
 const Router = IS_DEMO ? HashRouter : BrowserRouter;
