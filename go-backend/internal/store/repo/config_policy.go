@@ -38,7 +38,8 @@ var sensitiveConfigKeys = map[string]struct{}{
 	// The Gist backup's credentials.
 	"gist_token":    {},
 	"gist_password": {},
-	// Reads a private release repository (github_token.go).
+	// Read a private release repository; set in 设置 up to 3.9.2, now only
+	// GITHUB_TOKEN is used (github_token.go). A stored value stays hidden.
 	"github_token": {},
 }
 
@@ -59,7 +60,7 @@ var systemManagedConfigKeys = map[string]struct{}{
 	"gist_last_upload":    {},
 	"gist_last_error":     {},
 	"gist_last_hash":      {},
-	// Set through its own endpoint, never sent back nor backed up.
+	// Left from 3.9.2 and earlier: never sent back nor backed up.
 	"github_token": {},
 }
 

@@ -80,16 +80,16 @@ curl -L https://github.com/kure29/flyx/releases/download/3.0.7/panel_install.sh 
 
 ## 发布仓库是私有仓库
 
-自己 fork 后把仓库设为私有时，GitHub 不再对外提供 Release 文件和镜像，面板内升级、服务器安装和 agent 升级都会失败。在面板里配置一个令牌即可恢复：
+自己 fork 后把仓库设为私有时，GitHub 不再对外提供 Release 文件和镜像，面板内升级、服务器安装和 agent 升级都会失败。给面板配置一个令牌即可恢复（官方仓库 kure29/flyx 是公开的，不需要这一步）：
 
 1. 在 GitHub **Settings** → **Developer settings** → **Personal access tokens (classic)** 新建令牌，勾选 `repo`；面板内升级还要拉取私有镜像，再勾选 `read:packages`。
-2. **设置** → **服务器与监控** → **GitHub 令牌**，填入后保存。保存时会检查令牌能否读取发布仓库，令牌之后不会再显示，也不会进入备份。
-3. 同一页打开 **GitHub 加速**，加速地址选 **面板中转**。服务器从面板下载 agent 和安装脚本，令牌只留在面板上，不会下发到服务器。
+2. 在面板部署目录的 `.env` 里加一行 `GITHUB_TOKEN=令牌`，然后 `docker compose up -d` 重建后端（旧版 `docker-compose.yml` 需要在 `backend.environment` 里加上 `GITHUB_TOKEN: ${GITHUB_TOKEN:-}`，见 [常见问题](./faq.md)）。令牌只在面板服务器上，不会显示在网页里，也不会进入备份。
+3. **设置** → **服务器与监控** 打开 **GitHub 加速**，加速地址选 **面板中转**。服务器从面板下载 agent 和安装脚本，令牌只留在面板上，不会下发到服务器。
 
 之后面板内升级、服务器 **升级** 按钮和面板生成的安装命令都和以前一样使用。用 Docker 方式部署的服务器拉取私有镜像前，需要在服务器上先 `docker login ghcr.io`（用户名是 GitHub 用户名，密码是带 `read:packages` 的令牌）。
 
 ::: tip
-第一次配置令牌需要面板已经是 3.5.7 或更新的版本。面板还是旧版本时，先在部署目录手动升级一次：`docker login ghcr.io` 后，把 `.env` 里的 `FLYX_VERSION` 改成新版本号，再运行 `docker compose pull && docker compose up -d`。
+面板经中转下载私有仓库的文件需要 3.5.7 或更新的版本。面板还是旧版本时，先在部署目录手动升级一次：`docker login ghcr.io` 后，把 `.env` 里的 `FLYX_VERSION` 改成新版本号，再运行 `docker compose pull && docker compose up -d`。
 :::
 
 ::: warning

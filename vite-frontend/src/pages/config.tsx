@@ -72,7 +72,6 @@ import {
   SubHeading,
 } from "@/pages/config/section";
 import { GistBackup } from "@/pages/config/gist-backup";
-import { GithubToken } from "@/pages/config/github-token";
 import { isAdmin } from "@/utils/auth";
 import { getCachedConfigs, configCache, updateSiteConfig } from "@/config/site";
 import { githubCallbackUrl } from "@/utils/github-login";
@@ -375,7 +374,6 @@ const isSectionKey = (v: string | null): v is SectionKey =>
 // drawn by their own components, by the label they show.
 const SEARCH_EXTRA: Array<[SectionKey, string, string?]> = [
   ["appearance", "主题", "配色、浅色 / 深色"],
-  ["network", "GitHub 令牌", "提高 GitHub API 限额"],
   ["latency", "预设测试点", "名称、地址、端口"],
   ["latency", "延迟阈值"],
   ["latency", "丢包阈值"],
@@ -1784,14 +1782,6 @@ export default function ConfigPage() {
             {renderItem("monitor_retention_days")}
             {renderItem("github_proxy_enabled")}
             {renderItem("github_proxy_url")}
-            <GithubToken
-              usingPanelMirror={
-                configs.github_proxy_enabled !== "false" &&
-                /\/api\/v1\/open_api\/gh\/?$/.test(
-                  (configs.github_proxy_url || "").trim(),
-                )
-              }
-            />
           </ConfigSection>
 
           <ConfigSection

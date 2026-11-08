@@ -473,16 +473,6 @@ export interface GistBackupVersion {
   version: string;
   committedAt: number;
 }
-export interface GithubTokenStatus {
-  set: boolean;
-  /** Not set here, but GITHUB_TOKEN is set for the panel. */
-  fromEnv: boolean;
-  repo: string;
-}
-export const getGithubTokenStatus = () =>
-  Network.post<GithubTokenStatus>("/config/github-token/status");
-export const saveGithubToken = (data: { token?: string; clear?: boolean }) =>
-  Network.post<null>("/config/github-token/save", data);
 export const getGistBackupStatus = () =>
   Network.post<GistBackupStatus>("/backup/gist/status");
 /** An empty token or password keeps the saved one. */

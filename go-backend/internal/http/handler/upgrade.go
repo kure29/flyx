@@ -183,10 +183,10 @@ func decodeGitHubReleases(resp *http.Response) ([]githubRelease, error) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		if resp.StatusCode == http.StatusTooManyRequests || strings.Contains(strings.ToLower(string(body)), "rate limit") {
-			return nil, fmt.Errorf("GitHub API 请求次数超限（未认证每个 IP 每小时 60 次），请稍后再试，或在 设置 → 服务器与监控 填写 GitHub 令牌（也可设置环境变量 GITHUB_TOKEN）")
+			return nil, fmt.Errorf("GitHub API 请求次数超限（未认证每个 IP 每小时 60 次），请稍后再试，或给面板设置环境变量 GITHUB_TOKEN")
 		}
 		if resp.StatusCode == http.StatusNotFound && githubToken() == "" {
-			return nil, fmt.Errorf("GitHub 找不到仓库 %s 的发布（私有仓库需要在 设置 → 服务器与监控 填写 GitHub 令牌）", githubRepo)
+			return nil, fmt.Errorf("GitHub 找不到仓库 %s 的发布（私有仓库需要给面板设置环境变量 GITHUB_TOKEN）", githubRepo)
 		}
 		return nil, fmt.Errorf("GitHub API返回 %d: %s", resp.StatusCode, string(body))
 	}

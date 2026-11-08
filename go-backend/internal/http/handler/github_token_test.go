@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -102,19 +101,8 @@ func TestGithubMirrorPrivateRepository(t *testing.T) {
 	}
 }
 
-func TestCheckGithubToken(t *testing.T) {
-	fakePrivateGitHub(t, "tok")
-	ctx := context.Background()
-	if err := checkGithubToken(ctx, "tok"); err != nil {
-		t.Fatalf("a token that reads the repository must pass: %v", err)
-	}
-	if err := checkGithubToken(ctx, "other"); err == nil {
-		t.Fatal("a token without access must be refused")
-	}
-}
-
 func TestGithubTokenIsNeverSentBack(t *testing.T) {
 	if !repo.IsSensitiveConfigKey(githubTokenConfig) || !repo.IsSystemManagedConfigKey(githubTokenConfig) {
-		t.Fatal("github_token must be sensitive and set only through its own endpoint")
+		t.Fatal("a github_token left stored must stay hidden and out of backups")
 	}
 }
