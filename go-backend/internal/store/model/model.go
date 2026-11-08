@@ -562,6 +562,9 @@ type InboundBackup struct {
 	ImportedName        string `json:"importedName,omitempty"`
 	OutboundID          int64  `json:"outboundId,omitempty"`
 	SplitRules          string `json:"splitRules,omitempty"`
+	DefaultBlock        int    `json:"defaultBlock,omitempty"`
+	RateUpMbps          int    `json:"rateUpMbps,omitempty"`
+	RateDownMbps        int    `json:"rateDownMbps,omitempty"`
 	Tags                string `json:"tags,omitempty"`
 }
 

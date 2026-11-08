@@ -317,7 +317,7 @@ func TestParseChecksum(t *testing.T) {
 }
 
 func TestNftScriptOnlyCounts(t *testing.T) {
-	script := nftScript(expandPorts([]Port{{InboundID: 2, Port: 80, Network: "tcp,udp"}, {InboundID: 1, Port: 443, Network: "tcp"}}), nil, nil, nil)
+	script := nftScript(expandPorts([]Port{{InboundID: 2, Port: 80, Network: "tcp,udp"}, {InboundID: 1, Port: 443, Network: "tcp"}}), nil, nil, nil, nil)
 	for _, bad := range []string{"drop", "reject", "policy drop"} {
 		if strings.Contains(script, bad) {
 			t.Fatalf("counting table must never filter: %s", script)
@@ -360,7 +360,7 @@ func TestNftScriptWhitelist(t *testing.T) {
 		{InboundID: 1, Port: 443, Network: "tcp", Allow: []string{"127.0.0.0/8", "::1/128", "198.51.100.7/32", "127.0.0.1/32"}},
 		{InboundID: 2, Port: 8388, Network: "tcp,udp"},
 	}
-	script := nftScript(expandPorts(ports), expandGuards(ports), expandHops(ports), nil)
+	script := nftScript(expandPorts(ports), expandGuards(ports), expandHops(ports), nil, nil)
 	for _, want := range []string{
 		"set allow4_1 {",
 		"elements = { 127.0.0.0/8, 127.0.0.1/32, 198.51.100.7/32 }",
@@ -545,7 +545,7 @@ func TestNftScriptPortHopping(t *testing.T) {
 		{InboundID: 3, Port: 443, Network: "udp", HopFrom: 20000, HopTo: 30000, Allow: []string{"127.0.0.0/8"}},
 		{InboundID: 4, Port: 8443, Network: "udp"},
 	}
-	script := nftScript(expandPorts(ports), expandGuards(ports), expandHops(ports), nil)
+	script := nftScript(expandPorts(ports), expandGuards(ports), expandHops(ports), nil, nil)
 	for _, want := range []string{
 		"type nat hook prerouting priority -100;",
 		"type nat hook output priority -100;",
@@ -558,7 +558,7 @@ func TestNftScriptPortHopping(t *testing.T) {
 	if strings.Count(script, "redirect") != 2 {
 		t.Fatalf("only the hopping inbound is redirected (once per hook):\n%s", script)
 	}
-	if strings.Contains(nftScript(expandPorts(ports[1:]), nil, expandHops(ports[1:]), nil), "hop_") {
+	if strings.Contains(nftScript(expandPorts(ports[1:]), nil, expandHops(ports[1:]), nil, nil), "hop_") {
 		t.Fatal("no hop chains without hop ranges")
 	}
 	if _, err := exec.LookPath("nft"); err == nil && os.Geteuid() == 0 {
@@ -581,7 +581,7 @@ func TestNftScriptUserMarks(t *testing.T) {
 	if len(users) != 2 || users[0] != 7 {
 		t.Fatalf("users: %v", users)
 	}
-	script := nftScript(expandPorts(ports), nil, nil, users)
+	script := nftScript(expandPorts(ports), nil, nil, users, nil)
 	for _, want := range []string{
 		"counter uup_7 {}", "counter udown_9 {}",
 		"meta mark 0x46560007 ct mark set meta mark counter name uup_7",
@@ -650,5 +650,66 @@ func TestRealmFixFileWithoutIPv6(t *testing.T) {
 	}
 	if got := realmFixFile("other.txt", cfg); got != cfg {
 		t.Fatalf("other files must stay: %q", got)
+	}
+}
+
+func TestNftScriptSpeedLimits(t *testing.T) {
+	ports := []Port{
+		{InboundID: 5, Port: 443, Network: "tcp,udp", LimitUpMbps: 10, LimitDownMbps: 100, HopFrom: 20000, HopTo: 30000},
+		{InboundID: 6, Port: 8443, Network: "tcp", LimitDownMbps: 1},
+		{InboundID: 7, Port: 9443, Network: "tcp"},
+	}
+	script := nftScript(expandPorts(ports), nil, expandHops(ports), nil, expandLimits(ports))
+	for _, want := range []string{
+		// 10 Mbit/s = 1250000 B/s; the bucket is 0.2 s, at least 64 KiB.
+		"limit rl_up_5 { rate over 1250000 bytes/second burst 250000 bytes }",
+		"limit rl_down_5 { rate over 12500000 bytes/second burst 2500000 bytes }",
+		"limit rl_down_6 { rate over 125000 bytes/second burst 65536 bytes }",
+		// One budget per inbound, shared by its TCP and UDP rules.
+		`tcp dport 443 limit name "rl_up_5" drop`,
+		`udp dport 443 limit name "rl_up_5" drop`,
+		`tcp sport 443 limit name "rl_down_5" drop`,
+		`udp sport 443 limit name "rl_down_5" drop`,
+		`tcp sport 8443 limit name "rl_down_6" drop`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("missing %q in:\n%s", want, script)
+		}
+	}
+	for _, unwanted := range []string{"rl_up_6", "rl_up_7", "rl_down_7", "dport 8443 limit"} {
+		if strings.Contains(script, unwanted) {
+			t.Fatalf("unexpected %q in:\n%s", unwanted, script)
+		}
+	}
+	// Dropped packets are not counted as traffic.
+	if strings.Index(script, `tcp dport 443 limit`) > strings.Index(script, "tcp dport 443 counter") ||
+		strings.Index(script, `tcp sport 443 limit`) > strings.Index(script, "tcp sport 443 counter") {
+		t.Fatalf("limits must come before the counters:\n%s", script)
+	}
+	if nftScript(expandPorts(ports[2:]), nil, nil, nil, expandLimits(ports[2:])) != nftScript(expandPorts(ports[2:]), nil, nil, nil, nil) {
+		t.Fatal("no limit objects without limits")
+	}
+	if _, err := exec.LookPath("nft"); err == nil {
+		cmd := exec.Command("nft", "-c", "-f", "-")
+		cmd.Stdin = strings.NewReader(script)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("nft rejected the script: %v\n%s\n%s", err, out, script)
+		}
+	}
+}
+
+func TestValidatePortsSpeedLimits(t *testing.T) {
+	ok := ApplyRequest{Ports: []Port{{InboundID: 1, Port: 443, Network: "tcp", LimitUpMbps: 100000}}}
+	if err := ok.validatePorts(); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []Port{
+		{InboundID: 1, Port: 443, Network: "tcp", LimitUpMbps: -1},
+		{InboundID: 1, Port: 443, Network: "tcp", LimitDownMbps: 100001},
+	} {
+		r := ApplyRequest{Ports: []Port{p}}
+		if r.validatePorts() == nil {
+			t.Fatalf("%+v must be refused", p)
+		}
 	}
 }

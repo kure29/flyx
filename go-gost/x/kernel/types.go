@@ -65,7 +65,14 @@ type Port struct {
 	// HopFrom..HopTo (UDP) are redirected to Port: Hysteria2 port hopping.
 	HopFrom int `json:"hopFrom,omitempty"`
 	HopTo   int `json:"hopTo,omitempty"`
+	// LimitUpMbps / LimitDownMbps cap the inbound's total upload (packets
+	// to Port) and download (packets from it) in Mbit/s; 0 = no limit.
+	LimitUpMbps   int `json:"limitUpMbps,omitempty"`
+	LimitDownMbps int `json:"limitDownMbps,omitempty"`
 }
+
+// maxLimitMbps is the largest speed limit accepted (100 Gbit/s).
+const maxLimitMbps = 100000
 
 // ApplyRequest is the KernelApply command body.
 type ApplyRequest struct {
@@ -227,6 +234,9 @@ func (r *ApplyRequest) validatePorts() error {
 			if p.HopFrom < 1 || p.HopTo > 65535 || p.HopFrom >= p.HopTo || (p.Port >= p.HopFrom && p.Port <= p.HopTo) {
 				return fmt.Errorf("非法端口跳跃范围: %d-%d", p.HopFrom, p.HopTo)
 			}
+		}
+		if p.LimitUpMbps < 0 || p.LimitUpMbps > maxLimitMbps || p.LimitDownMbps < 0 || p.LimitDownMbps > maxLimitMbps {
+			return fmt.Errorf("非法限速: %d / %d Mbps", p.LimitUpMbps, p.LimitDownMbps)
 		}
 		if len(p.Allow) > 512 {
 			return fmt.Errorf("白名单条目过多")

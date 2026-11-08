@@ -122,9 +122,14 @@ type inboundView struct {
 	OutboundName    string `json:"outboundName,omitempty"`
 	OutboundMissing bool   `json:"outboundMissing,omitempty"`
 	// SplitRules are the inbound's 分流 rules.
-	SplitRules         []kernel.SplitRule `json:"splitRules"`
-	OutboundIPStrategy string             `json:"outboundIpStrategy"`
-	Tags               []string           `json:"tags"`
+	SplitRules []kernel.SplitRule `json:"splitRules"`
+	// DefaultBlock: what no 分流 rule matched is dropped.
+	DefaultBlock bool `json:"defaultBlock"`
+	// RateUpMbps / RateDownMbps: the inbound's speed limits, 0 = none.
+	RateUpMbps         int      `json:"rateUpMbps"`
+	RateDownMbps       int      `json:"rateDownMbps"`
+	OutboundIPStrategy string   `json:"outboundIpStrategy"`
+	Tags               []string `json:"tags"`
 }
 
 // kernelSecurityView hides the self-signed private material and DNS API
@@ -160,7 +165,11 @@ type inboundRequest struct {
 	WhitelistExtra      string             `json:"whitelistExtra"`
 	OutboundID          int64              `json:"outboundId"`
 	SplitRules          []kernel.SplitRule `json:"splitRules"`
-	Enabled             *bool              `json:"enabled"`
+	// DefaultBlock, RateUpMbps, RateDownMbps: absent keeps the stored value.
+	DefaultBlock *bool `json:"defaultBlock"`
+	RateUpMbps   *int  `json:"rateUpMbps"`
+	RateDownMbps *int  `json:"rateDownMbps"`
+	Enabled      *bool `json:"enabled"`
 }
 
 // ---- conversion ----
@@ -596,6 +605,9 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			SourceName:         sourceNames[row.SourceID],
 			OutboundID:         row.OutboundID,
 			SplitRules:         rowSplitRules(row),
+			DefaultBlock:       row.DefaultBlock == 1,
+			RateUpMbps:         row.RateUpMbps,
+			RateDownMbps:       row.RateDownMbps,
 			OutboundIPStrategy: row.OutboundIPStrategy,
 			Tags:               splitTags(row.Tags),
 		}
@@ -723,6 +735,20 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.ErrDefault("该服务器无法使用入站白名单："+node.NftError))
 		return
 	}
+	if req.RateUpMbps != nil || req.RateDownMbps != nil {
+		up, down := row.RateUpMbps, row.RateDownMbps
+		if req.RateUpMbps != nil {
+			up = *req.RateUpMbps
+		}
+		if req.RateDownMbps != nil {
+			down = *req.RateDownMbps
+		}
+		if err := validateInboundRates(node, up, down); err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+		row.RateUpMbps, row.RateDownMbps = up, down
+	}
 	row.ShareAddressMode = mode
 	if mode != "custom" {
 		req.ShareHost = ""
@@ -771,7 +797,7 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 	}
 	row.OutboundIPStrategy = in.OutboundIPStrategy
 	prevTargets := outboundTargets(row)
-	if err := h.setInboundRouting(&row, k.KernelType, k.Version, req.OutboundID, req.SplitRules); err != nil {
+	if err := h.setInboundRouting(&row, k.KernelType, k.Version, req.OutboundID, req.SplitRules, req.DefaultBlock); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
@@ -1283,6 +1309,14 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		}
 		if row.RelayWhitelist == 1 {
 			port["allow"] = h.inboundAllowList(row)
+		}
+		// Speed limits, enforced by the agent on the port (agent 3.9.4+;
+		// older agents ignore them, which saving warns about).
+		if row.RateUpMbps > 0 {
+			port["limitUpMbps"] = row.RateUpMbps
+		}
+		if row.RateDownMbps > 0 {
+			port["limitDownMbps"] = row.RateDownMbps
 		}
 		ports = append(ports, port)
 	}

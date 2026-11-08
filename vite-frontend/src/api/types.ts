@@ -737,6 +737,11 @@ export interface InboundApiItem {
   outboundMissing?: boolean;
   /** 分流 rules, tried in order before the default exit. */
   splitRules: SplitRule[];
+  /** The default exit is 阻断: only what a 分流 rule sends elsewhere gets out. */
+  defaultBlock?: boolean;
+  /** Speed limits in Mbit/s, the inbound's total; 0 = none. */
+  rateUpMbps?: number;
+  rateDownMbps?: number;
   /** The user's labels, for telling nodes apart in the list. */
   tags?: string[];
 }
@@ -768,6 +773,8 @@ export interface InboundMutationPayload {
   whitelistExtra: string;
   outboundId: number;
   splitRules: SplitRule[];
+  rateUpMbps?: number;
+  rateDownMbps?: number;
   enabled?: boolean;
 }
 

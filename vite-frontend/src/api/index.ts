@@ -1207,6 +1207,7 @@ export const updateInboundSplit = (data: {
   id: number;
   outboundId: number;
   splitRules: SplitRule[];
+  defaultBlock?: boolean;
   outboundIpStrategy?:
     | "auto"
     | "ipv4_only"

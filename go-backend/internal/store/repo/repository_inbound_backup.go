@@ -38,6 +38,7 @@ func (r *Repository) exportInbounds() (*model.InboundsBackup, error) {
 			RelayWhitelist: i.RelayWhitelist, WhitelistExtra: i.WhitelistExtra, Enabled: i.Enabled,
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
 			CreatedTime: i.CreatedTime, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID, SplitRules: i.SplitRules, OutboundIPStrategy: i.OutboundIPStrategy, Tags: i.Tags,
+			DefaultBlock: i.DefaultBlock, RateUpMbps: i.RateUpMbps, RateDownMbps: i.RateDownMbps,
 		})
 	}
 
@@ -191,6 +192,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
 			CreatedTime: i.CreatedTime, UpdatedTime: now, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID,
 			SplitRules: i.SplitRules, OutboundIPStrategy: strategy, Tags: i.Tags,
+			DefaultBlock: i.DefaultBlock, RateUpMbps: clampRateMbps(i.RateUpMbps), RateDownMbps: clampRateMbps(i.RateDownMbps),
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
@@ -199,6 +201,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 				"settings", "extra", "share_host", "share_address_mode", "remark", "relay_only", "accept_proxy_protocol",
 				"relay_whitelist", "whitelist_extra", "enabled", "upload_bytes", "download_bytes",
 				"inx", "updated_time", "source_id", "imported_name", "outbound_id", "split_rules", "outbound_ip_strategy", "tags",
+				"default_block", "rate_up_mbps", "rate_down_mbps",
 			}),
 		}).Create(&item).Error; err != nil {
 			return 0, err
@@ -291,4 +294,13 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 		}
 	}
 	return len(b.Inbounds), nil
+}
+
+// clampRateMbps keeps a restored speed limit in the range the panel accepts
+// (0 = no limit).
+func clampRateMbps(v int) int {
+	if v < 0 || v > model.MaxInboundRateMbps {
+		return 0
+	}
+	return v
 }
