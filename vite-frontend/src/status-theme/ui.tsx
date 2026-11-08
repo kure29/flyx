@@ -314,7 +314,7 @@ export function Shell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4 sm:px-8">
+        <div className="mx-auto flex h-14 max-w-[87.5rem] items-center gap-3 px-4 sm:px-8">
           <a className="flex min-w-0 items-center gap-2" href={home}>
             <BrandLogo className="h-6 w-6 shrink-0" size={24} />
             <span className="truncate font-semibold tracking-tight">
@@ -328,7 +328,7 @@ export function Shell({
           </a>
         </div>
       </header>
-      <main className="mx-auto flex max-w-[1400px] flex-col gap-4 px-4 py-6 sm:px-8 sm:py-8">
+      <main className="mx-auto flex max-w-[87.5rem] flex-col gap-4 px-4 py-6 sm:px-8 sm:py-8">
         {children}
       </main>
     </div>

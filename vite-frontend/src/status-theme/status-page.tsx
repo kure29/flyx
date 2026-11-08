@@ -1,6 +1,6 @@
 import type { PublicStatus, PublicStatusNode, PublicStatusPing } from "@/api";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   CircleCheck,
@@ -320,15 +320,35 @@ function NodeCard({
   );
 }
 
-function Pct({ v }: { v: number | undefined }) {
-  if (v === undefined) return <span className="text-default-400">—</span>;
+/** CPU, memory and disk in one table cell: a bar and a figure each. */
+function Resources({ node, live }: { node: PublicStatusNode; live: boolean }) {
+  const rows: Array<[string, number | undefined, string | undefined]> = [
+    ["CPU", node.cpu, live && node.cores ? `${node.cores} 核` : undefined],
+    ["内存", node.mem, capacity(node.memUsed, node.memTotal)],
+    ["磁盘", node.disk, capacity(node.diskUsed, node.diskTotal)],
+  ];
 
   return (
-    <div className="flex w-20 flex-col gap-1.5">
-      <span className={`font-medium tabular-nums ${usageText(v)}`}>
-        {v.toFixed(1)}%
-      </span>
-      <Bar value={v} />
+    <div className="grid w-44 grid-cols-[2rem_minmax(0,1fr)_2.75rem] items-center gap-x-2 gap-y-1 text-xs">
+      {rows.map(([label, value, title]) => {
+        const v = live ? value : undefined;
+
+        return (
+          <Fragment key={label}>
+            <span className="text-default-500">{label}</span>
+            <span title={live ? title : undefined}>
+              <Bar value={v ?? 0} />
+            </span>
+            <span
+              className={`text-right font-medium tabular-nums ${
+                v === undefined ? "text-default-400" : usageText(v)
+              }`}
+            >
+              {v === undefined ? "—" : `${v.toFixed(1)}%`}
+            </span>
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -353,12 +373,10 @@ function NodeTable({
           <tr className="border-b border-border">
             <th className={`${th} pl-4`}>服务器</th>
             <th className={th}>状态</th>
-            <th className={th}>CPU</th>
-            <th className={th}>内存</th>
-            <th className={th}>磁盘</th>
+            <th className={th}>资源</th>
             {showTraffic && <th className={th}>网速</th>}
             {showTraffic && <th className={th}>本月流量</th>}
-            <th className={th}>连接</th>
+            <th className={th}>TCP / UDP</th>
             <th className={th}>延迟</th>
             <th className={th}>{days.length} 天可用率</th>
           </tr>
@@ -381,10 +399,15 @@ function NodeTable({
                     href={nodeHref(node.id)}
                   >
                     {flag && <span className="text-lg">{flag}</span>}
-                    <span className="flex flex-col">
-                      <span className="font-medium">{name}</span>
+                    <span className="flex min-w-0 max-w-[13rem] flex-col">
+                      <span className="truncate font-medium" title={name}>
+                        {name}
+                      </span>
                       {hostLine(node) && (
-                        <span className="text-xs text-default-500">
+                        <span
+                          className="truncate text-xs text-default-500"
+                          title={hostLine(node)}
+                        >
                           {hostLine(node)}
                         </span>
                       )}
@@ -393,13 +416,7 @@ function NodeTable({
                 </td>
                 <td className={td}>{statusBadge(node)}</td>
                 <td className={td}>
-                  <Pct v={live ? node.cpu : undefined} />
-                </td>
-                <td className={td}>
-                  <Pct v={live ? node.mem : undefined} />
-                </td>
-                <td className={td}>
-                  <Pct v={live ? node.disk : undefined} />
+                  <Resources live={live} node={node} />
                 </td>
                 {showTraffic && (
                   <td className={`${td} tabular-nums`}>
@@ -429,16 +446,11 @@ function NodeTable({
                 )}
                 <td className={`${td} tabular-nums`}>
                   {live ? (
-                    <>
-                      <div>
-                        <span className="text-default-500">TCP</span>{" "}
-                        {node.tcp ?? 0}
-                      </div>
-                      <div>
-                        <span className="text-default-500">UDP</span>{" "}
-                        {node.udp ?? 0}
-                      </div>
-                    </>
+                    <span>
+                      {node.tcp ?? 0}
+                      <span className="text-default-400"> / </span>
+                      {node.udp ?? 0}
+                    </span>
                   ) : (
                     <span className="text-default-400">—</span>
                   )}
@@ -447,7 +459,12 @@ function NodeTable({
                   <div className="flex flex-col gap-1">
                     {(node.ping ?? []).map((p) => (
                       <div key={p.name} className="flex items-center gap-1.5">
-                        <span className="text-default-500">{p.name}</span>
+                        <span
+                          className="max-w-[4.5rem] truncate text-default-500"
+                          title={p.name}
+                        >
+                          {p.name}
+                        </span>
                         <b
                           className={`font-medium tabular-nums ${latencyText(p.ms)}`}
                         >
@@ -463,7 +480,7 @@ function NodeTable({
                 </td>
                 <td className={`${td} pr-4`}>
                   <div className="flex items-center gap-2.5">
-                    <div className="w-24">
+                    <div className="w-20">
                       <Days days={days} node={node} />
                     </div>
                     <span
@@ -762,7 +779,9 @@ export default function StatusPage() {
               showTraffic={data.showTraffic}
             />
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            // As many columns as fit cards at least 18 rem wide: 4 on a
+            // desktop page, so names and latency lines are not cut off.
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] gap-3">
               {nodes.map((node) => (
                 <NodeCard
                   key={node.id}
