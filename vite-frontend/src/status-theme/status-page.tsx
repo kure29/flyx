@@ -38,6 +38,7 @@ import {
   speedText,
   uptimeShort,
   usageText,
+  usePolling,
 } from "./ui";
 
 import { Spinner } from "@/shadcn-bridge/heroui/spinner";
@@ -366,17 +367,17 @@ function NodeTable({
           {nodes.map((node) => {
             const [flag, , name] = nodeFlag(node);
             const live = node.online && node.cpu !== undefined;
-            const go = () => window.location.assign(nodeHref(node.id));
 
             return (
+              // The name's link stretches over the whole row (::after), so a
+              // row opens like a link: keyboard, middle click, new tab.
               <tr
                 key={node.id}
-                className="cursor-pointer border-b border-border last:border-0 hover:bg-default-50"
-                onClick={go}
+                className="relative border-b border-border last:border-0 hover:bg-default-50"
               >
                 <td className={`${td} pl-4`}>
                   <a
-                    className="flex items-center gap-2.5"
+                    className="flex items-center gap-2.5 rounded-sm outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary"
                     href={nodeHref(node.id)}
                   >
                     {flag && <span className="text-lg">{flag}</span>}
@@ -495,6 +496,8 @@ function storedView(): View {
 export default function StatusPage() {
   const [data, setData] = useState<PublicStatus | null>(null);
   const [error, setError] = useState("");
+  // The panel answered that the page is off, as opposed to failing to answer.
+  const [disabled, setDisabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState("");
   const [query, setQuery] = useState("");
@@ -507,25 +510,30 @@ export default function StatusPage() {
       if (res.code === 0) {
         setData(res.data);
         setError("");
-      } else {
+        setDisabled(false);
+      } else if (res.code === 404) {
         setData(null);
-        setError(res.msg || "状态页暂不可用");
+        setError(res.msg || "状态页未开启");
+        setDisabled(true);
+      } else {
+        // A passing failure: keep what is on screen.
+        setError(res.msg || "状态数据暂时不可用");
+        setDisabled(false);
       }
     } catch {
       setError("无法连接到面板");
+      setDisabled(false);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, REFRESH_MS);
+  usePolling(load, REFRESH_MS);
 
-    return () => window.clearInterval(timer);
-  }, [load]);
+  const retry = () => {
+    setLoading(true);
+    void load();
+  };
 
   const title = data?.title || siteConfig.name;
 
@@ -580,7 +588,13 @@ export default function StatusPage() {
           <Spinner label="加载中..." size="lg" />
         </div>
       ) : !data || !t ? (
-        <Notice title={error}>管理员可在「网站配置 → 状态页」中开启</Notice>
+        disabled ? (
+          <Notice title={error}>管理员可在「网站配置 → 状态页」中开启</Notice>
+        ) : (
+          <Notice title={error || "状态数据暂时不可用"} onRetry={retry}>
+            请稍后再试
+          </Notice>
+        )
       ) : (
         <>
           <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
@@ -676,7 +690,7 @@ export default function StatusPage() {
             <span className="flex-1" />
             <input
               aria-label="筛选服务器"
-              className="hidden h-8 w-56 rounded-lg border border-border bg-transparent px-3 text-[13px] outline-none placeholder:text-default-400 focus:border-default-400 sm:block"
+              className="order-last h-8 w-full rounded-lg border border-border bg-transparent px-3 text-[13px] outline-none placeholder:text-default-400 focus:border-default-400 sm:order-none sm:w-56"
               placeholder="筛选服务器…"
               type="search"
               value={query}

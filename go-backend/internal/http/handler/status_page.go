@@ -114,9 +114,9 @@ func (s *statusLiveStore) get(nodeID int64) (statusLiveSample, bool) {
 // request rebuild it while the others wait for that result instead of all
 // querying the database.
 type statusPageCache struct {
-	mu  sync.Mutex
-	at  time.Time
-	raw []byte
+	mu   sync.Mutex
+	at   time.Time
+	body statusBody
 }
 
 // ---------------------------------------------------------------- sampling
@@ -249,54 +249,50 @@ func (h *Handler) publicStatus(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("请求失败"))
 		return
 	}
-	raw, err := h.statusPageResponse(time.Now())
+	body, err := h.statusPageBody(time.Now())
 	if err != nil {
 		response.WriteJSON(w, response.Err(-2, "状态数据暂时不可用"))
 		return
 	}
-	hdr := w.Header()
-	hdr.Set("Content-Type", "application/json; charset=utf-8")
-	hdr.Set("X-Content-Type-Options", "nosniff")
-	hdr.Set("Referrer-Policy", "no-referrer")
-	// The same answer for everyone: a CDN or browser may keep it as long
-	// as the panel does, which takes repeated requests off the panel.
-	hdr.Set("Cache-Control", "public, max-age=5")
-	if r.Method == http.MethodHead {
-		return
-	}
-	_, _ = w.Write(raw)
+	writeStatusBody(w, r, body, int(statusCacheMaxAge/time.Second))
 }
 
-// statusPageResponse returns the encoded response, rebuilt at most once per
-// statusCacheMaxAge however many requests arrive. While the page is off the
-// response says so and holds no data.
+// statusPageResponse returns the encoded (uncompressed) response.
 func (h *Handler) statusPageResponse(now time.Time) ([]byte, error) {
+	b, err := h.statusPageBody(now)
+	return b.raw, err
+}
+
+// statusPageBody returns the encoded response, rebuilt (and compressed) at
+// most once per statusCacheMaxAge however many requests arrive. While the
+// page is off the response says so and holds no data.
+func (h *Handler) statusPageBody(now time.Time) (statusBody, error) {
 	c := h.statusCache
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.raw != nil && now.Sub(c.at) >= 0 && now.Sub(c.at) < statusCacheMaxAge {
-		return c.raw, nil
+	if c.body.raw != nil && now.Sub(c.at) >= 0 && now.Sub(c.at) < statusCacheMaxAge {
+		return c.body, nil
 	}
 	cfg, err := h.repo.GetConfigsByNames(statusPageConfigKeys)
 	if err != nil {
-		return nil, err
+		return statusBody{}, err
 	}
 	var payload response.R
 	if strings.TrimSpace(cfg[statusPageEnabledKey]) != "true" {
 		payload = response.Err(404, "状态页未开启")
 	} else {
-		body, err := h.buildStatusPage(cfg, now)
+		page, err := h.buildStatusPage(cfg, now)
 		if err != nil {
-			return nil, err
+			return statusBody{}, err
 		}
-		payload = response.OK(body)
+		payload = response.OK(page)
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return statusBody{}, err
 	}
-	c.raw, c.at = raw, now
-	return raw, nil
+	c.body, c.at = newStatusBody(raw), now
+	return c.body, nil
 }
 
 func (h *Handler) buildStatusPage(cfg map[string]string, now time.Time) (*statusPagePayload, error) {

@@ -4,8 +4,19 @@ import type {
   SystemUpgradeVersionApiData,
 } from "@/api/types";
 
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Activity,
+  Archive,
+  Bell,
+  Gauge,
+  Palette,
+  RefreshCw,
+  Server,
+  Settings2,
+  Shield,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Button } from "@/shadcn-bridge/heroui/button";
@@ -45,7 +56,11 @@ import {
   latencySummary,
 } from "@/pages/config/latency-card";
 import {
+  type ConfigSearchHit,
+  ConfigIndex,
   ConfigLayoutContext,
+  ConfigSearchBox,
+  ConfigSearchResults,
   ConfigSection,
   Field,
   SubHeading,
@@ -322,7 +337,7 @@ type SectionKey =
   | "backup"
   | "system";
 
-// The groups in page order, for the desktop nav.
+// The groups in page order: desktop tabs, the phone's list.
 const SECTIONS: Array<[SectionKey, string]> = [
   ["basic", "基本"],
   ["appearance", "外观"],
@@ -333,6 +348,48 @@ const SECTIONS: Array<[SectionKey, string]> = [
   ["statuspage", "状态页"],
   ["backup", "备份与恢复"],
   ["system", "系统与升级"],
+];
+
+const SECTION_ICONS: Record<SectionKey, React.ReactNode> = {
+  basic: <Settings2 />,
+  appearance: <Palette />,
+  security: <Shield />,
+  network: <Server />,
+  latency: <Gauge />,
+  notify: <Bell />,
+  statuspage: <Activity />,
+  backup: <Archive />,
+  system: <RefreshCw />,
+};
+
+const isSectionKey = (v: string | null): v is SectionKey =>
+  SECTIONS.some(([key]) => key === v);
+
+// Settings the search finds besides CONFIG_ITEMS: the fields of the groups
+// drawn by their own components, by the label they show.
+const SEARCH_EXTRA: Array<[SectionKey, string, string?]> = [
+  ["appearance", "主题", "配色、浅色 / 深色"],
+  ["network", "GitHub 令牌", "提高 GitHub API 限额"],
+  ["latency", "预设测试点", "名称、地址、端口"],
+  ["latency", "延迟阈值"],
+  ["latency", "丢包阈值"],
+  ["notify", "启用通知"],
+  ["notify", "Telegram", "机器人令牌、会话 ID"],
+  ["notify", "机器人令牌（Bot Token）"],
+  ["notify", "会话 ID（Chat ID）"],
+  ["notify", "Webhook", "Webhook 地址"],
+  ["notify", "通知哪些事件（全局默认）"],
+  ["notify", "每日汇总发送时间"],
+  ["statuspage", "状态页", "开启公开状态页"],
+  ["statuspage", "标题"],
+  ["statuspage", "显示哪些服务器"],
+  ["statuspage", "主题", "状态页主题"],
+  ["backup", "导出数据", "JSON 备份"],
+  ["backup", "导入数据"],
+  ["backup", "数据库占用"],
+  ["backup", "上传到 GitHub Gist", "自动上传、加密密码"],
+  ["system", "面板自升级", "检查更新、立即升级"],
+  ["system", "目标版本", "更新通道"],
 ];
 
 // 每个分组包含的配置项，用于判断分组是否有未保存的修改
@@ -372,8 +429,7 @@ const SECTION_CONFIG_KEYS: Partial<Record<SectionKey, string[]>> = {
 };
 
 const describeBackground = (value?: string) => {
-  if (!value) return "默认纯色背景";
-  if (value === "wallpaper") return "内置壁纸";
+  if (!value || value === "wallpaper") return "默认纯色背景";
   if (value === "theme") return "自适应纯色";
   if (/^(https?:|data:|\/|blob:)/.test(value)) return "自定义图片";
 
@@ -404,21 +460,75 @@ function panelMirrorURL(ip: string): string {
 
 export default function ConfigPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const isH5 = useH5Mode();
-  // Desktop shows one group beside the nav; a phone lists the groups and
+  // The open group is in the address (?section=), so the browser's back and
+  // the phone's swipe back return to the list instead of leaving the page.
+  // Desktop shows one group under the tabs; a phone lists the groups and
   // opens one at a time.
-  const [active, setActive] = useState<SectionKey | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sectionParam = searchParams.get("section");
+  const active: SectionKey | null = isSectionKey(sectionParam)
+    ? sectionParam
+    : null;
   const shown: SectionKey | null = active ?? (isH5 ? null : "basic");
-  const selectSection = (key: SectionKey | null) => {
-    setActive(key);
-    requestAnimationFrame(() =>
-      document.querySelector("main")?.scrollTo({ top: 0 }),
+  const [visited, setVisited] = useState<ReadonlySet<string>>(new Set());
+  const [transition, setTransition] = useState<"push" | "pop" | null>(null);
+  const [query, setQuery] = useState("");
+  const prevShown = useRef(shown);
+
+  useLayoutEffect(() => {
+    if (shown && !visited.has(shown)) {
+      setVisited((v) => new Set(v).add(shown));
+    }
+    if (prevShown.current === shown) return;
+    if (isH5) setTransition(shown ? "push" : "pop");
+    prevShown.current = shown;
+    // The phone scrolls the document, the desktop layout its <main>.
+    window.scrollTo({ top: 0 });
+    document.querySelector("main")?.scrollTo({ top: 0 });
+  }, [shown, isH5, visited]);
+
+  const openSection = (key: SectionKey, replace = false) =>
+    setSearchParams(
+      { section: key },
+      // Opened from the list: a history entry, so back returns to it.
+      { replace, state: replace ? undefined : { fromIndex: true } },
     );
+  const backToIndex = () => {
+    if ((location.state as { fromIndex?: boolean } | null)?.fromIndex) {
+      navigate(-1);
+    } else {
+      setSearchParams({}, { replace: true });
+    }
   };
   const layout = {
     mode: isH5 ? ("stack" as const) : ("split" as const),
     active: shown,
-    select: (id: string | null) => selectSection(id as SectionKey | null),
+    visited,
+    transition,
+    onTransitionEnd: () => setTransition(null),
+    back: backToIndex,
+  };
+
+  // A search result: open its group, then bring the setting into view.
+  const pickSearchHit = (hit: ConfigSearchHit) => {
+    setQuery("");
+    openSection(hit.section as SectionKey, !isH5);
+    window.setTimeout(() => {
+      const root = document.getElementById(`config-${hit.section}`);
+      const label = Array.from(
+        root?.querySelectorAll<HTMLElement>("p, h3, label, span") ?? [],
+      ).find((el) => el.textContent?.trim().startsWith(hit.label));
+      const target =
+        label?.closest<HTMLElement>("[data-field]") ?? label ?? null;
+
+      if (!target) return;
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      target.classList.remove("config-field-flash");
+      void target.offsetWidth;
+      target.classList.add("config-field-flash");
+    }, 320);
   };
   const initialConfigs = getInitialConfigs();
   const [configs, setConfigs] =
@@ -693,7 +803,7 @@ export default function ConfigPage() {
 
     if (intervalError) {
       toast.error(intervalError);
-      selectSection("network");
+      openSection("network", shown !== null);
 
       return;
     }
@@ -922,8 +1032,9 @@ export default function ConfigPage() {
       bgImage.startsWith("/") ||
       bgImage.startsWith("blob:");
     const isTheme = bgImage === "theme";
-    const isWallpaper = bgImage === "wallpaper";
-    const isSolidColor = bgImage && !isImage && !isTheme && !isWallpaper;
+    // "wallpaper" was the built-in picture, since removed: shown as default.
+    const isSolidColor =
+      bgImage && !isImage && !isTheme && bgImage !== "wallpaper";
     const isChanged = configs[key] !== originalConfigs[key];
 
     return (
@@ -975,16 +1086,6 @@ export default function ConfigPage() {
           >
             上传图片
           </Button>
-          {isDefault && (
-            <Button
-              isDisabled={bgImageUploading !== null || isWallpaper}
-              size="sm"
-              variant="flat"
-              onPress={() => handleConfigChange(key, "wallpaper")}
-            >
-              内置壁纸
-            </Button>
-          )}
           {isDefault && (
             <Button
               isDisabled={bgImageUploading !== null || bgImage === "#ffffff"}
@@ -1500,15 +1601,108 @@ export default function ConfigPage() {
     .filter(Boolean)
     .join(" · ");
 
+  const summaries: Record<SectionKey, React.ReactNode> = {
+    basic: `${configs.app_name || "未设置名称"} · ${
+      configs.ip || "未填后端地址"
+    }`,
+    appearance: `${describeBackground(configs.app_bg_image)} · 规则精简模式${onOff(
+      "forward_compact_mode",
+    )}`,
+    security: `登录验证码${onOff("captcha_enabled")} · GitHub 登录${onOff(
+      "github_login_enabled",
+    )} · 拉取内网订阅${onOff("fetch_allow_local", "允许", "禁止")}`,
+    network: `${tunnelQualitySummary} · 监控保留 ${
+      configs.monitor_retention_days || 7
+    } 天 · GitHub 加速${onOff("github_proxy_enabled")}`,
+    latency: latencySummary(configs),
+    notify: notifySummary(configs),
+    statuspage: statusPageSummary(configs),
+    backup: importing
+      ? "正在导入..."
+      : exporting
+        ? "正在导出..."
+        : "导出或导入 JSON 备份",
+    system: systemSummary,
+  };
+
+  const searchText = query.trim().toLowerCase();
+  const searchHits: ConfigSearchHit[] = !searchText
+    ? []
+    : [
+        ...SECTIONS.flatMap(([key, title]) =>
+          (SECTION_CONFIG_KEYS[key] ?? [])
+            .flatMap((k) => {
+              const item = CONFIG_ITEMS.find((i) => i.key === k);
+
+              return item ? [[key, item.label, item.description] as const] : [];
+            })
+            .map(([key, label, help]) => ({
+              section: key,
+              sectionTitle: title,
+              icon: SECTION_ICONS[key],
+              label,
+              help,
+            })),
+        ),
+        ...SEARCH_EXTRA.map(([key, label, help]) => ({
+          section: key,
+          sectionTitle: SECTIONS.find(([k]) => k === key)?.[1] ?? key,
+          icon: SECTION_ICONS[key],
+          label,
+          help,
+        })),
+        // A group's own name finds the group.
+        ...SECTIONS.map(([key, title]) => ({
+          section: key,
+          sectionTitle: "分组",
+          icon: SECTION_ICONS[key],
+          label: title,
+          help: undefined,
+        })),
+      ].filter((hit) =>
+        `${hit.label} ${hit.help ?? ""} ${hit.sectionTitle}`
+          .toLowerCase()
+          .includes(searchText),
+      );
+
   return (
-    <AnimatedPage className="mx-auto max-w-4xl px-4 py-6 lg:px-10 lg:py-8">
-      <PageHeader
-        description="面板名称、登录安全、通知、备份与升级"
-        title="网站配置"
-      />
+    <AnimatedPage
+      className={
+        isH5
+          ? // The phone's grey page under white groups, as in iOS settings.
+            "min-h-[calc(100dvh-7.5rem-var(--safe-area-top)-var(--safe-area-bottom))] overflow-x-clip bg-default-100 px-4 pb-6 pt-5 dark:bg-background"
+          : "mx-auto max-w-4xl px-4 py-6 lg:px-10 lg:py-8"
+      }
+    >
+      {!(isH5 && shown) && (
+        <PageHeader
+          description="面板名称、登录安全、通知、备份与升级"
+          title="网站配置"
+        />
+      )}
 
       <ConfigLayoutContext.Provider value={layout}>
-        {!isH5 && (
+        {!(isH5 && shown) && (
+          <div className="mb-4 sm:max-w-sm">
+            <ConfigSearchBox value={query} onChange={setQuery} />
+          </div>
+        )}
+        {searchText && (
+          <ConfigSearchResults hits={searchHits} onPick={pickSearchHit} />
+        )}
+        {isH5 && shown === null && !searchText && (
+          <ConfigIndex
+            items={SECTIONS.map(([key, title]) => ({
+              id: key,
+              title,
+              icon: SECTION_ICONS[key],
+              summary: summaries[key],
+              changed: sectionChanged(key),
+            }))}
+            onOpen={(id) => openSection(id as SectionKey)}
+          />
+        )}
+        {!isH5 && !searchText && (
           // Same tabs as the other pages; a dot marks unsaved edits.
           <PageTabs
             tabs={SECTIONS.map(([key, label]) => ({
@@ -1522,17 +1716,13 @@ export default function ConfigPage() {
               ) : undefined,
             }))}
             value={shown ?? "basic"}
-            onChange={selectSection}
+            onChange={(key) => openSection(key, true)}
           />
         )}
-        <div
-          className={isH5 && shown === null ? "border-t border-divider" : ""}
-        >
+        <div hidden={!!searchText}>
           <ConfigSection
             {...sectionProps("basic")}
-            summary={`${configs.app_name || "未设置名称"} · ${
-              configs.ip || "未填后端地址"
-            }`}
+            summary={summaries.basic}
             title="基本"
           >
             {renderItem("app_name")}
@@ -1545,9 +1735,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("appearance")}
-            summary={`${describeBackground(configs.app_bg_image)} · 规则精简模式${onOff(
-              "forward_compact_mode",
-            )}`}
+            summary={summaries.appearance}
             title="外观"
           >
             {renderItem("app_bg_image")}
@@ -1560,9 +1748,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("security")}
-            summary={`登录验证码${onOff("captcha_enabled")} · GitHub 登录${onOff(
-              "github_login_enabled",
-            )} · 拉取内网订阅${onOff("fetch_allow_local", "允许", "禁止")}`}
+            summary={summaries.security}
             title="安全与登录"
           >
             {renderItem("captcha_enabled")}
@@ -1577,9 +1763,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("network")}
-            summary={`${tunnelQualitySummary} · 监控保留 ${
-              configs.monitor_retention_days || 7
-            } 天 · GitHub 加速${onOff("github_proxy_enabled")}`}
+            summary={summaries.network}
             title="服务器与监控"
           >
             {renderItem("monitor_tunnel_quality_enabled")}
@@ -1599,7 +1783,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("latency")}
-            summary={latencySummary(configs)}
+            summary={summaries.latency}
             title="延迟测试点"
           >
             <LatencySettings configs={configs} onChange={handleConfigChange} />
@@ -1607,7 +1791,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("notify")}
-            summary={notifySummary(configs)}
+            summary={summaries.notify}
             title="通知"
           >
             <NotifySettings
@@ -1619,7 +1803,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("statuspage")}
-            summary={statusPageSummary(configs)}
+            summary={summaries.statuspage}
             title="状态页"
           >
             <StatusPageSettings
@@ -1631,13 +1815,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("backup")}
-            summary={
-              importing
-                ? "正在导入..."
-                : exporting
-                  ? "正在导出..."
-                  : "导出或导入 JSON 备份"
-            }
+            summary={summaries.backup}
             title="备份与恢复"
           >
             <Field
@@ -1686,7 +1864,7 @@ export default function ConfigPage() {
 
           <ConfigSection
             {...sectionProps("system")}
-            summary={systemSummary}
+            summary={summaries.system}
             title="系统与升级"
           >
             <Field

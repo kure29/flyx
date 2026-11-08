@@ -51,9 +51,9 @@ type statusHistoryCache struct {
 }
 
 type statusHistoryEntry struct {
-	at  time.Time
-	ttl time.Duration
-	raw []byte
+	at   time.Time
+	ttl  time.Duration
+	body statusBody
 }
 
 func (h *Handler) statusHistoryGate(now time.Time) (statusGate, error) {
@@ -173,7 +173,7 @@ func (h *Handler) serveStatusHistory(w http.ResponseWriter, r *http.Request, kin
 	// Keyed by the database id and what the answer depends on, so a node
 	// changing position or the traffic switch flipping is not served stale.
 	key := kind + "|" + rangeName + "|" + strconv.FormatInt(nodeID, 10) + "|" + strconv.FormatBool(gate.showTraffic)
-	raw, err := h.statusHistoryAnswer(key, rg.cache, now, func() (interface{}, error) {
+	body, err := h.statusHistoryAnswer(key, rg.cache, now, func() (interface{}, error) {
 		if kind == "ping" {
 			return h.buildStatusPingHistory(nodeID, rangeName, rg, now)
 		}
@@ -183,34 +183,27 @@ func (h *Handler) serveStatusHistory(w http.ResponseWriter, r *http.Request, kin
 		response.WriteJSON(w, response.Err(-2, "状态数据暂时不可用"))
 		return
 	}
-	hdr := w.Header()
-	hdr.Set("Content-Type", "application/json; charset=utf-8")
-	hdr.Set("X-Content-Type-Options", "nosniff")
-	hdr.Set("Referrer-Policy", "no-referrer")
-	hdr.Set("Cache-Control", "public, max-age="+strconv.Itoa(int(rg.cache/time.Second)))
-	if r.Method == http.MethodHead {
-		return
-	}
-	_, _ = w.Write(raw)
+	writeStatusBody(w, r, body, int(rg.cache/time.Second))
 }
 
-func (h *Handler) statusHistoryAnswer(key string, ttl time.Duration, now time.Time, build func() (interface{}, error)) ([]byte, error) {
+func (h *Handler) statusHistoryAnswer(key string, ttl time.Duration, now time.Time, build func() (interface{}, error)) (statusBody, error) {
 	c := h.statusHistory
 	c.mu.Lock()
 	if e, ok := c.entries[key]; ok && now.Sub(e.at) >= 0 && now.Sub(e.at) < e.ttl {
 		c.mu.Unlock()
-		return e.raw, nil
+		return e.body, nil
 	}
 	c.mu.Unlock()
 
-	body, err := build()
+	data, err := build()
 	if err != nil {
-		return nil, err
+		return statusBody{}, err
 	}
-	raw, err := json.Marshal(response.OK(body))
+	raw, err := json.Marshal(response.OK(data))
 	if err != nil {
-		return nil, err
+		return statusBody{}, err
 	}
+	body := newStatusBody(raw)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -223,8 +216,8 @@ func (h *Handler) statusHistoryAnswer(key string, ttl time.Duration, now time.Ti
 			delete(c.entries, k)
 		}
 	}
-	c.entries[key] = statusHistoryEntry{at: now, ttl: ttl, raw: raw}
-	return raw, nil
+	c.entries[key] = statusHistoryEntry{at: now, ttl: ttl, body: body}
+	return body, nil
 }
 
 func round2(v float64) float64 {
