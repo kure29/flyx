@@ -80,8 +80,7 @@ import { Switch } from "@/shadcn-bridge/heroui/switch";
 import { formatTraffic } from "@/utils/traffic";
 import { latestProbe } from "@/utils/latest-probe";
 
-const modalBase =
-  "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
+const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 type ConfirmAction = "delete" | "regenerate" | "reset";
 
@@ -761,9 +760,10 @@ export default function InboundPage() {
       <div
         key={item.id}
         aria-pressed={selectMode ? selected : undefined}
-        className={`group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 text-left transition-colors ${
+        className={`list-row group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 text-left transition-colors ${
           selected ? "bg-default-100" : "hover:bg-default-50"
         }`}
+        data-selected={selected ? "true" : undefined}
         role="button"
         tabIndex={0}
         onClick={activate}
@@ -954,7 +954,7 @@ export default function InboundPage() {
           )}
 
           {selectMode && (
-            <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 border-b border-divider bg-background py-2">
+            <div className="phone-sticky-bar sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 border-b border-divider bg-background py-2">
               <span className="text-sm text-default-600">
                 已选 {selectedIds.size} 个
               </span>

@@ -69,31 +69,54 @@ interface RowItem {
   onPress: () => void;
 }
 
-/** A titled group of rows split by hairlines, as on the other pages. */
-function RowGroup({ title, items }: { title?: string; items: RowItem[] }) {
+/**
+ * A titled group of rows split by hairlines, as on the other pages; on a
+ * phone a white rounded group with an icon tile per row (iOS settings).
+ */
+function RowGroup({
+  title,
+  items,
+  tiles,
+}: {
+  title?: string;
+  items: RowItem[];
+  tiles?: boolean;
+}) {
   return (
     <section>
       {title && (
-        <h2 className="border-b border-divider px-1 pb-1.5 text-xs font-medium text-default-500">
+        <h2 className="list-group-title border-b border-divider px-1 pb-1.5 text-xs font-medium text-default-500">
           {title}
         </h2>
       )}
-      <div className="divide-y divide-divider border-b border-divider">
+      <div className="phone-card divide-y divide-divider border-b border-divider">
         {items.map((item) => (
           <button
             key={item.key}
-            className="flex w-full items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-default-50"
+            className={`list-row flex w-full items-center gap-3 px-1 text-left transition-colors hover:bg-default-50 ${tiles ? "py-2.5" : "py-3"}`}
             type="button"
             onClick={item.onPress}
           >
-            <item.icon
-              className="h-4 w-4 shrink-0 text-default-500"
-              strokeWidth={1.75}
-            />
+            {tiles ? (
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-default-100 dark:bg-default-200">
+                <item.icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              </span>
+            ) : (
+              <item.icon
+                className="h-4 w-4 shrink-0 text-default-500"
+                strokeWidth={1.75}
+              />
+            )}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm">{item.label}</span>
+              <span
+                className={`block truncate ${tiles ? "text-[15px]" : "text-sm"}`}
+              >
+                {item.label}
+              </span>
               {item.description && (
-                <span className="hidden truncate text-xs text-default-400 sm:block">
+                <span
+                  className={`truncate text-default-400 ${tiles ? "block text-[13px]" : "hidden text-xs sm:block"}`}
+                >
                   {item.description}
                 </span>
               )}
@@ -341,7 +364,20 @@ export default function ProfilePage() {
       : []),
   ];
 
-  const account = (
+  const account = isH5 ? (
+    // The phone: the account as a card with an initial, as in iOS settings.
+    <div className="list-row flex items-center gap-3 py-3.5">
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-foreground text-lg font-semibold text-background">
+        {(username || "?").slice(0, 1).toUpperCase()}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[17px] font-semibold">
+          {username}
+        </span>
+        <span className="block text-[13px] text-default-500">管理员</span>
+      </span>
+    </div>
+  ) : (
     <div className="flex items-baseline justify-between gap-3 border-b border-divider px-1 pb-3">
       <span className="truncate text-sm">{username}</span>
       <span className="shrink-0 text-xs text-default-400">管理员</span>
@@ -349,11 +385,11 @@ export default function ProfilePage() {
   );
   const logoutRow = (
     <button
-      className="flex w-full items-center gap-3 border-b border-divider px-1 py-3 text-left text-sm text-danger transition-colors hover:bg-default-50"
+      className={`list-row flex w-full items-center gap-3 border-b border-divider px-1 py-3 text-left text-sm text-danger transition-colors hover:bg-default-50 ${isH5 ? "justify-center text-[15px]" : ""}`}
       type="button"
       onClick={handleLogout}
     >
-      <LogOut className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+      {!isH5 && <LogOut className="h-4 w-4 shrink-0" strokeWidth={1.75} />}
       退出登录
     </button>
   );
@@ -365,10 +401,10 @@ export default function ProfilePage() {
           description={isH5 ? undefined : "你的账户和登录方式"}
           title={isH5 ? "更多" : "账户与登录"}
         />
-        <div className="space-y-8">
+        <div className={isH5 ? "space-y-6" : "space-y-8"}>
           {account}
-          {isH5 && <RowGroup items={shortcuts} title="管理" />}
-          <RowGroup items={securityItems} title="登录与安全" />
+          {isH5 && <RowGroup tiles items={shortcuts} title="管理" />}
+          <RowGroup items={securityItems} tiles={isH5} title="登录与安全" />
           {logoutRow}
         </div>
       </div>

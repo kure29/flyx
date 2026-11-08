@@ -1,5 +1,6 @@
 import type * as React from "react";
 
+import { useLayoutEffect, useRef, useState } from "react";
 import { MoreHorizontal, Search, X } from "lucide-react";
 
 import { AnimatedPage } from "@/components/animated-page";
@@ -48,7 +49,7 @@ export function PageHeader({
         {/* The help line stays as a tooltip: the page itself shows only
             its title. */}
         <h1
-          className="text-xl font-semibold tracking-tight"
+          className="page-title text-xl font-semibold tracking-tight"
           title={typeof description === "string" ? description : undefined}
         >
           {title}
@@ -99,11 +100,69 @@ export function PageTabs<T extends string>({
   tabs: Array<PageTab<T>>;
   onChange: (key: T) => void;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  // The phone's sliding pill: where the selected tab is. "ready" places it
+  // without a slide (first paint), "moving" slides it to a new tab.
+  const [pill, setPill] = useState<{ x: number; w: number } | null>(null);
+  const [moving, setMoving] = useState(false);
+  const lastValue = useRef(value);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+
+    if (!list) return;
+    const place = () => {
+      const tab = list.querySelector<HTMLElement>('[aria-selected="true"]');
+
+      if (tab) setPill({ x: tab.offsetLeft, w: tab.offsetWidth });
+    };
+
+    place();
+    const ro = new ResizeObserver(place);
+
+    ro.observe(list);
+    list
+      .querySelectorAll<HTMLElement>('[role="tab"]')
+      .forEach((t) => ro.observe(t));
+
+    return () => ro.disconnect();
+  }, [value, tabs.length]);
+
+  // After a switch: slide the pill, fade in what is under the tabs.
+  useLayoutEffect(() => {
+    if (lastValue.current === value) return;
+    lastValue.current = value;
+    setMoving(true);
+    // A mark on the parent fades whatever sits after the tabs, including a
+    // loading state replaced by the content while the mark is on.
+    const parent = listRef.current?.parentElement;
+
+    if (!parent) return;
+    parent.classList.remove("tabs-switched");
+    void parent.offsetWidth;
+    parent.classList.add("tabs-switched");
+    const timer = window.setTimeout(
+      () => parent.classList.remove("tabs-switched"),
+      400,
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [value]);
+
   return (
     <div
-      className="mb-4 flex gap-5 overflow-x-auto border-b border-divider scrollbar-hide"
+      ref={listRef}
+      className="page-tabs mb-4 flex gap-5 overflow-x-auto border-b border-divider scrollbar-hide"
+      data-indicator={pill ? (moving ? "moving" : "ready") : undefined}
       role="tablist"
     >
+      {pill && (
+        <span
+          aria-hidden
+          className="page-tabs-indicator"
+          style={{ width: pill.w, transform: `translateX(${pill.x}px)` }}
+        />
+      )}
       {tabs.map((t) => (
         <button
           key={t.key}
@@ -158,7 +217,7 @@ export function PageToolbar({
         // With a main action too, the search gets a row of its own on a
         // phone instead of shrinking to its icon.
         <label
-          className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-divider px-2.5 transition-colors focus-within:border-default-400 sm:max-w-xs ${primary ? "basis-full sm:basis-auto" : ""}`}
+          className={`page-search flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-divider px-2.5 transition-colors focus-within:border-default-400 sm:max-w-xs ${primary ? "basis-full sm:basis-auto" : ""}`}
         >
           <Search className="h-4 w-4 shrink-0 text-default-400" />
           <input
@@ -265,7 +324,7 @@ export function SelectionBar({
   onExit: () => void;
 }) {
   return (
-    <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 border-b border-divider bg-background py-2">
+    <div className="phone-sticky-bar sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 border-b border-divider bg-background py-2">
       <span className="text-sm text-default-600">已选 {count} 个</span>
       <div className="ml-auto flex flex-wrap justify-end gap-2">
         <Button size="sm" variant="flat" onPress={onToggleAll}>
@@ -333,9 +392,10 @@ export function ListRow({
   return (
     <div
       aria-pressed={selectMode ? selected : undefined}
-      className={`group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 text-left transition-colors ${
+      className={`list-row group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 text-left transition-colors ${
         selected ? "bg-default-100" : "hover:bg-default-50"
       }`}
+      data-selected={selected ? "true" : undefined}
       role="button"
       tabIndex={0}
       onClick={activate}
@@ -397,7 +457,7 @@ export function ListGroup({
   return (
     <section>
       {title && (
-        <h2 className="flex items-baseline gap-2 border-b border-divider px-2 pb-1.5 pt-5 text-xs font-medium text-default-500">
+        <h2 className="list-group-title flex items-baseline gap-2 border-b border-divider px-2 pb-1.5 pt-5 text-xs font-medium text-default-500">
           {title}
           {count !== undefined && (
             <span className="text-xs font-normal text-default-400">
@@ -419,7 +479,7 @@ export function EmptyHint({
   action?: PageAction;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-4 py-12 text-center text-sm text-default-400">
+    <div className="phone-card phone-card-fill flex flex-col items-center gap-3 px-4 py-12 text-center text-sm text-default-400">
       <p>{text}</p>
       {action && (
         <Button color="primary" size="sm" onPress={action.onPress}>

@@ -1412,7 +1412,12 @@ export default function TunnelPage({
     };
 
     return (
-      <div ref={setNodeRef} style={style} {...attributes}>
+      <div
+        ref={setNodeRef}
+        className="list-row-wrap"
+        style={style}
+        {...attributes}
+      >
         {children(listeners)}
       </div>
     );

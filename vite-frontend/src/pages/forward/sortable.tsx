@@ -161,6 +161,7 @@ export const SortableForwardRow = ({
   return (
     <div
       ref={setNodeRef}
+      className="list-row-wrap"
       style={buildSortableStyle(transform, transition, isDragging)}
     >
       {children(

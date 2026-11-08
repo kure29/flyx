@@ -110,7 +110,11 @@ export const SortableItem = ({
   };
 
   return (
-    <div ref={setNodeRef} className="overflow-visible h-full" style={style}>
+    <div
+      ref={setNodeRef}
+      className="list-row-wrap overflow-visible h-full"
+      style={style}
+    >
       {children(listeners, attributes)}
     </div>
   );

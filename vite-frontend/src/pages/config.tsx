@@ -45,6 +45,12 @@ import { AnimatedPage } from "@/components/animated-page";
 import { PageHeader, PageTabs } from "@/components/page-kit";
 import { ThemeSettings } from "@/components/theme-settings";
 import { useH5Mode } from "@/hooks/useH5Mode";
+import {
+  consumeInAppBack,
+  historyIndex,
+  isBrowserBack,
+  markInAppBack,
+} from "@/hooks/useRouteTransition";
 import { NotifySettings, notifySummary } from "@/pages/config/notify-card";
 import {
   StatusPageSettings,
@@ -66,7 +72,6 @@ import {
   SubHeading,
 } from "@/pages/config/section";
 import { GistBackup } from "@/pages/config/gist-backup";
-import { GithubToken } from "@/pages/config/github-token";
 import { isAdmin } from "@/utils/auth";
 import { getCachedConfigs, configCache, updateSiteConfig } from "@/config/site";
 import { githubCallbackUrl } from "@/utils/github-login";
@@ -369,7 +374,6 @@ const isSectionKey = (v: string | null): v is SectionKey =>
 // drawn by their own components, by the label they show.
 const SEARCH_EXTRA: Array<[SectionKey, string, string?]> = [
   ["appearance", "主题", "配色、浅色 / 深色"],
-  ["network", "GitHub 令牌", "提高 GitHub API 限额"],
   ["latency", "预设测试点", "名称、地址、端口"],
   ["latency", "延迟阈值"],
   ["latency", "丢包阈值"],
@@ -476,13 +480,19 @@ export default function ConfigPage() {
   const [transition, setTransition] = useState<"push" | "pop" | null>(null);
   const [query, setQuery] = useState("");
   const prevShown = useRef(shown);
+  const prevIndex = useRef(historyIndex());
 
   useLayoutEffect(() => {
     if (shown && !visited.has(shown)) {
       setVisited((v) => new Set(v).add(shown));
     }
     if (prevShown.current === shown) return;
-    if (isH5) setTransition(shown ? "push" : "pop");
+    // A browser back (iOS swipe back) is animated by the browser already.
+    const browserBack = isBrowserBack(prevIndex.current, historyIndex());
+
+    consumeInAppBack();
+    prevIndex.current = historyIndex();
+    if (isH5 && !browserBack) setTransition(shown ? "push" : "pop");
     prevShown.current = shown;
     // The phone scrolls the document, the desktop layout its <main>.
     window.scrollTo({ top: 0 });
@@ -497,6 +507,7 @@ export default function ConfigPage() {
     );
   const backToIndex = () => {
     if ((location.state as { fromIndex?: boolean } | null)?.fromIndex) {
+      markInAppBack();
       navigate(-1);
     } else {
       setSearchParams({}, { replace: true });
@@ -1669,8 +1680,8 @@ export default function ConfigPage() {
     <AnimatedPage
       className={
         isH5
-          ? // The phone's grey page under white groups, as in iOS settings.
-            "min-h-[calc(100dvh-7.5rem-var(--safe-area-top)-var(--safe-area-bottom))] overflow-x-clip bg-default-100 px-4 pb-6 pt-5 dark:bg-background"
+          ? // The phone layout supplies the grey page.
+            "overflow-x-clip px-4 pb-6 pt-2"
           : "mx-auto max-w-4xl px-4 py-6 lg:px-10 lg:py-8"
       }
     >
@@ -1771,14 +1782,6 @@ export default function ConfigPage() {
             {renderItem("monitor_retention_days")}
             {renderItem("github_proxy_enabled")}
             {renderItem("github_proxy_url")}
-            <GithubToken
-              usingPanelMirror={
-                configs.github_proxy_enabled !== "false" &&
-                /\/api\/v1\/open_api\/gh\/?$/.test(
-                  (configs.github_proxy_url || "").trim(),
-                )
-              }
-            />
           </ConfigSection>
 
           <ConfigSection
@@ -2002,7 +2005,7 @@ export default function ConfigPage() {
       {hasChanges && (
         <div
           className={`sticky z-20 mt-4 flex items-center gap-3 rounded-lg border border-divider bg-background px-3 py-2 shadow-sm ${
-            isH5 ? "bottom-[calc(4.5rem+var(--safe-area-bottom))]" : "bottom-4"
+            isH5 ? "bottom-[calc(5rem+var(--safe-area-bottom))]" : "bottom-4"
           }`}
         >
           <span className="min-w-0 flex-1 truncate text-xs text-warning-700 dark:text-warning-300">
