@@ -1669,8 +1669,8 @@ export default function ConfigPage() {
     <AnimatedPage
       className={
         isH5
-          ? // The phone's grey page under white groups, as in iOS settings.
-            "min-h-[calc(100dvh-7.5rem-var(--safe-area-top)-var(--safe-area-bottom))] overflow-x-clip bg-default-100 px-4 pb-6 pt-5 dark:bg-background"
+          ? // The phone layout supplies the grey page.
+            "overflow-x-clip px-4 pb-6 pt-2"
           : "mx-auto max-w-4xl px-4 py-6 lg:px-10 lg:py-8"
       }
     >
@@ -2002,7 +2002,7 @@ export default function ConfigPage() {
       {hasChanges && (
         <div
           className={`sticky z-20 mt-4 flex items-center gap-3 rounded-lg border border-divider bg-background px-3 py-2 shadow-sm ${
-            isH5 ? "bottom-[calc(4.5rem+var(--safe-area-bottom))]" : "bottom-4"
+            isH5 ? "bottom-[calc(5rem+var(--safe-area-bottom))]" : "bottom-4"
           }`}
         >
           <span className="min-w-0 flex-1 truncate text-xs text-warning-700 dark:text-warning-300">

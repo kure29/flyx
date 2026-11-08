@@ -54,9 +54,9 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
   useScrollTopOnPathChange();
 
   return (
-    <div className="flex flex-col min-h-screen bg-mesh-gradient">
-      {/* 顶部导航栏 */}
-      <header className="bg-background border-b border-divider h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
+    <div className="h5-shell flex flex-col min-h-screen bg-mesh-gradient">
+      {/* 顶部导航栏：与灰色页面同色，像 iOS 的大标题页 */}
+      <header className="h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
         <div className="flex items-center gap-2">
           <BrandLogo size={20} />
           <h1 className="text-sm font-bold text-foreground">
@@ -70,11 +70,11 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
       {/* 主内容区域 */}
       <main className="flex-1">{children}</main>
 
-      {/* 用于给固定 Tabbar 腾出空间的占位元素 */}
-      <div aria-hidden className="h-[calc(4rem+var(--safe-area-bottom))]" />
+      {/* 给悬浮 Tabbar 腾出空间 */}
+      <div aria-hidden className="h-[calc(5rem+var(--safe-area-bottom))]" />
 
-      {/* 底部Tabbar */}
-      <nav className="bg-background border-t border-divider h-[calc(4rem+var(--safe-area-bottom))] flex-shrink-0 flex items-center justify-around px-2 fixed bottom-0 left-0 right-0 z-30">
+      {/* 底部悬浮 Tabbar：圆角胶囊，选中项带底色。纯色不加模糊，滚动更流畅 */}
+      <nav className="fixed inset-x-3 bottom-[calc(0.5rem+var(--safe-area-bottom))] z-30 flex h-[3.75rem] items-center gap-0.5 rounded-[1.75rem] border border-divider bg-content1 p-1 shadow-[0_6px_24px_rgba(0,0,0,0.08)] dark:bg-default-50 dark:shadow-none">
         {tabItems.map((item) => {
           const isActive =
             location.pathname === item.path ||
@@ -86,19 +86,15 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
           return (
             <button
               key={item.path}
-              className={`
-                flex flex-col items-center justify-center flex-1 h-full pb-[var(--safe-area-bottom)]
-                transition-colors duration-200 min-h-[44px]
-                ${
-                  isActive
-                    ? "text-foreground"
-                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                }
-              `}
+              className={`flex h-full min-w-0 flex-1 flex-col items-center justify-center rounded-3xl transition-colors duration-200 active:scale-95 ${
+                isActive
+                  ? "bg-default-100 text-foreground dark:bg-default-200"
+                  : "text-default-500 hover:text-foreground"
+              }`}
               onClick={() => navigate(item.path)}
             >
-              <div className="flex-shrink-0 mb-1">{item.icon}</div>
-              <span className="text-xs font-medium">{item.label}</span>
+              <div className="mb-0.5 flex-shrink-0">{item.icon}</div>
+              <span className="text-[11px] font-medium">{item.label}</span>
             </button>
           );
         })}

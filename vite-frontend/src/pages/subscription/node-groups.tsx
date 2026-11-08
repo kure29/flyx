@@ -160,7 +160,7 @@ export function NodeGroupList({
       {groups.map((g, i) => (
         <div
           key={g.id}
-          className="group flex cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 transition-colors hover:bg-default-50"
+          className="list-row group flex cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 transition-colors hover:bg-default-50"
           role="button"
           tabIndex={0}
           onClick={() => onEdit(g)}

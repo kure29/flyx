@@ -124,7 +124,7 @@ function Metric({
 }) {
   return (
     <button
-      className="bg-background px-4 py-4 text-left transition-colors hover:bg-default-50 lg:px-5"
+      className="phone-card-fill bg-background px-4 py-4 text-left transition-colors hover:bg-default-50 active:bg-default-100 lg:px-5"
       type="button"
       onClick={onPress}
     >
@@ -170,7 +170,7 @@ function Panel({
 }) {
   return (
     <section>
-      <div className="flex items-center gap-2 border-b border-divider pb-2">
+      <div className="list-group-title flex items-center gap-2 border-b border-divider pb-2">
         <h2 className="text-sm font-semibold">{title}</h2>
         {badge}
         {action && <div className="ml-auto">{action}</div>}
@@ -409,7 +409,9 @@ export function AdminOverview() {
   return (
     <AnimatedPage className="space-y-8 px-4 py-6 lg:px-10 lg:py-8">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">概览</h1>
+        <h1 className="page-title text-xl font-semibold tracking-tight">
+          概览
+        </h1>
         <p className="text-xs text-default-400">
           {new Date().toLocaleDateString("zh-CN", {
             month: "long",
@@ -420,7 +422,7 @@ export function AdminOverview() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-divider bg-divider lg:grid-cols-4">
+      <div className="phone-card grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-divider bg-divider lg:grid-cols-4">
         <Metric
           foot={
             nodes.length === 0
@@ -529,7 +531,7 @@ export function AdminOverview() {
             title="需要处理"
           >
             {groups.length === 0 ? (
-              <p className="py-3 text-sm text-default-400">一切正常</p>
+              <p className="list-row py-3 text-sm text-default-400">一切正常</p>
             ) : (
               <div className="divide-y divide-divider">
                 {groups.map((g) => {
@@ -544,7 +546,7 @@ export function AdminOverview() {
                   return (
                     <button
                       key={g.kind}
-                      className="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-default-50"
+                      className="list-row flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-default-50"
                       title={hint}
                       type="button"
                       onClick={() => navigate(meta.path)}
@@ -583,7 +585,7 @@ export function AdminOverview() {
                   return (
                     <button
                       key={n.id}
-                      className="flex w-full items-center gap-3 py-2.5 text-left text-sm transition-colors hover:bg-default-50"
+                      className="list-row flex w-full items-center gap-3 py-2.5 text-left text-sm transition-colors hover:bg-default-50"
                       type="button"
                       onClick={() => navigate("/node")}
                     >
@@ -613,7 +615,7 @@ export function AdminOverview() {
             title="节点流量"
           >
             {top.length === 0 ? (
-              <p className="py-3 text-xs text-default-400">
+              <p className="list-row py-3 text-xs text-default-400">
                 还没有流量数据（导入的节点不统计流量）
               </p>
             ) : (
@@ -622,7 +624,7 @@ export function AdminOverview() {
                   const total = i.uploadBytes + i.downloadBytes;
 
                   return (
-                    <div key={i.id} className="py-2.5">
+                    <div key={i.id} className="list-row py-2.5">
                       <div className="flex items-center justify-between gap-2 text-sm">
                         <span className="truncate">{i.name}</span>
                         <span className="shrink-0 text-xs tabular-nums text-default-400">
@@ -653,7 +655,7 @@ export function AdminOverview() {
                   return (
                     <button
                       key={e.key}
-                      className="flex w-full items-center gap-3 py-2.5 text-left text-sm transition-colors hover:bg-default-50"
+                      className="list-row flex w-full items-center gap-3 py-2.5 text-left text-sm transition-colors hover:bg-default-50"
                       type="button"
                       onClick={() => navigate(e.path)}
                     >

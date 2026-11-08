@@ -10,7 +10,7 @@ export function DemoBanner() {
   if (!open) {
     return (
       <button
-        className="fixed bottom-[84px] right-3 z-[60] rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground lg:bottom-4"
+        className="fixed bottom-[calc(5rem+var(--safe-area-bottom))] right-3 z-[60] rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground lg:bottom-4"
         type="button"
         onClick={() => setOpen(true)}
       >
@@ -20,7 +20,7 @@ export function DemoBanner() {
   }
 
   return (
-    <div className="fixed bottom-[84px] right-3 z-[60] w-[min(20rem,calc(100vw-24px))] rounded-2xl border border-divider bg-content1/95 p-3 text-xs shadow-xl backdrop-blur lg:bottom-4">
+    <div className="fixed bottom-[calc(5rem+var(--safe-area-bottom))] right-3 z-[60] w-[min(20rem,calc(100vw-24px))] rounded-2xl border border-divider bg-content1/95 p-3 text-xs shadow-xl backdrop-blur lg:bottom-4">
       <div className="mb-1 flex items-center justify-between">
         <span className="font-semibold text-sm">FLYX 在线演示</span>
         <button

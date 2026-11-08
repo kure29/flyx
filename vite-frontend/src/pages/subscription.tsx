@@ -1350,7 +1350,7 @@ export default function SubscriptionPage() {
   const row = (s: SubscriptionItem) => (
     <div
       key={s.id}
-      className="flex cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 transition-colors hover:bg-default-50"
+      className="list-row flex cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 transition-colors hover:bg-default-50"
       role="button"
       tabIndex={0}
       onClick={() => setDetail(s)}
