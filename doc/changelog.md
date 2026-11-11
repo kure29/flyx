@@ -4,6 +4,14 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/kure29/flyx/releases)。
 
+## 3.9.5
+
+2026-11-11
+
+- **订阅可以手动排序**：订阅列表每行新增上移 / 下移按钮（与节点组一致），搜索结果里也能调整；新建的订阅排在最后，编辑保存不会改变顺序
+- **「Shadowsocks 2022」模板改名为「Shadowsocks」**：加密方式除了 SS2022 还可以选 aes-128-gcm、chacha20-ietf-poly1305 等经典加密，原名称不准确；「SS2022 + ShadowTLS」同样改为「Shadowsocks + ShadowTLS」。默认加密不变，已建的入站不受影响
+- **升级**：只需升级面板
+
 ## 3.9.4
 
 2026-11-08
