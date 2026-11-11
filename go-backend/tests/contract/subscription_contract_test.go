@@ -215,4 +215,37 @@ func TestSubscriptionContract(t *testing.T) {
 			t.Fatal("deleted subscription link must stop working")
 		}
 	})
+
+	t.Run("subscription order", func(t *testing.T) {
+		g := saveNodeGroup(t, router, admin, `{"name":"排序","sourceAll":true}`)
+		save := func(name string) int64 {
+			out := kernelContractPost(t, router, admin, "/api/v1/subscription/save", `{"name":"`+name+`","groupIds":[`+jsonInt64(g)+`]}`)
+			if out.Code != 0 {
+				t.Fatalf("save %s: %+v", name, out)
+			}
+			return int64(valueAsInt(out.Data.(map[string]interface{})["id"]))
+		}
+		names := func() []string {
+			var out []string
+			list := kernelContractPost(t, router, admin, "/api/v1/subscription/list", `{}`).Data.(map[string]interface{})
+			for _, it := range list["items"].([]interface{}) {
+				if n := it.(map[string]interface{})["name"].(string); n == "甲" || n == "乙" {
+					out = append(out, n)
+				}
+			}
+			return out
+		}
+		a, b := save("甲"), save("乙")
+		if got := strings.Join(names(), ","); got != "甲,乙" {
+			t.Fatalf("new subscriptions go last: %s", got)
+		}
+		if out := kernelContractPost(t, router, admin, "/api/v1/subscription/order", `{"ids":[`+jsonInt64(b)+`,`+jsonInt64(a)+`]}`); out.Code != 0 {
+			t.Fatalf("order: %+v", out)
+		}
+		// Editing a subscription keeps its place.
+		kernelContractPost(t, router, admin, "/api/v1/subscription/save", `{"id":`+jsonInt64(b)+`,"name":"乙","groupIds":[`+jsonInt64(g)+`]}`)
+		if got := strings.Join(names(), ","); got != "乙,甲" {
+			t.Fatalf("reordered: %s", got)
+		}
+	})
 }

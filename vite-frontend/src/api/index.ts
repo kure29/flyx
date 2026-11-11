@@ -993,6 +993,8 @@ export const saveSubscription = (data: SubscriptionDraft) =>
   Network.post<SubscriptionItem>("/subscription/save", data);
 export const deleteSubscription = (id: number) =>
   Network.post("/subscription/delete", { id });
+export const orderSubscriptions = (ids: number[]) =>
+  Network.post("/subscription/order", { ids });
 export const resetSubscription = (id: number) =>
   Network.post<SubscriptionItem>("/subscription/reset", { id });
 /** A subscription as the user it is assigned to sees it. */

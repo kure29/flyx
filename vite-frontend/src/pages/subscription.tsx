@@ -29,6 +29,7 @@ import {
   getInboundList,
   getNodeGroups,
   orderNodeGroups,
+  orderSubscriptions,
   getRemoteSources,
   getSubscriptions,
   getSubTemplates,
@@ -1247,6 +1248,23 @@ export default function SubscriptionPage() {
     }
   };
 
+  /** Swaps two subscriptions by id, so it works on a search-filtered list too. */
+  const moveSub = async (a: number, b: number) => {
+    const next = [...subs];
+    const i = next.findIndex((s) => s.id === a);
+    const j = next.findIndex((s) => s.id === b);
+
+    if (i < 0 || j < 0) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    setSubs(next);
+    const res = await orderSubscriptions(next.map((s) => s.id));
+
+    if (res.code !== 0) {
+      toast.error(res.msg || "排序失败");
+      await load();
+    }
+  };
+
   const resetTraffic = async () => {
     if (!detail) return;
     setResettingTraffic(true);
@@ -1347,10 +1365,10 @@ export default function SubscriptionPage() {
       </span>
     </>
   );
-  const row = (s: SubscriptionItem) => (
+  const row = (s: SubscriptionItem, i: number) => (
     <div
       key={s.id}
-      className="list-row flex cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 transition-colors hover:bg-default-50"
+      className="list-row group flex cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 transition-colors hover:bg-default-50"
       role="button"
       tabIndex={0}
       onClick={() => setDetail(s)}
@@ -1392,6 +1410,32 @@ export default function SubscriptionPage() {
         role="presentation"
         onClick={(e) => e.stopPropagation()}
       >
+        <span className="flex items-center transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+          <Button
+            isIconOnly
+            aria-label={`上移 ${s.name}`}
+            className="text-default-500"
+            isDisabled={i === 0}
+            size="sm"
+            title="上移"
+            variant="light"
+            onPress={() => void moveSub(s.id, shownSubs[i - 1].id)}
+          >
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+          <Button
+            isIconOnly
+            aria-label={`下移 ${s.name}`}
+            className="text-default-500"
+            isDisabled={i === shownSubs.length - 1}
+            size="sm"
+            title="下移"
+            variant="light"
+            onPress={() => void moveSub(s.id, shownSubs[i + 1].id)}
+          >
+            <ArrowDown className="h-4 w-4" />
+          </Button>
+        </span>
         {actions(s)}
       </div>
     </div>
@@ -1471,7 +1515,9 @@ export default function SubscriptionPage() {
         />
       ) : (
         <>
-          <div className="flex flex-col">{shownSubs.map(row)}</div>
+          <div className="flex flex-col">
+            {shownSubs.map((s, i) => row(s, i))}
+          </div>
         </>
       )}
 

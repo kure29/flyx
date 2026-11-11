@@ -632,6 +632,10 @@ func (h *Handler) subscriptionSave(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		s = &model.Subscription{Token: randomHex(16), Enabled: 1, CreatedTime: now.UnixMilli(), TrafficSince: now.UnixMilli()}
+		if s.Inx, err = h.repo.NextSubscriptionInx(); err != nil {
+			response.WriteJSON(w, response.Err(-2, err.Error()))
+			return
+		}
 	}
 	s.Name = req.Name
 	s.Kind = req.Kind
@@ -909,4 +913,24 @@ func (h *Handler) inboundSubInfo(w http.ResponseWriter, r *http.Request) {
 		"token": s.Token,
 		"path":  "/api/v1/open_api/sub/" + s.Token,
 	}))
+}
+
+// subscriptionOrder sets the order the subscriptions are listed in.
+func (h *Handler) subscriptionOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := decodeJSON(r.Body, &req); err != nil {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	if err := h.repo.UpdateSubscriptionOrder(req.IDs); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	response.WriteJSON(w, response.OKEmpty())
 }
