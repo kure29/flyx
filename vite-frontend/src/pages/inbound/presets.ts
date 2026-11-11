@@ -189,8 +189,8 @@ export const PRESETS: Preset[] = [
   },
   {
     key: "ss2022",
-    label: "Shadowsocks 2022",
-    description: "轻量，客户端支持广泛",
+    label: "Shadowsocks",
+    description: "轻量，客户端支持广泛，加密方式可选",
     protocol: "shadowsocks",
     transport: "tcp",
     security: "none",
@@ -242,7 +242,7 @@ export const PRESETS: Preset[] = [
   },
   {
     key: "ss2022-shadowtls",
-    label: "SS2022 + ShadowTLS",
+    label: "Shadowsocks + ShadowTLS",
     description: "握手伪装成访问真实网站（仅 TCP）",
     kernel: "singbox",
     protocol: "shadowsocks",

@@ -274,7 +274,38 @@ func (r *Repository) SaveSubscription(s *model.Subscription) error {
 	if s.ID == 0 {
 		return r.db.Create(s).Error
 	}
-	return r.db.Omit("upload_bytes", "download_bytes", "traffic_reset_time", "traffic_since").Save(s).Error
+	// The display order only changes through UpdateSubscriptionOrder.
+	return r.db.Omit("upload_bytes", "download_bytes", "traffic_reset_time", "traffic_since", "inx").Save(s).Error
+}
+
+// NextSubscriptionInx is the display order that puts a new subscription last.
+func (r *Repository) NextSubscriptionInx() (int, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("repository not initialized")
+	}
+	var max *int
+	if err := r.db.Model(&model.Subscription{}).Select("MAX(inx)").Scan(&max).Error; err != nil {
+		return 0, err
+	}
+	if max == nil {
+		return 0, nil
+	}
+	return *max + 1, nil
+}
+
+// UpdateSubscriptionOrder sets the subscriptions' display order.
+func (r *Repository) UpdateSubscriptionOrder(ids []int64) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for i, id := range ids {
+			if err := tx.Model(&model.Subscription{}).Where("id = ?", id).Update("inx", i).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *Repository) DeleteSubscription(id int64) error {

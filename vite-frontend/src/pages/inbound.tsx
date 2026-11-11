@@ -1049,7 +1049,7 @@ export default function InboundPage() {
                 </h3>
                 <p className="text-default-500 text-sm max-w-sm">
                   {kernels.length === 0 && inbounds.length === 0
-                    ? "先在服务器上安装内核，然后在这里创建 VLESS-Reality、SS2022 等入站；也可以点“导入”，导入别处搭好的 ss 节点用来对接中转。"
+                    ? "先在服务器上安装内核，然后在这里创建 VLESS-Reality、Shadowsocks 等入站；也可以点“导入”，导入别处搭好的 ss 节点用来对接中转。"
                     : inbounds.length === 0
                       ? "点击“新建入站”，选择一个模板即可快速创建。"
                       : "换个关键词、服务器或标签试试。"}
