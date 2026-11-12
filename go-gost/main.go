@@ -126,7 +126,7 @@ func main() {
 	config, err := LoadConfig("config.json")
 	if err != nil {
 		fmt.Printf("❌ 配置加载失败: %v\n", err)
-		fmt.Println("请确保当前目录存在 config.json 文件")
+		fmt.Println("请检查 config.json；Docker / Docker Compose 安装请检查面板后端地址和 FLYX_AGENT_ADDR 环境变量")
 		os.Exit(1)
 	}
 
