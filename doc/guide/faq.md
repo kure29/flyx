@@ -30,6 +30,23 @@
 
 ## agent
 
+### Docker Compose 安装后提示“服务器地址不能为空”？
+
+这表示 agent 已读到 `config.json`，但其中的 `addr` 为空。容器启动时会将 `FLYX_AGENT_ADDR` 环境变量写入这个字段；面板生成安装命令时，这个变量来自 **设置 → 基本 → 面板后端地址**。
+
+1. 在面板填写并保存 **面板后端地址**，格式为节点服务器能访问的 `IP:端口` 或 `域名:端口`（后端默认端口 `6365`）。
+2. 回到 **服务器** 页，对同一个服务器重新点击 **安装 → Docker Compose → 复制**，在节点服务器上完整执行新命令。只修改面板设置或重启原容器，不会更新旧 Compose 文件里的空地址。
+3. 执行 `docker logs --tail 50 flyx-agent`，确认出现“配置加载成功”并检查面板中的服务器是否在线。
+
+也可以手动编辑 `/opt/docker/flyx-agent/docker-compose.yaml`，将 `environment` 下的 `FLYX_AGENT_ADDR`、`FLUX_AGENT_ADDR` 都改为正确的面板后端地址，再执行：
+
+```bash
+docker compose -f /opt/docker/flyx-agent/docker-compose.yaml up -d --force-recreate
+docker logs --tail 50 flyx-agent
+```
+
+如果地址已经正确，先确认实际启动的容器使用了这份 Compose 文件。排查时只分享地址字段，不要贴出包含节点密钥的完整配置。
+
 ### 服务器显示离线？
 1. 检查服务器与面板服务器之间的网络连通性。
 2. 确认在服务器端安装时输入的 **面板地址** 和 **密钥** 是否正确。
