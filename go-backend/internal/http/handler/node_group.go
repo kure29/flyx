@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -193,7 +194,7 @@ func (h *Handler) groupSource(c *subContext, g *model.NodeGroup, s *model.Subscr
 		credentials := kernelUser(s)
 		user = &credentials
 	}
-	endpoints, _ := h.inboundEndpointsForUser(selected, user)
+	endpoints, _ := h.inboundEndpointsForUser(selected, user, s == nil || s.ID == 0)
 	return endpoints
 }
 
@@ -202,7 +203,10 @@ func (h *Handler) groupSource(c *subContext, g *model.NodeGroup, s *model.Subscr
 func (h *Handler) subNodes(c *subContext, s *model.Subscription) []kernel.Endpoint {
 	var out []kernel.Endpoint
 	for _, g := range c.subGroups(s) {
-		out = append(out, h.groupNodes(c, g, s)...)
+		for _, endpoint := range h.groupNodes(c, g, s) {
+			endpoint.OrderKey = fmt.Sprintf("%d:%s", g.ID, endpoint.OrderKey)
+			out = append(out, endpoint)
+		}
 	}
 	return out
 }
@@ -497,7 +501,7 @@ func previewItems(nodes []kernel.Endpoint) []subPreviewItem {
 		if e.Direct {
 			line = "direct"
 		}
-		items = append(items, subPreviewItem{Name: e.Name, Original: e.Original, Region: kernel.RegionOf(e.Name),
+		items = append(items, subPreviewItem{OrderKey: e.OrderKey, Name: e.Name, Original: e.Original, Region: kernel.RegionOf(e.Name),
 			Protocol: kernel.EndpointProtocol(e), Line: line, Chain: e.ChainRole, SourceID: e.SourceID, Own: e.Proxy == nil && e.SourceID == 0})
 	}
 	return items

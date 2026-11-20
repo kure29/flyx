@@ -33,7 +33,8 @@ type SubOptions struct {
 	// protocol as an earlier one.
 	Dedupe bool
 	// Sort is "" (panel order) or "name".
-	Sort string
+	Sort      string
+	NodeOrder []string
 	// RegionGroups adds one auto-select group per detected region.
 	RegionGroups bool
 	// ChainLandingNames / ChainRelayNames pick nodes by their name before
@@ -261,7 +262,19 @@ func ParseRenameRules(text string) ([]renameRule, error) {
 // ApplySubOptions runs the pipeline. Invalid expressions are skipped
 // (they are validated when saved).
 func ApplySubOptions(endpoints []Endpoint, opts SubOptions) []Endpoint {
-	return markChain(ProcessNodes(endpoints, opts), opts)
+	processed := markChain(ProcessNodes(endpoints, opts), opts)
+	if len(opts.NodeOrder) == 0 {
+		return processed
+	}
+	rank := make(map[string]int, len(opts.NodeOrder))
+	for index, key := range opts.NodeOrder {
+		rank[key] = index + 1
+	}
+	sort.SliceStable(processed, func(first, second int) bool {
+		left, right := rank[processed[first].OrderKey], rank[processed[second].OrderKey]
+		return left != 0 && (right == 0 || left < right)
+	})
+	return processed
 }
 
 // ProcessNodes runs the node steps of the pipeline (filter, rename, flag,

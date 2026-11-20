@@ -505,10 +505,10 @@ func (h *Handler) removeInboundRelays(inboundID int64) {
 // the landing node directly (unless relay-only or local-only) and each
 // relay entry.
 func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint, []string) {
-	return h.inboundEndpointsForUser(rows, nil)
+	return h.inboundEndpointsForUser(rows, nil, false)
 }
 
-func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel.User) ([]kernel.Endpoint, []string) {
+func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel.User, preview bool) ([]kernel.Endpoint, []string) {
 	relays, err := h.relayViews(0)
 	if err != nil {
 		log.Printf("relay lookup failed: %v", err)
@@ -534,7 +534,7 @@ func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel
 		if proxy == nil && user != nil {
 			in = in.ForUser(*user)
 		}
-		if in.Settings.SSSubscriptionUsers && (user == nil || in.Settings.Password == "") {
+		if !preview && in.Settings.SSSubscriptionUsers && (user == nil || in.Settings.Password == "") {
 			continue
 		}
 		node, ok := nodes[row.NodeID]
@@ -551,7 +551,7 @@ func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel
 		if row.RelayOnly != 1 && !isLoopbackListen(row.Listen) {
 			host := inboundShareAddress(&row, node)
 			if host != "" {
-				endpoints = append(endpoints, kernel.Endpoint{Name: row.Name, Host: host, Port: row.Port, Inbound: in, Direct: true, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq})
+				endpoints = append(endpoints, kernel.Endpoint{Name: row.Name, Host: host, Port: row.Port, Inbound: in, Direct: true, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq, OrderKey: fmt.Sprintf("direct:%d", row.ID)})
 				kinds = append(kinds, "direct")
 			}
 		}
@@ -569,7 +569,7 @@ func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel
 					host = rel.ShareHost
 				}
 				// A relay forwards TCP; REALITY still ends at the landing kernel.
-				endpoints = append(endpoints, kernel.Endpoint{Name: name, Host: host, Port: entry.Port, Inbound: in, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq})
+				endpoints = append(endpoints, kernel.Endpoint{Name: name, Host: host, Port: entry.Port, Inbound: in, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq, OrderKey: fmt.Sprintf("relay:%d:%s:%d", rel.ID, entry.Host, entry.Port)})
 				kinds = append(kinds, "relay")
 			}
 		}

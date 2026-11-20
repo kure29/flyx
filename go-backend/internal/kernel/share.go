@@ -14,10 +14,11 @@ import (
 // Endpoint is one address a client can reach an inbound at: the landing node
 // itself, or the entry of a relay forward in front of it.
 type Endpoint struct {
-	Name    string
-	Host    string
-	Port    int
-	Inbound Inbound
+	Name     string
+	Host     string
+	Port     int
+	Inbound  Inbound
+	OrderKey string
 	// Direct marks the landing node's own address; only direct endpoints
 	// carry the Hysteria2 port-hopping range (relays forward one port).
 	Direct bool

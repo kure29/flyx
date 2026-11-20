@@ -19,11 +19,29 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  GripVertical,
   LayoutTemplate,
   QrCode,
   X,
 } from "lucide-react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import {
   deleteSubscription,
   getInboundList,
@@ -162,6 +180,63 @@ function UsageBar({ s, track }: { s: SubscriptionItem; track: string }) {
   );
 }
 
+function SubscriptionPreviewRow({
+  item,
+  rowId,
+  sortable,
+}: {
+  item: SubPreviewItem;
+  rowId: string;
+  sortable: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    isDragging,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: rowId, disabled: !sortable });
+
+  return (
+    <li
+      ref={setNodeRef}
+      className={`relative flex min-h-11 items-center gap-2 border-b border-divider bg-content1 px-2 text-xs last:border-b-0 ${isDragging ? "z-10" : ""}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      {sortable && (
+        <button
+          {...attributes}
+          {...listeners}
+          ref={setActivatorNodeRef}
+          aria-label={`调整 ${item.name} 的顺序`}
+          className="grid size-11 shrink-0 touch-none cursor-grab place-items-center rounded-md text-default-500 hover:bg-default-100 focus-visible:outline-2 focus-visible:outline-primary active:cursor-grabbing"
+          type="button"
+        >
+          <GripVertical aria-hidden="true" size={16} />
+        </button>
+      )}
+      <span className="min-w-0 flex-1 truncate">
+        {item.name}
+        {item.name !== item.original && (
+          <span className="text-default-400"> ← {item.original}</span>
+        )}
+      </span>
+      {item.chain && (
+        <span
+          className={`shrink-0 rounded-full px-1.5 py-0.5 ${item.chain === "landing" ? "bg-warning-100 text-warning-700 dark:bg-warning-500/20" : "bg-secondary-100 text-secondary-700 dark:bg-secondary-500/20"}`}
+        >
+          {item.chain === "landing" ? "落地" : "中转"}
+        </span>
+      )}
+      <span className="shrink-0 text-default-500">
+        {item.line === "relay" ? "中转" : "直连"}
+      </span>
+    </li>
+  );
+}
+
 type EditorPage = "basic" | "nodes" | "rules" | "preview";
 
 type ChainRole = "" | "landing" | "relay";
@@ -274,6 +349,19 @@ function Editor({
   const [chainNodes, setChainNodes] = useState<SubPreviewItem[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [page, setPage] = useState<EditorPage>("basic");
+  const previewSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+  const previewRowIds =
+    preview?.items.map((item, index) => item.orderKey ?? `preview-${index}`) ??
+    [];
+  const sortablePreview =
+    previewRowIds.length > 1 &&
+    new Set(previewRowIds).size === previewRowIds.length &&
+    !!preview?.items.every((item) => item.orderKey);
   const o = draft.options;
   const setOpts = (patch: Partial<SubPipeline>) => {
     setDraft({ ...draft, options: { ...o, ...patch } });
@@ -303,19 +391,22 @@ function Editor({
     setGroupIds(ids);
   };
 
-  const runPreview = async () => {
+  const runPreview = async (currentDraft = draft) => {
     if (pickedGroups.length === 0) return;
     // The chain editor lists the nodes dropping would hide too, so they
     // can be picked back in.
-    const forChain = page === "rules" && o.chainDropUnused;
+    const forChain = page === "rules" && currentDraft.options.chainDropUnused;
 
     setPreviewing(true);
     try {
       const res = await previewSubscription(
         toPayload(
           forChain
-            ? { ...draft, options: { ...o, chainDropUnused: false } }
-            : draft,
+            ? {
+                ...currentDraft,
+                options: { ...currentDraft.options, chainDropUnused: false },
+              }
+            : currentDraft,
         ),
       );
 
@@ -999,12 +1090,28 @@ function Editor({
                     {preview.dropped > 0 && `，过滤掉 ${preview.dropped} 个`}
                     <button
                       className="ml-2 text-primary"
+                      disabled={previewing}
                       type="button"
-                      onClick={runPreview}
+                      onClick={() => void runPreview()}
                     >
                       刷新
                     </button>
+                    {!!o.nodeOrder?.length && (
+                      <button
+                        className="ml-3 text-primary"
+                        disabled={previewing || saving}
+                        type="button"
+                        onClick={() => setOpts({ nodeOrder: undefined })}
+                      >
+                        恢复默认
+                      </button>
+                    )}
                   </p>
+                  {sortablePreview && (
+                    <p className="text-xs text-default-500">
+                      拖动节点左侧的手柄，保存后只调整这条订阅里的节点顺序。
+                    </p>
+                  )}
                   {preview.inactiveRelays &&
                     preview.inactiveRelays.length > 0 && (
                       <p className="text-xs text-warning">
@@ -1016,38 +1123,68 @@ function Editor({
                         。在中转页恢复转发后会自动加入
                       </p>
                     )}
-                  <div className="max-h-96 overflow-y-auto rounded-lg border border-divider">
-                    {preview.items.length === 0 ? (
-                      <p className="p-3 text-xs text-default-500">没有节点</p>
-                    ) : (
-                      preview.items.map((p, i) => (
-                        <div
-                          key={`${p.original}-${i}`}
-                          className="flex items-center gap-2 border-b border-divider px-3 py-1.5 text-xs last:border-b-0"
+                  {preview.items.length === 0 ? (
+                    <p className="rounded-lg border border-divider p-3 text-xs text-default-500">
+                      没有节点
+                    </p>
+                  ) : (
+                    <DndContext
+                      accessibility={{
+                        screenReaderInstructions: {
+                          draggable:
+                            "按空格开始拖拽，方向键移动，再按空格放下；按 Esc 取消。",
+                        },
+                      }}
+                      collisionDetection={closestCenter}
+                      sensors={previewSensors}
+                      onDragEnd={({ active, over }) => {
+                        if (
+                          !sortablePreview ||
+                          previewing ||
+                          saving ||
+                          !over ||
+                          active.id === over.id
+                        )
+                          return;
+                        const from = previewRowIds.indexOf(String(active.id));
+                        const to = previewRowIds.indexOf(String(over.id));
+
+                        if (from < 0 || to < 0) return;
+                        const items = arrayMove(preview.items, from, to);
+                        const nodeOrder = arrayMove(previewRowIds, from, to);
+                        const nextDraft = {
+                          ...draft,
+                          options: { ...o, nodeOrder },
+                        };
+
+                        setPreview({ ...preview, items });
+                        setDraft(nextDraft);
+                        if (Object.keys(o.templates ?? {}).length)
+                          void runPreview(nextDraft);
+                      }}
+                    >
+                      <SortableContext
+                        items={previewRowIds}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <ol
+                          aria-label="订阅节点顺序"
+                          className="max-h-96 overflow-y-auto rounded-lg border border-divider"
                         >
-                          <span className="min-w-0 flex-1 truncate">
-                            {p.name}
-                            {p.name !== p.original && (
-                              <span className="text-default-400">
-                                {" "}
-                                ← {p.original}
-                              </span>
-                            )}
-                          </span>
-                          {p.chain && (
-                            <span
-                              className={`shrink-0 rounded-full px-1.5 py-0.5 ${p.chain === "landing" ? "bg-warning-100 text-warning-700 dark:bg-warning-500/20" : "bg-secondary-100 text-secondary-700 dark:bg-secondary-500/20"}`}
-                            >
-                              {p.chain === "landing" ? "落地" : "中转"}
-                            </span>
-                          )}
-                          <span className="shrink-0 text-default-500">
-                            {p.line === "relay" ? "中转" : "直连"}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                          {preview.items.map((item, index) => (
+                            <SubscriptionPreviewRow
+                              key={previewRowIds[index]}
+                              item={item}
+                              rowId={previewRowIds[index]}
+                              sortable={
+                                sortablePreview && !previewing && !saving
+                              }
+                            />
+                          ))}
+                        </ol>
+                      </SortableContext>
+                    </DndContext>
+                  )}
                 </>
               )}
             </Section>
@@ -1150,14 +1287,15 @@ export default function SubscriptionPage() {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [detail, setDetail] = useState<SubscriptionItem | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const detail = subs.find((item) => item.id === detailId) ?? null;
   const [detailTab, setDetailTab] = useState<"import" | "traffic">("import");
   // The subscription whose QR code is open in the detail dialog.
   const [qrFor, setQrFor] = useState<number | null>(null);
 
   useEffect(() => {
     if (!detail) setDetailTab("import");
-  }, [detail]);
+  }, [detailId]);
   const [confirm, setConfirm] = useState<"reset" | "delete" | null>(null);
   const [toggling, setToggling] = useState<number | null>(null);
   const [resettingTraffic, setResettingTraffic] = useState(false);
@@ -1204,6 +1342,43 @@ export default function SubscriptionPage() {
     load();
     void loadTemplates();
   }, [load, loadTemplates]);
+
+  useVisiblePolling(
+    async () => {
+      try {
+        const res = await getSubscriptions();
+
+        if (res.code !== 0 || !res.data) return;
+        const latest = new Map(res.data.items.map((item) => [item.id, item]));
+
+        setSubs((items) =>
+          items.map((item) => {
+            const updated = latest.get(item.id);
+
+            if (
+              !updated ||
+              updated.trafficSince < item.trafficSince ||
+              updated.trafficLimit !== item.trafficLimit ||
+              updated.enabled !== item.enabled ||
+              updated.expireTime !== item.expireTime
+            )
+              return item;
+
+            return {
+              ...item,
+              active: updated.active,
+              downloadBytes: updated.downloadBytes,
+              overQuota: updated.overQuota,
+              trafficSince: updated.trafficSince,
+              uploadBytes: updated.uploadBytes,
+            };
+          }),
+        );
+      } catch {}
+    },
+    30_000,
+    tab === "subs" && !loading && !draft && !saving && !resettingTraffic,
+  );
 
   const url = (s: SubscriptionItem, format = "") =>
     `${panelOrigin()}${s.path}${format ? `?format=${format}` : ""}`;
@@ -1296,7 +1471,11 @@ export default function SubscriptionPage() {
         return;
       }
       toast.success(detail.overQuota ? "流量已重置，已恢复连接" : "流量已重置");
-      setDetail(res.data);
+      const updated = res.data;
+
+      setSubs((items) =>
+        items.map((item) => (item.id === updated.id ? updated : item)),
+      );
       await load();
     } finally {
       setResettingTraffic(false);
@@ -1322,7 +1501,7 @@ export default function SubscriptionPage() {
         confirm === "reset" ? "已重置，旧链接立即失效" : "已删除",
       );
       setConfirm(null);
-      setDetail(null);
+      setDetailId(null);
       await load();
     } finally {
       setSaving(false);
@@ -1390,12 +1569,12 @@ export default function SubscriptionPage() {
       className="list-row group flex cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 transition-colors hover:bg-default-50"
       role="button"
       tabIndex={0}
-      onClick={() => setDetail(s)}
+      onClick={() => setDetailId(s.id)}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          setDetail(s);
+          setDetailId(s.id);
         }
       }}
     >
@@ -1547,7 +1726,7 @@ export default function SubscriptionPage() {
         placement="center"
         scrollBehavior="inside"
         size="lg"
-        onOpenChange={(open) => !open && setDetail(null)}
+        onOpenChange={(open) => !open && setDetailId(null)}
       >
         <ModalContent>
           {(onClose) =>
