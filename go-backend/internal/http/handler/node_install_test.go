@@ -2,13 +2,79 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"go-backend/internal/http/response"
+	"go-backend/internal/store/repo"
 )
+
+func TestNodeInstallPanelAddress(t *testing.T) {
+	var limited atomic.Bool
+	var calls atomic.Int32
+	fakeGitHub(t, &limited, &calls)
+	r, err := repo.Open(filepath.Join(t.TempDir(), "node-install.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	h := New(r, "unit-test-secret")
+	nodeID := mustCreateLatencyNode(t, r, "install-node", 0, 0)
+
+	for _, tc := range []struct {
+		name    string
+		address string
+		missing bool
+		valid   bool
+	}{
+		{name: "missing", missing: true},
+		{name: "empty"},
+		{name: "whitespace", address: " \t\n "},
+		{name: "path-only", address: "/api/v1"},
+		{name: "backend-url", address: " https://panel.example.com:6365/api/v1/ ", valid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !tc.missing {
+				if err := r.UpsertConfig("ip", tc.address, 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, mode := range []string{"script", "docker", "docker-compose", "all"} {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/node/install",
+					strings.NewReader(fmt.Sprintf(`{"id":%d,"mode":%q}`, nodeID, mode)))
+				rec := httptest.NewRecorder()
+				h.nodeInstall(rec, req)
+				var out response.R
+				if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+					t.Fatal(err)
+				}
+				if !tc.valid {
+					if out.Code != -1 || !strings.Contains(out.Msg, "面板后端地址") || out.Data != nil {
+						t.Fatalf("%s generated command with no address: %+v", mode, out)
+					}
+					if calls.Load() != 0 {
+						t.Fatal("looked up releases before validating the panel address")
+					}
+					continue
+				}
+				if out.Code != 0 || !strings.Contains(rec.Body.String(), "panel.example.com:6365") {
+					t.Fatalf("%s: %s", mode, rec.Body.String())
+				}
+				if strings.Contains(rec.Body.String(), "https://panel.example.com:6365/api/v1/") {
+					t.Fatalf("%s did not normalize backend URL: %s", mode, rec.Body.String())
+				}
+			}
+		})
+	}
+}
 
 // Execute the generated command with an isolated Docker stub: exercise shell
 // quoting, old mounts, image fallback and the order of destructive operations.

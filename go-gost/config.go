@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-gost/x/identity"
 )
@@ -37,8 +38,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	// 验证必要的配置项
+	config.Addr = strings.TrimSpace(config.Addr)
 	if config.Addr == "" {
-		return nil, fmt.Errorf("服务器地址不能为空")
+		return nil, fmt.Errorf("服务器地址不能为空，请设置 FLYX_AGENT_ADDR 环境变量或 config.json 中的 addr")
 	}
 
 	return &config, nil
