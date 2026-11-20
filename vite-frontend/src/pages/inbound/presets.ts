@@ -86,6 +86,7 @@ export interface InboundForm {
   flowVision: boolean;
   password: string;
   method: string;
+  ssSubscriptionUsers: boolean;
   snellVersion: string;
   snellMode: string;
   masquerade: string;
@@ -335,6 +336,7 @@ export function emptyForm(
     flowVision: true,
     password: "",
     method: caps?.defaults.ssMethod ?? "2022-blake3-aes-128-gcm",
+    ssSubscriptionUsers: false,
     snellVersion: "",
     snellMode: "",
     masquerade: "",
@@ -417,6 +419,8 @@ export function applyPreset(
   return {
     ...form,
     protocol: preset.protocol,
+    ssSubscriptionUsers:
+      preset.protocol === "shadowsocks" && form.ssSubscriptionUsers,
     transportType: preset.transport,
     securityType: preset.security,
     flowVision: Boolean(preset.vision),
@@ -441,6 +445,7 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     flowVision: Boolean(item.settings.flow),
     password: item.settings.password ?? "",
     method: item.settings.method ?? "",
+    ssSubscriptionUsers: Boolean(item.settings.ssSubscriptionUsers),
     snellVersion: item.settings.snellVersion
       ? String(item.settings.snellVersion)
       : "",
@@ -557,9 +562,22 @@ export function vlessEncAllowed(form: InboundForm): boolean {
   return form.protocol === "vless" && form.kernelType === "xray";
 }
 
+export function ssSubscriptionUsersAllowed(form: InboundForm): boolean {
+  return (
+    form.kernelType === "xray" &&
+    form.protocol === "shadowsocks" &&
+    ["aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"].includes(
+      form.method,
+    )
+  );
+}
+
 export function toPayload(form: InboundForm): InboundMutationPayload {
   const usesUUID = uuidProtocols.includes(form.protocol);
-  const usesPassword = passwordProtocols.includes(form.protocol);
+  const ssSubscriptionUsers =
+    ssSubscriptionUsersAllowed(form) && form.ssSubscriptionUsers;
+  const usesPassword =
+    passwordProtocols.includes(form.protocol) && !ssSubscriptionUsers;
 
   return {
     id: form.id,
@@ -575,6 +593,7 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
         visionAllowed(form) && form.flowVision ? "xtls-rprx-vision" : undefined,
       password: usesPassword ? form.password.trim() : undefined,
       method: form.protocol === "shadowsocks" ? form.method : undefined,
+      ssSubscriptionUsers: ssSubscriptionUsers || undefined,
       snellVersion:
         form.protocol === "snell" && form.snellVersion
           ? Number(form.snellVersion)

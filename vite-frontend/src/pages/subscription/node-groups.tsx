@@ -43,6 +43,13 @@ const MULTI_USER_PROTOCOLS = new Set([
   "naive",
 ]);
 
+const usesSharedCredentials = (inbound: InboundApiItem) =>
+  inbound.external ||
+  !(
+    MULTI_USER_PROTOCOLS.has(inbound.protocol) ||
+    inbound.settings.ssSubscriptionUsers
+  );
+
 export const EMPTY_GROUP_OPTIONS: NodeGroupOptions = {
   lines: "",
   regions: [],
@@ -279,7 +286,7 @@ export function NodeGroupEditor({
         ? i.enabled
         : draft.inboundIds.includes(i.id) ||
           draft.sourceIds.includes(i.sourceId ?? 0)) &&
-      (i.external || !MULTI_USER_PROTOCOLS.has(i.protocol)),
+      usesSharedCredentials(i),
   ).length;
 
   const runPreview = async () => {
@@ -366,7 +373,7 @@ export function NodeGroupEditor({
             {!i.enabled && (
               <span className="ml-1 text-xs text-default-400">已停用</span>
             )}
-            {(i.external || !MULTI_USER_PROTOCOLS.has(i.protocol)) && (
+            {usesSharedCredentials(i) && (
               <span className="ml-1 text-xs text-warning">共用凭据</span>
             )}
           </Checkbox>
@@ -467,8 +474,8 @@ export function NodeGroupEditor({
               )}
               {sharedPicked > 0 && (
                 <p className="text-xs text-warning">
-                  其中 {sharedPicked} 个是导入的节点或 Shadowsocks /
-                  Snell，没法单独分配凭据：对方拿到共用的密码，订阅停用后已导入的配置仍能连接。
+                  其中 {sharedPicked}{" "}
+                  个节点使用共用凭据，无法按订阅计量；订阅停用后，已导入的配置仍能连接。
                 </p>
               )}
             </Section>

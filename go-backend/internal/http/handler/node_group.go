@@ -188,15 +188,12 @@ func (h *Handler) groupSource(c *subContext, g *model.NodeGroup, s *model.Subscr
 			selected = append(selected, row)
 		}
 	}
-	endpoints, _ := h.inboundEndpoints(selected)
+	var user *kernel.User
 	if s != nil && isShare(s) {
-		ku := kernelUser(s)
-		for i := range endpoints {
-			if endpoints[i].Proxy == nil {
-				endpoints[i].Inbound = endpoints[i].Inbound.ForUser(ku)
-			}
-		}
+		credentials := kernelUser(s)
+		user = &credentials
 	}
+	endpoints, _ := h.inboundEndpointsForUser(selected, user)
 	return endpoints
 }
 

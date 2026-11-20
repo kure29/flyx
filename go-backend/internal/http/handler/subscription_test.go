@@ -6,9 +6,92 @@ import (
 	"testing"
 	"time"
 
+	"go-backend/internal/kernel"
 	"go-backend/internal/store/model"
 	"go-backend/internal/store/repo"
 )
+
+func TestSSSubscriptionsSharePortAndRevokeOnlyOverQuotaUser(t *testing.T) {
+	repository, err := repo.Open(t.TempDir() + "/subscription-ss.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	h := New(repository, "unit-test-secret")
+	nodeID := seedRelayTargetNode(t, repository, "ss-node", "203.0.113.1")
+	xray := seedChainKernel(t, repository, nodeID, kernel.TypeXray)
+	inbound := seedChainInbound(t, repository, xray, "metered-ss", kernel.Inbound{
+		Protocol: kernel.ProtocolShadowsocks, Port: 8388,
+		Settings: kernel.Settings{Method: "aes-128-gcm", Password: "old-shared", SSSubscriptionUsers: true},
+	}, 0)
+	now := time.Now().UnixMilli()
+	first := model.Subscription{Name: "first", Kind: model.SubscriptionShare, Token: strings.Repeat("a", 32),
+		Password: "first-password", SourceAll: 1, Enabled: 1, TrafficLimit: 1000, CreatedTime: now, UpdatedTime: now}
+	second := model.Subscription{Name: "second", Kind: model.SubscriptionShare, Token: strings.Repeat("b", 32),
+		Password: "second-password", SourceAll: 1, Enabled: 1, CreatedTime: now, UpdatedTime: now}
+	group := model.NodeGroup{Name: "shared-ss", SourceAll: 1, CreatedTime: now, UpdatedTime: now}
+	if err := repository.SaveNodeGroup(&group); err != nil {
+		t.Fatal(err)
+	}
+	for _, sub := range []*model.Subscription{&first, &second} {
+		sub.GroupIDs = repo.FormatGroupIDs([]int64{group.ID})
+		if err := repository.SaveSubscription(sub); err != nil {
+			t.Fatal(err)
+		}
+	}
+	context, err := h.loadSubContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sub := range []*model.Subscription{&first, &second} {
+		endpoints := h.subNodes(context, sub)
+		if len(endpoints) != 1 || endpoints[0].Port != inbound.Port || endpoints[0].Inbound.Settings.Password != sub.Password {
+			t.Fatalf("subscription %d did not get its own password on the same port: %+v", sub.ID, endpoints)
+		}
+		if uri, ok := kernel.ShareURI(endpoints[0]); !ok || !strings.HasPrefix(uri, "ss://") {
+			t.Errorf("subscription %d did not get a normal SS URI", sub.ID)
+		}
+	}
+	if endpoints, _ := h.inboundEndpoints([]model.NodeInbound{*inbound}); len(endpoints) != 0 {
+		t.Fatal("metered SS must not expose a shared endpoint")
+	}
+	if _, err := h.chainEndpoint(inbound, nodeID); err == nil {
+		t.Fatal("metered SS must not be used as a shared chain target")
+	}
+	config := func() string {
+		t.Helper()
+		payload, _, err := h.buildKernelApplyPayload(xray)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return payload["files"].([]kernel.File)[0].Content
+	}
+	if rendered := config(); strings.Contains(rendered, "old-shared") ||
+		!strings.Contains(rendered, first.Password) || !strings.Contains(rendered, second.Password) {
+		t.Fatal("both subscription passwords and no shared password should be accepted")
+	}
+	h.applyUserCounters(nodeID, "epoch", []agentUserCounter{
+		{ID: first.ID, Dir: "down", Bytes: 1001}, {ID: second.ID, Dir: "down", Bytes: 100},
+	}, now)
+	if rendered := config(); strings.Contains(rendered, first.Password) || !strings.Contains(rendered, second.Password) {
+		t.Fatal("quota should revoke only the first password")
+	}
+	second.Enabled = 0
+	if err := repository.SaveSubscription(&second); err != nil {
+		t.Fatal(err)
+	}
+	defaultSub, err := repository.DefaultSubscription(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultSub.Enabled = 0
+	if err := repository.SaveSubscription(defaultSub); err != nil {
+		t.Fatal(err)
+	}
+	if rendered := config(); strings.Contains(rendered, `"protocol": "shadowsocks"`) {
+		t.Fatal("without active subscriptions, the SS port should not listen")
+	}
+}
 
 func TestKernelPayloadCarriesActiveShareSubscriptions(t *testing.T) {
 	r, err := repo.Open(t.TempDir() + "/subscription.db")

@@ -791,6 +791,18 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
+	if in.Settings.SSSubscriptionUsers {
+		if strings.TrimSpace(node.NftError) != "" {
+			response.WriteJSON(w, response.ErrDefault("SS 订阅独立密码需要服务器支持流量计数："+node.NftError))
+			return
+		}
+		if update {
+			if msg := h.chainInUseMessage(&row); msg != "" {
+				response.WriteJSON(w, response.ErrDefault(msg))
+				return
+			}
+		}
+	}
 	if in.Security.CertMode == kernel.CertModeACME && versionBelow(k.Version, 1, 14) {
 		response.WriteJSON(w, response.ErrDefault(fmt.Sprintf("自动申请证书需要 sing-box 1.14 及以上，服务器安装的是 %s", k.Version)))
 		return
@@ -1282,6 +1294,7 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	inbounds := make([]kernel.Inbound, 0, len(rows))
 	ports := make([]map[string]interface{}, 0, len(rows))
 	users := h.activeUsersByInbound(time.Now())
+	node, _ := h.repo.GetNodeByID(k.NodeID)
 	for _, row := range rows {
 		if row.Enabled != 1 {
 			continue
@@ -1293,7 +1306,7 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		if err != nil {
 			return nil, "", err
 		}
-		if in.SupportsUsers() {
+		if in.SupportsUsers() && !(in.Settings.SSSubscriptionUsers && node != nil && strings.TrimSpace(node.NftError) != "") {
 			in.Users = users[in.ID]
 		}
 		if in.Via, err = h.inboundVia(row); err != nil {
@@ -1324,7 +1337,6 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	if enabled, proxyURL := h.getGithubProxyConfig(); enabled {
 		proxy = proxyURL
 	}
-	node, _ := h.repo.GetNodeByID(k.NodeID)
 	rendered, err := kernel.RenderWith(k.KernelType, inbounds, kernel.RenderOptions{
 		RuleSetMirror:      proxy,
 		SingboxHTTPClient:  kernelCaps(k.Version).SingboxHTTPClient,

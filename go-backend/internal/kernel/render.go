@@ -70,19 +70,32 @@ func Render(kernelType string, inbounds []Inbound) (Rendered, error) {
 
 // RenderWith is Render with panel settings.
 func RenderWith(kernelType string, inbounds []Inbound, opts RenderOptions) (Rendered, error) {
-	sorted := make([]Inbound, len(inbounds))
-	copy(sorted, inbounds)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
-	if opts.NoUserMarks {
-		for i := range sorted {
-			sorted[i].noUserMarks = true
-		}
-	}
-	for _, in := range sorted {
+	sorted := make([]Inbound, 0, len(inbounds))
+	for _, in := range inbounds {
 		if err := ValidateOutboundIPExtra(kernelType, in.OutboundIPStrategy, in.Extra); err != nil {
 			return Rendered{}, err
 		}
+		if err := in.validateSSSubscriptionUsers(kernelType); err != nil {
+			return Rendered{}, fmt.Errorf("入站 %d: %w", in.ID, err)
+		}
+		if opts.NoUserMarks {
+			in.noUserMarks = true
+		}
+		if in.Settings.SSSubscriptionUsers {
+			users := make([]User, 0, len(in.Users))
+			for _, user := range in.Users {
+				if user.canMeterSS() {
+					users = append(users, user)
+				}
+			}
+			if in.noUserMarks || len(users) == 0 {
+				continue
+			}
+			in.Users = users
+		}
+		sorted = append(sorted, in)
 	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 
 	var out Rendered
 	switch kernelType {

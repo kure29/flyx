@@ -13,11 +13,12 @@ import (
 )
 
 type Settings struct {
-	UUID     string `json:"uuid,omitempty"`
-	Username string `json:"username,omitempty"` // NaïveProxy
-	Flow     string `json:"flow,omitempty"`
-	Password string `json:"password,omitempty"`
-	Method   string `json:"method,omitempty"`
+	UUID                string `json:"uuid,omitempty"`
+	Username            string `json:"username,omitempty"` // NaïveProxy
+	Flow                string `json:"flow,omitempty"`
+	Password            string `json:"password,omitempty"`
+	Method              string `json:"method,omitempty"`
+	SSSubscriptionUsers bool   `json:"ssSubscriptionUsers,omitempty"`
 
 	// SnellVersion is the protocol version clients use (4, 5 or 6).
 	SnellVersion int `json:"snellVersion,omitempty"`
@@ -298,6 +299,9 @@ func Normalize(kernelType string, in *Inbound) error {
 	if err := normalizeSettings(in); err != nil {
 		return err
 	}
+	if err := in.validateSSSubscriptionUsers(kernelType); err != nil {
+		return err
+	}
 	if err := normalizeSecurity(in); err != nil {
 		return err
 	}
@@ -415,6 +419,10 @@ func normalizeSettings(in *Inbound) error {
 		}
 		if !containsString(ssMethods, s.Method) {
 			return fmt.Errorf("不支持的加密方式 %s", s.Method)
+		}
+		if s.SSSubscriptionUsers {
+			s.UUID, s.Flow, s.Password = "", "", ""
+			break
 		}
 		if s.Password == "" {
 			s.Password = ShadowsocksPassword(s.Method)

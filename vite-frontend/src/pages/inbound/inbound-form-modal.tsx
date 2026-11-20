@@ -16,6 +16,7 @@ import {
   SECURITY_LABELS,
   TRANSPORT_LABELS,
   type InboundForm,
+  ssSubscriptionUsersAllowed,
   applyPreset,
   isAutoName,
   passwordProtocols,
@@ -169,6 +170,7 @@ export function InboundFormModal({
       const next: InboundForm = {
         ...prev,
         kernelType,
+        ssSubscriptionUsers: kernelType === "xray" && prev.ssSubscriptionUsers,
         outboundIpStrategy:
           kernelType === "xray" || kernelType === "singbox"
             ? prev.outboundIpStrategy
@@ -207,6 +209,8 @@ export function InboundFormModal({
       return {
         ...prev,
         protocol,
+        ssSubscriptionUsers:
+          protocol === "shadowsocks" && prev.ssSubscriptionUsers,
         transportType: transport,
         securityType: security,
         sni: nextSni(prev.securityType, prev.sni, security),
@@ -786,11 +790,22 @@ export function InboundFormModal({
                         label="加密方式"
                         selectedKeys={[form.method]}
                         onSelectionChange={(keys) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            method: String(Array.from(keys)[0] ?? prev.method),
-                            password: "",
-                          }))
+                          setForm((prev) => {
+                            const next = {
+                              ...prev,
+                              method: String(
+                                Array.from(keys)[0] ?? prev.method,
+                              ),
+                              password: "",
+                            };
+
+                            return {
+                              ...next,
+                              ssSubscriptionUsers:
+                                ssSubscriptionUsersAllowed(next) &&
+                                prev.ssSubscriptionUsers,
+                            };
+                          })
                         }
                       >
                         {(caps?.ssMethods ?? []).map((m) => (
@@ -809,21 +824,36 @@ export function InboundFormModal({
                         onChange={(e) => set("username", e.target.value)}
                       />
                     )}
-                    {passwordProtocols.includes(form.protocol) && (
-                      <Input
-                        description={
-                          form.protocol === "shadowsocks" &&
-                          form.method.startsWith("2022-")
-                            ? "SS2022 需要 base64 密钥，建议留空自动生成"
-                            : undefined
-                        }
-                        label={form.protocol === "snell" ? "PSK" : "密码"}
-                        placeholder="留空自动生成"
-                        value={form.password}
-                        variant="bordered"
-                        onChange={(e) => set("password", e.target.value)}
-                      />
+                    {ssSubscriptionUsersAllowed(form) && (
+                      <div className="space-y-1.5">
+                        <Switch
+                          isSelected={form.ssSubscriptionUsers}
+                          size="sm"
+                          onValueChange={(v) => set("ssSubscriptionUsers", v)}
+                        >
+                          每个订阅使用独立密码
+                        </Switch>
+                        <p className="text-xs text-default-500">
+                          同一端口按分发订阅统计流量、执行额度。开启后旧共享密码失效，客户端需刷新订阅。
+                        </p>
+                      </div>
                     )}
+                    {passwordProtocols.includes(form.protocol) &&
+                      !form.ssSubscriptionUsers && (
+                        <Input
+                          description={
+                            form.protocol === "shadowsocks" &&
+                            form.method.startsWith("2022-")
+                              ? "SS2022 需要 base64 密钥，建议留空自动生成"
+                              : undefined
+                          }
+                          label={form.protocol === "snell" ? "PSK" : "密码"}
+                          placeholder="留空自动生成"
+                          value={form.password}
+                          variant="bordered"
+                          onChange={(e) => set("password", e.target.value)}
+                        />
+                      )}
 
                     {form.protocol === "snell" && (
                       <Select

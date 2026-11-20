@@ -57,7 +57,7 @@
 | 入站流量统计（nftables） | ✓ | ✓ | ✓ |
 
 - Xray 作出站时只能连接 VLESS / VMess / Trojan / Shadowsocks（不含插件和 ShadowTLS）/ SOCKS5 / HTTP 节点；要连 Hysteria2、TUIC、AnyTLS 等请用 sing-box
-- 订阅用户单独凭据只对支持的协议有效：Shadowsocks、Snell、WireGuard 在哪个内核上都共用凭据，见 [凭据、到期与流量](./subscription-users.md)
+- 订阅用户单独凭据只对支持的协议有效：Xray 的传统 Shadowsocks 可以选择独立密码，Snell 和 WireGuard 仍共用凭据，见 [凭据、到期与流量](./subscription-users.md)
 - 用到 1.14 功能（ACME、内置 Snell、经 Snell 节点出站）的 sing-box 不能换回 1.14 以前的版本，面板会拒绝
 
 ## Snell 用哪个内核
@@ -88,7 +88,7 @@ Snell 有两种跑法：装独立的 **Snell 内核**（Surge 官方的 snell-se
 - Snell 内核上，入站的版本要和服务器安装的 Snell 对得上：v4 入站用 4.x 或 5.x，v5 入站用 5.x，v6 入站用 6.0.0；对不上时保存入站或更换内核版本会被拒绝。服务器装的是 6.0.0 时，新建入站默认就是 v6
 
 ::: info 为什么不支持多用户
-sing-box 的 Snell 开启多用户后，只带 PSK、不带 userkey 的客户端会被直接断开，现有链接都会失效。所以面板和 Shadowsocks 一样只用一个 PSK：订阅用户共用凭据，停用后订阅失效，但已经导入的配置仍能连接。
+sing-box 的 Snell 开启多用户后，只带 PSK、不带 userkey 的客户端会被直接断开，现有链接都会失效。所以面板对 Snell 只用一个 PSK：订阅用户共用凭据，停用后订阅失效，但已经导入的配置仍能连接。
 :::
 
 ### 客户端和出站

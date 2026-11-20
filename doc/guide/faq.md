@@ -81,7 +81,7 @@ Xray 26.7.11 起，Reality 未设置“最低客户端版本”时默认只接�
 
 ### 流量一直是 0
 
-检查服务器是否安装了 nftables；流量每分钟左右同步一次。订阅流量还需要 agent 和面板一起更新到最新版，Shadowsocks、Snell 等共用凭据的入站不按订阅计数，见 [凭据、到期与流量](./subscription-users.md#流量上限)。
+检查服务器是否安装了 nftables；流量每分钟左右同步一次。订阅流量需要支持订阅计数的 agent 和面板。共用凭据的入站不按订阅计数；Xray 的传统 Shadowsocks 可选择开启独立密码，见 [凭据、到期与流量](./subscription-users.md#流量上限)。
 
 ### 某个客户端里少了几个节点
 

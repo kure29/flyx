@@ -579,6 +579,7 @@ export interface InboundSettings {
   flow?: string;
   password?: string;
   method?: string;
+  ssSubscriptionUsers?: boolean;
   snellVersion?: number;
   /** Snell v6 traffic shaping: unset (default) or "unshaped". */
   snellMode?: string;

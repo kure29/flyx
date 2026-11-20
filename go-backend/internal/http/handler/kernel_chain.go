@@ -37,6 +37,9 @@ func (h *Handler) chainEndpoint(target *model.NodeInbound, fromNodeID int64) (ke
 		e.Host = firstNonEmpty(strings.TrimSpace(target.ShareHost), target.Listen)
 		return e, nil
 	}
+	if in.Settings.SSSubscriptionUsers {
+		return e, fmt.Errorf("出站节点「%s」只接受订阅独立密码，不能作为出站代理或分流出口", target.Name)
+	}
 	if target.AcceptProxyProtocol == 1 {
 		return e, fmt.Errorf("出站节点「%s」开启了获取真实 IP（PROXY protocol），只能经中转连接", target.Name)
 	}

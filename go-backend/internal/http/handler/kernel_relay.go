@@ -505,6 +505,10 @@ func (h *Handler) removeInboundRelays(inboundID int64) {
 // the landing node directly (unless relay-only or local-only) and each
 // relay entry.
 func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint, []string) {
+	return h.inboundEndpointsForUser(rows, nil)
+}
+
+func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel.User) ([]kernel.Endpoint, []string) {
 	relays, err := h.relayViews(0)
 	if err != nil {
 		log.Printf("relay lookup failed: %v", err)
@@ -526,6 +530,13 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 		if err != nil {
 			continue
 		}
+		proxy := importedProxy(&row)
+		if proxy == nil && user != nil {
+			in = in.ForUser(*user)
+		}
+		if in.Settings.SSSubscriptionUsers && (user == nil || in.Settings.Password == "") {
+			continue
+		}
 		node, ok := nodes[row.NodeID]
 		if !ok {
 			node, _ = h.repo.GetNodeByID(row.NodeID)
@@ -537,7 +548,6 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 			pq = kernelSupportsPostQuantumReality(k)
 			postQuantum[row.KernelID] = pq
 		}
-		proxy := importedProxy(&row)
 		if row.RelayOnly != 1 && !isLoopbackListen(row.Listen) {
 			host := inboundShareAddress(&row, node)
 			if host != "" {
@@ -575,6 +585,10 @@ func (h *Handler) inboundShare(w http.ResponseWriter, r *http.Request) {
 	row, err := h.repo.GetNodeInbound(id)
 	if err != nil || row == nil {
 		response.WriteJSON(w, response.ErrDefault("入站不存在"))
+		return
+	}
+	if in, err := inboundFromModel(*row); err == nil && in.Settings.SSSubscriptionUsers {
+		response.WriteJSON(w, response.ErrDefault("该入站只接受订阅独立密码，请通过分发订阅使用"))
 		return
 	}
 	enabled := *row

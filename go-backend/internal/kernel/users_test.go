@@ -1,9 +1,73 @@
 package kernel
 
 import (
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestXraySSSubscriptionUsers(t *testing.T) {
+	inbound := Inbound{ID: 1, Protocol: ProtocolShadowsocks, Port: 8388,
+		Settings: Settings{Method: "aes-128-gcm", Password: "old-shared", SSSubscriptionUsers: true}}
+	if err := Normalize(TypeXray, &inbound); err != nil || inbound.Settings.Password != "" {
+		t.Fatalf("normalized settings: %+v; err=%v", inbound.Settings, err)
+	}
+	for _, invalid := range []struct {
+		kernelType, method, extra string
+	}{
+		{TypeSingbox, "aes-128-gcm", ""},
+		{TypeXray, DefaultSSMethod, ""},
+		{TypeXray, "aes-128-gcm", `{"settings":{"password":"fallback"}}`},
+	} {
+		candidate := inbound
+		candidate.Settings.Method = invalid.method
+		candidate.Extra = json.RawMessage(invalid.extra)
+		if err := Normalize(invalid.kernelType, &candidate); err == nil {
+			t.Errorf("accepted unsupported configuration: %+v", invalid)
+		}
+	}
+
+	first := User{ID: 7, Password: "subscriber-one"}
+	second := User{ID: 8, Password: "subscriber-two"}
+	inbound.Users = []User{first, second, {ID: 9}, {ID: userMarkMax + 1, Password: "unmetered"}}
+	rendered, err := Render(TypeXray, []Inbound{inbound})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Inbounds []struct {
+			Port     int
+			Settings struct {
+				Password, Network string
+				Users             []struct{ Email, Method, Password string }
+			}
+		}
+	}
+	if err := json.Unmarshal([]byte(rendered.Files[0].Content), &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Inbounds) != 1 || config.Inbounds[0].Port != inbound.Port || !slices.Equal(rendered.UserMarks, []int64{7, 8}) {
+		t.Fatalf("expected both metered users on one port: %#v, %v", config, rendered.UserMarks)
+	}
+	settings := config.Inbounds[0].Settings
+	if settings.Password != "" || settings.Network != "tcp,udp" || len(settings.Users) != 2 {
+		t.Fatalf("unexpected SS settings: %+v", settings)
+	}
+	for idx, user := range []User{first, second} {
+		account := settings.Users[idx]
+		if account.Email != user.Email() || account.Password != user.Password || account.Method != inbound.Settings.Method {
+			t.Errorf("account %d: %+v", user.ID, account)
+		}
+		if !strings.Contains(rendered.Files[0].Content, `"outboundTag": "`+userOutboundTag(user.ID)+`"`) {
+			t.Errorf("account %d has no metered outbound", user.ID)
+		}
+	}
+	if blocked, err := RenderWith(TypeXray, []Inbound{inbound}, RenderOptions{NoUserMarks: true}); err != nil ||
+		len(blocked.UserMarks) != 0 || strings.Contains(blocked.Files[0].Content, `"in-1"`) {
+		t.Fatalf("unmetered SS inlet must not listen: %v, %v", blocked, err)
+	}
+}
 
 func TestRenderUsers(t *testing.T) {
 	users := []User{{ID: 7, UUID: "11111111-1111-4111-8111-111111111111", Password: "userpw"}}
