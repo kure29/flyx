@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"go-backend/internal/http/response"
 	"go-backend/internal/kernel"
 	"go-backend/internal/store/model"
+	"go-backend/internal/store/repo"
 )
 
 // Remote sources are subscription URLs, or uploaded subscription files,
@@ -320,7 +322,8 @@ func (h *Handler) remoteSourceSave(w http.ResponseWriter, r *http.Request) {
 		RelayOnly     bool   `json:"relayOnly"`
 		Enabled       *bool  `json:"enabled"`
 		// UserAgent is sent when fetching; "" uses the default.
-		UserAgent string `json:"userAgent"`
+		UserAgent string  `json:"userAgent"`
+		NodeOrder []int64 `json:"nodeOrder"`
 	}
 	// A JSON-escaped file can be larger than the file itself.
 	if err := decodeJSON(http.MaxBytesReader(w, r.Body, 2*maxSubscriptionBytes), &req); err != nil {
@@ -383,8 +386,12 @@ func (h *Handler) remoteSourceSave(w http.ResponseWriter, r *http.Request) {
 		src.Enabled = boolToInt(*req.Enabled)
 	}
 	src.UpdatedTime = now
-	if err := h.repo.SaveRemoteSource(src); err != nil {
-		response.WriteJSON(w, response.Err(-2, err.Error()))
+	if err := h.repo.SaveRemoteSource(src, req.NodeOrder); err != nil {
+		if errors.Is(err, repo.ErrRemoteSourceNodeOrder) {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+		} else {
+			response.WriteJSON(w, response.Err(-2, err.Error()))
+		}
 		return
 	}
 	if !fetch {

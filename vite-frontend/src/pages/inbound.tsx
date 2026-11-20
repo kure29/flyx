@@ -891,6 +891,7 @@ export default function InboundPage() {
 
       {tab === "sources" && (
         <RemoteSourcesSection
+          inbounds={inbounds}
           sources={sources}
           onChanged={() => loadData(false)}
         />

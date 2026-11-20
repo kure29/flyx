@@ -184,21 +184,18 @@ function gbText(bytes: number): string {
 function draftFrom(
   s?: SubscriptionItem,
   sources: RemoteSourceItem[] = [],
-  groups: NodeGroupItem[] = [],
 ): Draft {
   if (!s) {
     const ids = (role: string) =>
       sources.filter((x) => x.role === role).map((x) => x.id);
     const relays = ids("relay");
-    // A group with every node is the natural start; else the first one.
-    const start = groups.find((g) => g.sourceAll) ?? groups[0];
 
     return {
       name: "",
       // New subscriptions get their own credentials, so any of them can
       // expire, be capped or cut off; older own-credential ones keep working.
       kind: "share",
-      groupIds: start ? [start.id] : [],
+      groupIds: [],
       // Sources marked as relays (an airport in front of the own nodes)
       // set up the chain: they relay, the own nodes and landing sources
       // are the exits.
@@ -307,6 +304,7 @@ function Editor({
   };
 
   const runPreview = async () => {
+    if (pickedGroups.length === 0) return;
     // The chain editor lists the nodes dropping would hide too, so they
     // can be picked back in.
     const forChain = page === "rules" && o.chainDropUnused;
@@ -338,7 +336,7 @@ function Editor({
   useEffect(() => {
     if (page === "preview" && !preview && !previewing) void runPreview();
     if (page === "rules" && !chainNodes && !previewing) void runPreview();
-  }, [page, preview, chainNodes]);
+  }, [page, preview, chainNodes, draft.groupIds]);
 
   const sourceFilter = (id: number) => o.chainSourceFilters?.[id] ?? "";
   // The role a node gets from its source (narrowed by the source's name
@@ -980,6 +978,15 @@ function Editor({
         {page === "preview" && (
           <div className="space-y-4">
             <Section title="预览">
+              {pickedGroups.length === 0 && (
+                <Button
+                  size="sm"
+                  variant="light"
+                  onPress={() => setPage("nodes")}
+                >
+                  先选择节点组
+                </Button>
+              )}
               {previewing && !preview && (
                 <p className="py-6 text-center text-xs text-default-500">
                   正在生成…
@@ -1091,7 +1098,19 @@ function Editor({
         <Button variant="light" onPress={onClose}>
           取消
         </Button>
-        <Button color="primary" isLoading={saving} onPress={onSave}>
+        <Button
+          color="primary"
+          isLoading={saving}
+          onPress={() => {
+            if (pickedGroups.length === 0) {
+              setPage("nodes");
+              toast.error("请至少选择一个节点组");
+
+              return;
+            }
+            onSave();
+          }}
+        >
           保存
         </Button>
       </ModalFooter>
@@ -1475,7 +1494,7 @@ export default function SubscriptionPage() {
             ? {
                 key: "create",
                 label: "新建订阅",
-                onPress: () => setDraft(draftFrom(undefined, sources, groups)),
+                onPress: () => setDraft(draftFrom(undefined, sources)),
               }
             : {
                 key: "create-group",

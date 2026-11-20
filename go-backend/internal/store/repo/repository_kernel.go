@@ -130,7 +130,11 @@ func (r *Repository) ListNodeInbounds() ([]model.NodeInbound, error) {
 		return nil, errors.New("repository not initialized")
 	}
 	var rows []model.NodeInbound
-	return rows, r.db.Order("inx ASC, id ASC").Find(&rows).Error
+	if err := r.db.Order("inx ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	applyRemoteSourceOrder(rows)
+	return rows, nil
 }
 
 func (r *Repository) ListNodeInboundsByKernel(kernelID int64) ([]model.NodeInbound, error) {

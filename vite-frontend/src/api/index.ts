@@ -1083,6 +1083,7 @@ export const saveRemoteSource = (data: {
   relayOnly: boolean;
   enabled?: boolean;
   userAgent?: string;
+  nodeOrder?: number[];
 }) =>
   Network.post<
     RemoteSourceItem | { source: RemoteSourceItem; result: RemoteSyncResult }

@@ -51,7 +51,8 @@ type NodeInbound struct {
 	UpdatedTime    int64  `gorm:"column:updated_time;not null"`
 	// SourceID is the remote subscription an imported node came from (0 =
 	// imported by hand); the source's refresh keeps it up to date.
-	SourceID int64 `gorm:"column:source_id;not null;default:0;index"`
+	SourceID    int64 `gorm:"column:source_id;not null;default:0;index"`
+	SourceOrder int   `gorm:"column:source_order;not null;default:0"`
 	// ImportedName is the node's name in its source at the last refresh; a
 	// Name that differs from it was set by the user and survives refreshes.
 	ImportedName string `gorm:"column:imported_name;type:varchar(100);not null;default:''"`

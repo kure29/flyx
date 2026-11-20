@@ -3,10 +3,27 @@ import type {
   RemoteSourceRole,
   RemoteSyncResult,
 } from "@/api";
+import type { InboundApiItem } from "@/api/types";
 
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FileUp, RefreshCw } from "lucide-react";
+import { FileUp, GripVertical, RefreshCw } from "lucide-react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import {
   deleteRemoteSource,
@@ -25,8 +42,7 @@ import {
 } from "@/shadcn-bridge/heroui/modal";
 import { formatTraffic } from "@/utils/traffic";
 
-const modalBase =
-  "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
+const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 export const INTERVALS: Array<[string, string]> = [
   ["0", "手动"],
@@ -78,6 +94,7 @@ interface SourceDraft {
   intervalHours: number;
   relayOnly: boolean;
   userAgent: string;
+  nodeOrder?: number[];
   /** A newly chosen file (file sources). */
   content?: string;
   fileName?: string;
@@ -134,11 +151,122 @@ export function syncText(r: RemoteSyncResult): string {
   return parts.join("，");
 }
 
+function SourcePreviewRow({
+  node,
+  sortable,
+}: {
+  node: InboundApiItem;
+  sortable: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    isDragging,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: node.id, disabled: !sortable });
+
+  return (
+    <li
+      ref={setNodeRef}
+      className={`relative flex min-h-10 items-center gap-2 border-b border-divider bg-content1 px-2 last:border-b-0 ${isDragging ? "z-10" : ""}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      {sortable && (
+        <button
+          {...attributes}
+          {...listeners}
+          ref={setActivatorNodeRef}
+          aria-label={`调整 ${node.name} 的顺序`}
+          className="grid size-11 shrink-0 touch-none cursor-grab place-items-center rounded-md text-default-500 hover:bg-default-100 focus-visible:outline-2 focus-visible:outline-primary active:cursor-grabbing"
+          type="button"
+        >
+          <GripVertical aria-hidden="true" className="size-4" />
+        </button>
+      )}
+      <span className="min-w-0 flex-1 truncate text-sm" title={node.name}>
+        {node.name}
+      </span>
+      <span className="shrink-0 text-xs text-default-500">{node.protocol}</span>
+    </li>
+  );
+}
+
+function SourcePreview({
+  nodes,
+  disabled,
+  onOrderChange,
+}: {
+  nodes: InboundApiItem[];
+  disabled: boolean;
+  onOrderChange: (ids: number[]) => void;
+}) {
+  const ids = nodes.map((node) => node.id);
+  const sortable = nodes.length > 1 && !disabled;
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  return (
+    <div className="space-y-1.5">
+      <h3 className="text-sm font-medium">节点预览</h3>
+      {nodes.length > 1 && (
+        <p className="text-xs text-default-500">
+          按住节点左侧的手柄拖拽，保存后生效。
+        </p>
+      )}
+      {nodes.length === 0 ? (
+        <p className="text-xs text-default-500">暂无可预览的节点</p>
+      ) : (
+        <DndContext
+          accessibility={{
+            screenReaderInstructions: {
+              draggable:
+                "按空格键开始拖拽，使用上下方向键移动，再按空格键放下；按 Esc 取消。",
+            },
+          }}
+          collisionDetection={closestCenter}
+          sensors={sensors}
+          onDragEnd={({ active, over }) => {
+            if (!sortable || !over || active.id === over.id) return;
+            const from = ids.indexOf(Number(active.id));
+            const to = ids.indexOf(Number(over.id));
+
+            if (from >= 0 && to >= 0) onOrderChange(arrayMove(ids, from, to));
+          }}
+        >
+          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+            <ol
+              aria-label="订阅源节点顺序"
+              className="max-h-64 overflow-y-auto rounded-lg border border-divider"
+            >
+              {nodes.map((node) => (
+                <SourcePreviewRow
+                  key={node.id}
+                  node={node}
+                  sortable={sortable}
+                />
+              ))}
+            </ol>
+          </SortableContext>
+        </DndContext>
+      )}
+    </div>
+  );
+}
+
 /** Remote subscriptions whose nodes are kept as imported landings. */
 export function RemoteSourcesSection({
+  inbounds,
   sources,
   onChanged,
 }: {
+  inbounds: InboundApiItem[];
   sources: RemoteSourceItem[];
   onChanged: () => Promise<void> | void;
 }) {
@@ -208,6 +336,7 @@ export function RemoteSourcesSection({
         relayOnly: draft.relayOnly,
         userAgent: draft.kind === "url" ? draft.userAgent.trim() : "",
         content: draft.kind === "file" ? draft.content : undefined,
+        nodeOrder: draft.nodeOrder && previewNodes.map((node) => node.id),
       };
       const res = await saveRemoteSource(data);
 
@@ -245,6 +374,18 @@ export function RemoteSourcesSection({
   };
 
   const editing = sources.find((s) => s.id === draft?.id);
+  const previewNodes = editing
+    ? inbounds.filter((node) => node.sourceId === editing.id)
+    : [];
+
+  if (draft?.nodeOrder) {
+    const rank = new Map(draft.nodeOrder.map((id, index) => [id, index]));
+
+    previewNodes.sort(
+      (first, second) =>
+        (rank.get(first.id) ?? rank.size) - (rank.get(second.id) ?? rank.size),
+    );
+  }
 
   return (
     <section className="space-y-2">
@@ -508,9 +649,19 @@ export function RemoteSourcesSection({
                     onChange={(relayOnly) => setDraft({ ...draft, relayOnly })}
                   />
                   {editing && (
-                    <p className="text-xs text-default-500">
-                      当前 {editing.nodeCount} 个节点 · {ago(editing.lastFetch)}
-                    </p>
+                    <>
+                      <p className="text-xs text-default-500">
+                        当前 {editing.nodeCount} 个节点 ·{" "}
+                        {ago(editing.lastFetch)}
+                      </p>
+                      <SourcePreview
+                        disabled={saving || deleting || confirmDelete}
+                        nodes={previewNodes}
+                        onOrderChange={(nodeOrder) =>
+                          setDraft({ ...draft, nodeOrder })
+                        }
+                      />
+                    </>
                   )}
                 </ModalBody>
                 <ModalFooter className="flex-wrap">
