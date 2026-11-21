@@ -57,7 +57,7 @@
 | 入站流量统计（nftables） | ✓ | ✓ | ✓ |
 
 - Xray 作出站时只能连接 VLESS / VMess / Trojan / Shadowsocks（不含插件和 ShadowTLS）/ SOCKS5 / HTTP 节点；要连 Hysteria2、TUIC、AnyTLS 等请用 sing-box
-- 订阅用户单独凭据只对支持的协议有效：Xray 的传统 Shadowsocks 可以选择独立密码，Snell 和 WireGuard 仍共用凭据，见 [凭据、到期与流量](./subscription-users.md)
+- 订阅用户单独凭据只对支持的协议有效：Xray 的传统 Shadowsocks 和 SS2022 AES-GCM 可以选择独立密码，Snell 和 WireGuard 仍共用凭据，见 [凭据、到期与流量](./subscription-users.md)
 - 用到 1.14 功能（ACME、内置 Snell、经 Snell 节点出站）的 sing-box 不能换回 1.14 以前的版本，面板会拒绝
 
 ## Snell 用哪个内核

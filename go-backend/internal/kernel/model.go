@@ -420,7 +420,7 @@ func normalizeSettings(in *Inbound) error {
 		if !containsString(ssMethods, s.Method) {
 			return fmt.Errorf("不支持的加密方式 %s", s.Method)
 		}
-		if s.SSSubscriptionUsers {
+		if s.SSSubscriptionUsers && SS2022KeyLen(s.Method) == 0 {
 			s.UUID, s.Flow, s.Password = "", "", ""
 			break
 		}

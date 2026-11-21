@@ -1,20 +1,77 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"go-backend/internal/http/response"
 	"go-backend/internal/kernel"
 	"go-backend/internal/store/model"
 	"go-backend/internal/store/repo"
 )
 
+func TestSS2022InboundKeyOnEditAndModeChange(t *testing.T) {
+	repository, err := repo.Open(t.TempDir() + "/ss2022-edit.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	h := New(repository, "unit-test-secret")
+	nodeID := seedRelayTargetNode(t, repository, "ss-node", "203.0.113.1")
+	xray := seedChainKernel(t, repository, nodeID, kernel.TypeXray)
+	sharedKey := kernel.ShadowsocksPassword(kernel.DefaultSSMethod)
+	row := seedChainInbound(t, repository, xray, "ss2022", kernel.Inbound{
+		Protocol: kernel.ProtocolShadowsocks, Port: 8388, Settings: kernel.Settings{Method: kernel.DefaultSSMethod, Password: sharedKey},
+	}, 0)
+	update := func(metered bool, password string) string {
+		t.Helper()
+		payload, err := json.Marshal(inboundRequest{
+			ID: row.ID, Name: row.Name, Protocol: row.Protocol, Port: row.Port,
+			Settings: kernel.Settings{Method: kernel.DefaultSSMethod, Password: password, SSSubscriptionUsers: metered},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := httptest.NewRecorder()
+		h.inboundUpdate(result, httptest.NewRequest(http.MethodPost, "/api/v1/inbound/update", bytes.NewReader(payload)))
+		var reply response.R
+		if err := json.Unmarshal(result.Body.Bytes(), &reply); err != nil || reply.Code != 0 {
+			t.Fatalf("edit failed: %s, %v", reply.Msg, err)
+		}
+		stored, err := repository.GetNodeInbound(row.ID)
+		if err != nil || stored == nil {
+			t.Fatalf("read saved inbound: %v", err)
+		}
+		inbound, err := inboundFromModel(*stored)
+		if err != nil || inbound.Settings.SSSubscriptionUsers != metered || inbound.Settings.Password == "" {
+			t.Fatalf("invalid saved credentials: %v", err)
+		}
+		return inbound.Settings.Password
+	}
+	serverKey := update(true, sharedKey)
+	if serverKey == sharedKey || update(true, "") != serverKey {
+		t.Fatal("enabling must rotate the old shared key, but subsequent edits must keep it stable")
+	}
+	if update(false, serverKey) == serverKey {
+		t.Fatal("disabling must not let the old server key become a usable shared password")
+	}
+}
+
 func TestSSSubscriptionsSharePortAndRevokeOnlyOverQuotaUser(t *testing.T) {
+	for _, method := range []string{"aes-128-gcm", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm"} {
+		t.Run(method, func(t *testing.T) { testSSSubscriptionPort(t, method) })
+	}
+}
+
+func testSSSubscriptionPort(t *testing.T, method string) {
+	t.Helper()
 	repository, err := repo.Open(t.TempDir() + "/subscription-ss.db")
 	if err != nil {
 		t.Fatal(err)
@@ -25,8 +82,12 @@ func TestSSSubscriptionsSharePortAndRevokeOnlyOverQuotaUser(t *testing.T) {
 	xray := seedChainKernel(t, repository, nodeID, kernel.TypeXray)
 	inbound := seedChainInbound(t, repository, xray, "metered-ss", kernel.Inbound{
 		Protocol: kernel.ProtocolShadowsocks, Port: 8388,
-		Settings: kernel.Settings{Method: "aes-128-gcm", Password: "old-shared", SSSubscriptionUsers: true},
+		Settings: kernel.Settings{Method: method, SSSubscriptionUsers: true},
 	}, 0)
+	stored, err := inboundFromModel(*inbound)
+	if err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UnixMilli()
 	first := model.Subscription{Name: "first", Kind: model.SubscriptionShare, Token: strings.Repeat("a", 32),
 		Password: "first-password", SourceAll: 1, Enabled: 1, TrafficLimit: 1000, CreatedTime: now, UpdatedTime: now}
@@ -50,14 +111,32 @@ func TestSSSubscriptionsSharePortAndRevokeOnlyOverQuotaUser(t *testing.T) {
 	if endpoints := h.subNodes(context, draft); len(endpoints) != 1 || endpoints[0].OrderKey == "" {
 		t.Fatal("the metered SS node must appear in the subscription preview")
 	}
+	passwords := make(map[int64]string, 2)
 	for _, sub := range []*model.Subscription{&first, &second} {
 		endpoints := h.subNodes(context, sub)
-		if len(endpoints) != 1 || endpoints[0].Port != inbound.Port || endpoints[0].Inbound.Settings.Password != sub.Password {
-			t.Fatalf("subscription %d did not get its own password on the same port: %+v", sub.ID, endpoints)
+		if len(endpoints) != 1 || endpoints[0].Port != inbound.Port {
+			t.Fatalf("subscription %d did not get the shared port", sub.ID)
 		}
-		if uri, ok := kernel.ShareURI(endpoints[0]); !ok || !strings.HasPrefix(uri, "ss://") {
-			t.Errorf("subscription %d did not get a normal SS URI", sub.ID)
+		password := endpoints[0].Inbound.Settings.Password
+		uri, ok := kernel.ShareURI(endpoints[0])
+		if !ok || !strings.HasPrefix(uri, "ss://") {
+			t.Fatalf("subscription %d did not get a normal SS URI", sub.ID)
 		}
+		if kernel.SS2022KeyLen(method) > 0 {
+			parsed, err := url.Parse(uri)
+			if err != nil {
+				t.Fatal("SS2022 URI cannot be parsed")
+			}
+			linkPassword, _ := parsed.User.Password()
+			serverKey, userKey, combined := strings.Cut(password, ":")
+			if parsed.User.Username() != method || linkPassword != password || !combined || serverKey != stored.Settings.Password || userKey == "" || userKey == sub.Password {
+				t.Fatalf("subscription %d did not get the encoded server and user keys", sub.ID)
+			}
+			password = userKey
+		} else if password != sub.Password {
+			t.Fatalf("subscription %d did not get its legacy password", sub.ID)
+		}
+		passwords[sub.ID] = password
 	}
 	if endpoints, _ := h.inboundEndpoints([]model.NodeInbound{*inbound}); len(endpoints) != 0 {
 		t.Fatal("metered SS must not expose a shared endpoint")
@@ -73,9 +152,9 @@ func TestSSSubscriptionsSharePortAndRevokeOnlyOverQuotaUser(t *testing.T) {
 		}
 		return payload["files"].([]kernel.File)[0].Content
 	}
-	if rendered := config(); strings.Contains(rendered, "old-shared") ||
-		!strings.Contains(rendered, first.Password) || !strings.Contains(rendered, second.Password) {
-		t.Fatal("both subscription passwords and no shared password should be accepted")
+	if rendered := config(); passwords[first.ID] == passwords[second.ID] ||
+		!strings.Contains(rendered, passwords[first.ID]) || !strings.Contains(rendered, passwords[second.ID]) {
+		t.Fatal("both independent credentials must be configured")
 	}
 	h.applyUserCounters(nodeID, "epoch", []agentUserCounter{
 		{ID: first.ID, Dir: "down", Bytes: 1001}, {ID: second.ID, Dir: "down", Bytes: 100},
@@ -93,7 +172,7 @@ func TestSSSubscriptionsSharePortAndRevokeOnlyOverQuotaUser(t *testing.T) {
 			t.Fatalf("each subscription must export its own usage: %d %v", export.Code, export.Header())
 		}
 	}
-	if rendered := config(); strings.Contains(rendered, first.Password) || !strings.Contains(rendered, second.Password) {
+	if rendered := config(); strings.Contains(rendered, passwords[first.ID]) || !strings.Contains(rendered, passwords[second.ID]) {
 		t.Fatal("quota should revoke only the first password")
 	}
 	second.Enabled = 0

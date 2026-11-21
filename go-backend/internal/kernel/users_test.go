@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -17,7 +18,7 @@ func TestXraySSSubscriptionUsers(t *testing.T) {
 		kernelType, method, extra string
 	}{
 		{TypeSingbox, "aes-128-gcm", ""},
-		{TypeXray, DefaultSSMethod, ""},
+		{TypeXray, "2022-blake3-chacha20-poly1305", ""},
 		{TypeXray, "aes-128-gcm", `{"settings":{"password":"fallback"}}`},
 	} {
 		candidate := inbound
@@ -66,6 +67,70 @@ func TestXraySSSubscriptionUsers(t *testing.T) {
 	if blocked, err := RenderWith(TypeXray, []Inbound{inbound}, RenderOptions{NoUserMarks: true}); err != nil ||
 		len(blocked.UserMarks) != 0 || strings.Contains(blocked.Files[0].Content, `"in-1"`) {
 		t.Fatalf("unmetered SS inlet must not listen: %v, %v", blocked, err)
+	}
+}
+
+func TestXraySS2022SubscriptionUsers(t *testing.T) {
+	for _, method := range []string{"2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm"} {
+		t.Run(method, func(t *testing.T) {
+			users := []User{{ID: 7, Password: "first-password"}, {ID: 8, Password: "second-password"}}
+			inbound := Inbound{ID: 1, Protocol: ProtocolShadowsocks, Port: 8388, Users: users,
+				Settings: Settings{Method: method, SSSubscriptionUsers: true}}
+			if err := Normalize(TypeXray, &inbound); err != nil {
+				t.Fatal(err)
+			}
+			checkKey := func(key string) {
+				t.Helper()
+				decoded, err := base64.StdEncoding.DecodeString(key)
+				if err != nil || len(decoded) != SS2022KeyLen(method) {
+					t.Fatal("incorrect SS2022 key encoding or length")
+				}
+			}
+			checkKey(inbound.Settings.Password)
+			rendered, err := Render(TypeXray, []Inbound{inbound})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct {
+				Inbounds []struct {
+					Settings struct {
+						Method, Password, Network string
+						Clients                   []struct{ Email, Method, Password string }
+					}
+				}
+			}
+			if err := json.Unmarshal([]byte(rendered.Files[0].Content), &config); err != nil {
+				t.Fatal(err)
+			}
+			if len(config.Inbounds) != 1 || !slices.Equal(rendered.UserMarks, []int64{7, 8}) {
+				t.Fatal("expected one port and two counted users")
+			}
+			settings := config.Inbounds[0].Settings
+			if settings.Method != method || settings.Password != inbound.Settings.Password || settings.Network != "tcp,udp" || len(settings.Clients) != 2 {
+				t.Fatal("incorrect SS2022 server settings")
+			}
+			seen := map[string]bool{settings.Password: true}
+			for index, user := range users {
+				client := settings.Clients[index]
+				checkKey(client.Password)
+				if client.Email != user.Email() || client.Method != "" || seen[client.Password] {
+					t.Fatal("expected distinct user keys with methods specified only at the server level")
+				}
+				seen[client.Password] = true
+				if inbound.ForUser(user).Settings.Password != settings.Password+":"+client.Password {
+					t.Fatal("subscription export did not use the configured user key")
+				}
+				rotated := user
+				rotated.Password += "-rotated"
+				if inbound.ForUser(rotated).Settings.Password == inbound.ForUser(user).Settings.Password {
+					t.Fatal("rotating the subscription password must rotate its SS2022 key")
+				}
+			}
+			blocked, err := RenderWith(TypeXray, []Inbound{inbound}, RenderOptions{NoUserMarks: true})
+			if err != nil || len(blocked.UserMarks) != 0 || strings.Contains(blocked.Files[0].Content, `"in-1"`) {
+				t.Fatal("SS2022 independent credentials must not be served without usage tracking")
+			}
+		})
 	}
 }
 

@@ -1,6 +1,6 @@
 import type { SubTraffic, SubTrafficRange } from "@/api";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import {
   Area,
@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import { getSubscriptionTraffic } from "@/api";
+import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { Segmented } from "@/pages/subscription/controls";
 
 const DOWN = "#2563eb";
@@ -87,28 +88,54 @@ function axisBytes(v: number): string {
  */
 export function SubTrafficStats({ id }: { id: number }) {
   const [range, setRange] = useState<SubTrafficRange>("hour");
-  const [data, setData] = useState<SubTraffic | null>(null);
+  const [data, setData] = useState<{ id: number; traffic: SubTraffic } | null>(
+    null,
+  );
   const [error, setError] = useState("");
   const [all, setAll] = useState(false);
+  const loadRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let active = true;
+    let loading = false;
+    let hasData = false;
+
+    const load = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const res = await getSubscriptionTraffic(id, range);
+
+        if (!active) return;
+        if (res.code === 0 && res.data) {
+          hasData = true;
+          setData({ id, traffic: res.data });
+          setError("");
+        } else if (!hasData) {
+          setError(res.msg || "加载失败");
+        }
+      } catch {
+        if (active && !hasData) setError("加载失败");
+      } finally {
+        loading = false;
+      }
+    };
 
     setError("");
-    getSubscriptionTraffic(id, range)
-      .then((res) => {
-        if (!active) return;
-        if (res.code === 0 && res.data) setData(res.data);
-        else setError(res.msg || "加载失败");
-      })
-      .catch(() => active && setError("加载失败"));
+    loadRef.current = load;
+    void load();
 
     return () => {
       active = false;
+      loadRef.current = null;
     };
   }, [id, range]);
+  useVisiblePolling(async () => {
+    await loadRef.current?.();
+  }, 30_000);
 
-  const shown = data?.range === range ? data : null;
+  const shown =
+    data?.id === id && data.traffic.range === range ? data.traffic : null;
   const points = (shown?.points ?? []).map((p) => {
     const [label, row, long] = bucketLabel(range, p.time);
 

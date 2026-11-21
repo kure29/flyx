@@ -835,6 +835,8 @@ export function InboundFormModal({
                         </Switch>
                         <p className="text-xs text-default-500">
                           同一端口按分发订阅统计流量、执行额度。开启后旧共享密码失效，客户端需刷新订阅。
+                          {form.method.startsWith("2022-") &&
+                            " 客户端必须支持 SS2022 多用户密钥。"}
                         </p>
                       </div>
                     )}

@@ -684,6 +684,21 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		}
 		// Keep secrets the client did not resend (the list hides PEM).
 		old, _ := inboundFromModel(row)
+		if old.Protocol == kernel.ProtocolShadowsocks && kernel.SS2022KeyLen(old.Settings.Method) > 0 {
+			method := strings.TrimSpace(req.Settings.Method)
+			if method == "" {
+				method = kernel.DefaultSSMethod
+			}
+			wasMetered := old.Settings.SSSubscriptionUsers
+			isMetered := req.Settings.SSSubscriptionUsers && kernel.SS2022KeyLen(method) > 0 &&
+				strings.EqualFold(strings.TrimSpace(req.Protocol), kernel.ProtocolShadowsocks)
+			switch {
+			case wasMetered && isMetered && method == old.Settings.Method && strings.TrimSpace(req.Settings.Password) == "":
+				req.Settings.Password = old.Settings.Password
+			case wasMetered != isMetered && strings.TrimSpace(req.Settings.Password) == old.Settings.Password:
+				req.Settings.Password = ""
+			}
+		}
 		if req.Security.Type == old.Security.Type && req.Security.CertMode == old.Security.CertMode &&
 			req.Security.CertPEM == "" && req.Security.KeyPEM == "" {
 			req.Security.CertPEM, req.Security.KeyPEM = old.Security.CertPEM, old.Security.KeyPEM

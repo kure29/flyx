@@ -566,9 +566,13 @@ export function ssSubscriptionUsersAllowed(form: InboundForm): boolean {
   return (
     form.kernelType === "xray" &&
     form.protocol === "shadowsocks" &&
-    ["aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"].includes(
-      form.method,
-    )
+    [
+      "aes-128-gcm",
+      "aes-256-gcm",
+      "chacha20-ietf-poly1305",
+      "2022-blake3-aes-128-gcm",
+      "2022-blake3-aes-256-gcm",
+    ].includes(form.method)
   );
 }
 
