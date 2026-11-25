@@ -16,6 +16,7 @@ import { useLocation } from "react-router-dom";
 const DEPTH: Record<string, number> = {
   "/config": 2,
   "/panel-sharing": 2,
+  "/user": 2,
 };
 
 const depthOf = (path: string) => DEPTH[path] ?? 1;

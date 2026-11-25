@@ -47,6 +47,8 @@ export default function IndexPage() {
   const [statusPageEnabled, setStatusPageEnabled] = useState(false);
   // null until known, so the password form does not flash in and out.
   const [passwordAllowed, setPasswordAllowed] = useState<boolean | null>(null);
+  const [userPasswordAllowed, setUserPasswordAllowed] = useState(false);
+  const [showUserPasswordForm, setShowUserPasswordForm] = useState(false);
   const navigate = useNavigate();
   const isWebView = useWebViewMode();
 
@@ -60,7 +62,15 @@ export default function IndexPage() {
 
   useEffect(() => {
     getLoginMethods()
-      .then((res) => setPasswordAllowed(res.code !== 0 || res.data.password))
+      .then((res) => {
+        if (res.code !== 0) {
+          setPasswordAllowed(true);
+
+          return;
+        }
+        setPasswordAllowed(res.data.password);
+        setUserPasswordAllowed(Boolean(res.data.userPassword));
+      })
       .catch(() => setPasswordAllowed(true));
   }, []);
 
@@ -198,7 +208,7 @@ export default function IndexPage() {
 
       // 登录成功
       toast.success("登录成功");
-      navigate("/dashboard");
+      navigate(response.data.role_id === 0 ? "/dashboard" : "/forward");
     } catch {
       toast.error("网络错误，请稍后重试");
     } finally {
@@ -264,7 +274,7 @@ export default function IndexPage() {
             </CardHeader>
             <CardBody className="px-6 py-6 mt-2">
               <div className="flex flex-col gap-5">
-                {passwordAllowed && (
+                {(passwordAllowed || showUserPasswordForm) && (
                   <>
                     <Input
                       classNames={{
@@ -342,6 +352,17 @@ export default function IndexPage() {
                     使用 GitHub 登录
                   </Button>
                 )}
+                {passwordAllowed === false &&
+                  userPasswordAllowed &&
+                  !showUserPasswordForm && (
+                    <button
+                      className="text-center text-sm text-default-500 transition-colors hover:text-foreground"
+                      type="button"
+                      onClick={() => setShowUserPasswordForm(true)}
+                    >
+                      普通用户账号密码登录
+                    </button>
+                  )}
                 {statusPageEnabled && (
                   // The status page is a separate app (a theme) the panel
                   // serves at /status/, not a route of this one.

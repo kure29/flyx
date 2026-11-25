@@ -73,16 +73,44 @@ func JWT(opts AuthOptions) func(http.Handler) http.Handler {
 				}
 			}
 
-			// FLYX is single-user: only the admin may use the panel, whatever
-			// other accounts an older version left in the database.
-			if claims.RoleID != 0 {
-				response.WriteJSON(w, response.Err(401, "只有管理员可以登录"))
+			if claims.RoleID != 0 && !allowsNonAdmin(r.URL.Path) {
+				response.WriteJSON(w, response.Err(403, "权限不足"))
 				return
 			}
 
 			ctx := context.WithValue(r.Context(), ClaimsContextKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+func allowsNonAdmin(path string) bool {
+	switch path {
+	case "/api/v1/config/get",
+		"/api/v1/user/updatePassword",
+		"/api/v1/user/package",
+		"/api/v1/user/subscriptions",
+		"/api/v1/user/subscription/reset",
+		"/api/v1/user/subscription/traffic",
+		"/api/v1/tunnel/user/tunnel",
+		"/api/v1/forward/list",
+		"/api/v1/forward/create",
+		"/api/v1/forward/update",
+		"/api/v1/forward/delete",
+		"/api/v1/forward/force-delete",
+		"/api/v1/forward/pause",
+		"/api/v1/forward/resume",
+		"/api/v1/forward/diagnose",
+		"/api/v1/forward/diagnose/stream",
+		"/api/v1/forward/update-order",
+		"/api/v1/forward/batch-delete",
+		"/api/v1/forward/batch-pause",
+		"/api/v1/forward/batch-resume",
+		"/api/v1/forward/batch-redeploy",
+		"/api/v1/forward/batch-change-tunnel":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -574,8 +574,9 @@ type subscriptionRequest struct {
 	Enabled    *bool       `json:"enabled"`
 	Remark     string      `json:"remark"`
 	// TrafficLimit is in bytes (0 = unlimited); ResetDay 1-28 (0 = never).
-	TrafficLimit int64 `json:"trafficLimit"`
-	ResetDay     int   `json:"resetDay"`
+	TrafficLimit int64  `json:"trafficLimit"`
+	ResetDay     int    `json:"resetDay"`
+	UserID       *int64 `json:"userId"`
 }
 
 // validate checks the request and keeps the node groups that exist.
@@ -674,6 +675,13 @@ func (h *Handler) subscriptionSave(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		s.Enabled = boolToInt(*req.Enabled)
 	}
+	if req.UserID != nil {
+		if *req.UserID > 0 {
+			s.UserID = *req.UserID
+		} else {
+			s.UserID = 0
+		}
+	}
 	s.UpdatedTime = now.UnixMilli()
 	s.AppliedActive = boolToInt(isShare(s) && subActive(s, now))
 	if err := h.repo.SaveSubscription(s); err != nil {
@@ -684,7 +692,11 @@ func (h *Handler) subscriptionSave(w http.ResponseWriter, r *http.Request) {
 	if isShare(s) {
 		push = append(push, c.inboundIDs(s)...)
 	}
-	h.respondAfterSubPush(w, push, h.withUserName(h.subscriptionView(s, c, now), nil))
+	var names map[int64]string
+	if s.UserID > 0 {
+		names, _ = h.repo.UserNames()
+	}
+	h.respondAfterSubPush(w, push, h.withUserName(h.subscriptionView(s, c, now), names))
 }
 
 func (h *Handler) respondAfterSubPush(w http.ResponseWriter, inboundIDs []int64, data interface{}) {

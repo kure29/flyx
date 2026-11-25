@@ -1,4 +1,12 @@
-import { Globe, LayoutGrid, Link2, Menu, Rss, Server } from "lucide-react";
+import {
+  Globe,
+  LayoutGrid,
+  Link2,
+  Menu,
+  Rss,
+  Server,
+  UserRound,
+} from "lucide-react";
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -6,6 +14,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { siteConfig } from "@/config/site";
 import { useRouteTransition } from "@/hooks/useRouteTransition";
 import { useScrollTopOnPathChange } from "@/hooks/useScrollTopOnPathChange";
+import { isAdmin } from "@/utils/auth";
 
 interface TabItem {
   path: string;
@@ -15,7 +24,7 @@ interface TabItem {
 
 // The bar follows the landing → relay → subscription flow; settings and
 // sharing are under 更多.
-const tabItems: TabItem[] = [
+const adminTabItems: TabItem[] = [
   {
     path: "/dashboard",
     label: "概览",
@@ -48,9 +57,29 @@ const tabItems: TabItem[] = [
   },
 ];
 
+const userTabItems: TabItem[] = [
+  {
+    path: "/forward",
+    label: "转发",
+    icon: <Link2 className="h-5 w-5" strokeWidth={1.75} />,
+  },
+  {
+    path: "/my-subscription",
+    label: "订阅",
+    icon: <Rss className="h-5 w-5" strokeWidth={1.75} />,
+  },
+  {
+    path: "/profile",
+    label: "我的",
+    icon: <UserRound className="h-5 w-5" strokeWidth={1.75} />,
+  },
+];
+
 export default function H5Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const admin = isAdmin();
+  const tabItems = admin ? adminTabItems : userTabItems;
 
   useScrollTopOnPathChange();
   const transition = useRouteTransition();
@@ -86,10 +115,14 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
         {tabItems.map((item) => {
           const isActive =
             location.pathname === item.path ||
-            (item.path === "/relay" &&
+            (admin &&
+              item.path === "/relay" &&
               ["/tunnel", "/forward"].includes(location.pathname)) ||
-            (item.path === "/profile" &&
-              ["/config", "/panel-sharing"].includes(location.pathname));
+            (admin &&
+              item.path === "/profile" &&
+              ["/config", "/panel-sharing", "/user"].includes(
+                location.pathname,
+              ));
 
           return (
             <button

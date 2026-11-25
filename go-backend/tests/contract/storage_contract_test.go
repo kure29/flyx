@@ -33,8 +33,8 @@ func TestStorageSummaryRequiresAdminAndReturnsSize(t *testing.T) {
 	if err := json.NewDecoder(userRes.Body).Decode(&denied); err != nil {
 		t.Fatalf("decode denied response: %v", err)
 	}
-	if denied.Code != 401 {
-		t.Fatalf("expected 401 for non-admin, got %d", denied.Code)
+	if denied.Code != 403 {
+		t.Fatalf("expected 403 for non-admin, got %d", denied.Code)
 	}
 
 	adminReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/storage", nil)

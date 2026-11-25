@@ -58,7 +58,7 @@ func TestJWTMiddlewareContracts(t *testing.T) {
 		assertCode(t, res, 0)
 	})
 
-	t.Run("non-admin token is refused everywhere", func(t *testing.T) {
+	t.Run("non-admin token is refused on admin endpoints", func(t *testing.T) {
 		token, err := auth.GenerateToken(2, "normal_user", 1, secret)
 		if err != nil {
 			t.Fatalf("generate token: %v", err)
@@ -70,7 +70,7 @@ func TestJWTMiddlewareContracts(t *testing.T) {
 		req.Header.Set("Authorization", token)
 		res := httptest.NewRecorder()
 		wrapped.ServeHTTP(res, req)
-		assertCodeMsg(t, res, 401, "只有管理员可以登录")
+		assertCodeMsg(t, res, 403, "权限不足")
 	})
 }
 

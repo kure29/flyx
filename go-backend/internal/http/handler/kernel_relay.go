@@ -569,7 +569,7 @@ func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel
 					host = rel.ShareHost
 				}
 				// A relay forwards TCP; REALITY still ends at the landing kernel.
-				endpoints = append(endpoints, kernel.Endpoint{Name: name, Host: host, Port: entry.Port, Inbound: in, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq, OrderKey: fmt.Sprintf("relay:%d:%s:%d", rel.ID, entry.Host, entry.Port)})
+				endpoints = append(endpoints, kernel.Endpoint{Name: name, Host: host, Port: entry.Port, Inbound: in, RelayID: rel.ID, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq, OrderKey: fmt.Sprintf("relay:%d:%s:%d", rel.ID, entry.Host, entry.Port)})
 				kinds = append(kinds, "relay")
 			}
 		}

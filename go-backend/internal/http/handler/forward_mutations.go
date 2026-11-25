@@ -27,7 +27,7 @@ func (h *Handler) forwardCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("隧道ID不能为空"))
 		return
 	}
-	if err := h.ensureTunnelPermission(userID, roleID, tunnelID); err != nil {
+	if err := h.checkUserForwardQuotaForCreate(userID, roleID, tunnelID); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
@@ -435,13 +435,17 @@ func (h *Handler) forwardResume(w http.ResponseWriter, r *http.Request) {
 	if id <= 0 {
 		return
 	}
-	forward, _, _, err := h.resolveForwardAccess(r, id)
+	forward, _, actorRole, err := h.resolveForwardAccess(r, id)
 	if err != nil {
 		if errors.Is(err, errForwardNotFound) {
 			response.WriteJSON(w, response.ErrDefault("转发不存在"))
 			return
 		}
 		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	if err := h.checkUserForwardQuotaForResume(forward.UserID, actorRole, forward.TunnelID); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
 	now := time.Now().UnixMilli()
@@ -613,6 +617,11 @@ func (h *Handler) forwardBatchResume(w http.ResponseWriter, r *http.Request) {
 		if accessErr != nil {
 			f++
 			failures = appendBatchFailure(failures, id, "", accessErr)
+			continue
+		}
+		if quotaErr := h.checkUserForwardQuotaForResume(forward.UserID, actorRole, forward.TunnelID); quotaErr != nil {
+			f++
+			failures = appendBatchFailure(failures, id, forward.Name, quotaErr)
 			continue
 		}
 		if err := h.controlForwardServices(forward, "ResumeService", false); err != nil {

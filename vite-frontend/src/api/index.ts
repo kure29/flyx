@@ -117,9 +117,12 @@ export interface GithubInfo {
 
 /** Which ways in the login page offers; no login needed. */
 export const getLoginMethods = () =>
-  Network.post<{ password: boolean; github: boolean; passkey: boolean }>(
-    "/user/login/methods",
-  );
+  Network.post<{
+    password: boolean;
+    userPassword?: boolean;
+    github: boolean;
+    passkey: boolean;
+  }>("/user/login/methods");
 export const getGithubStatus = () =>
   Network.post<{ enabled: boolean }>("/user/github/status");
 export const beginGithubLogin = (redirectUri: string) =>
@@ -420,9 +423,85 @@ export const updateForwardOrder = (data: {
 export const updatePassword = (data: UpdatePasswordPayload) =>
   Network.post("/user/updatePassword", data);
 
-// 重置流量接口
-export const resetUserFlow = (data: { id: number; type: number }) =>
+export interface UserApiItem {
+  id: number;
+  user: string;
+  roleId: number;
+  status: number;
+  expTime: number;
+  flow: number;
+  flowMiB: number;
+  flowLimitBytes: number;
+  inFlow: number;
+  outFlow: number;
+  flowResetTime: number;
+  num: number;
+  forwardCount: number;
+  tunnelIds: number[];
+  subscriptionIds: number[];
+  createdTime: number;
+  overQuota: boolean;
+  expired: boolean;
+}
+
+export interface UserMutationPayload {
+  id?: number;
+  user: string;
+  pwd?: string;
+  status?: number;
+  expTime: number;
+  flow: number;
+  flowMiB: number;
+  flowResetTime: number;
+  num: number;
+  tunnelIds?: number[];
+  subscriptionIds?: number[];
+}
+
+export interface UserPackageApiData {
+  userInfo: {
+    id: number;
+    name: string;
+    roleId: number;
+    status: number;
+    expTime: number;
+    flow: number;
+    flowMiB: number;
+    flowLimitBytes: number;
+    inFlow: number;
+    outFlow: number;
+    flowResetTime: number;
+    num: number;
+    forwardCount: number;
+    overQuota: boolean;
+    expired: boolean;
+  };
+  tunnels: UserTunnelApiItem[];
+}
+
+export const getUserList = () => Network.post<UserApiItem[]>("/user/list");
+export const createUser = (data: UserMutationPayload) =>
+  Network.post<{ id: number }>("/user/create", data);
+export const updateUser = (data: UserMutationPayload) =>
+  Network.post("/user/update", data);
+export const deleteUser = (id: number) => Network.post("/user/delete", { id });
+export const resetUserFlow = (data: { id: number; type?: number }) =>
   Network.post("/user/reset", data);
+export const getUserPackage = () =>
+  Network.post<UserPackageApiData>("/user/package");
+export const getUserSubscriptions = () =>
+  Network.post<UserSubscription[]>("/user/subscriptions");
+export const resetUserSubscription = (id: number) =>
+  Network.post<UserSubscription>("/user/subscription/reset", { id });
+export const getUserSubscriptionTraffic = (
+  id: number,
+  range: SubTrafficRange,
+) =>
+  Network.post<SubTraffic>("/user/subscription/traffic", {
+    id,
+    range,
+    tzOffsetMinutes: new Date().getTimezoneOffset(),
+  });
 
 // 网站配置相关接口
 export const getConfigs = () =>
@@ -1137,7 +1216,12 @@ export type NodeGroupOptions = Pick<
   | "dedupe"
   | "sort"
   | "script"
->;
+> & {
+  /** Pick direct endpoints and relay lines separately instead of bundling both. */
+  explicitLines?: boolean;
+  directIds?: number[];
+  relayIds?: number[];
+};
 /** A reusable node list: picked inbounds and remote sources, processed. */
 export interface NodeGroupItem {
   id: number;

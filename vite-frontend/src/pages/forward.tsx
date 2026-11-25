@@ -55,6 +55,8 @@ import {
   updateForwardOrder,
   getConfigByName,
   updateConfig,
+  getUserPackage,
+  type UserPackageApiData,
 } from "@/api";
 import {
   type ForwardAddressItem,
@@ -162,6 +164,20 @@ export default function ForwardPage({
   const tokenUserId = JwtUtil.getUserIdFromToken();
   const tokenRoleId = JwtUtil.getRoleIdFromToken();
   const isAdmin = tokenRoleId === 0;
+  const [userQuota, setUserQuota] = useState<
+    UserPackageApiData["userInfo"] | null
+  >(null);
+
+  useEffect(() => {
+    if (isAdmin) return;
+    getUserPackage()
+      .then((res) => {
+        if (res.code === 0 && res.data?.userInfo) {
+          setUserQuota(res.data.userInfo);
+        }
+      })
+      .catch(() => {});
+  }, [isAdmin]);
 
   const [compactMode, setCompactMode] = useState(false);
 
@@ -2688,6 +2704,50 @@ export default function ForwardPage({
           primary={addAction}
           title="转发规则"
         />
+      )}
+
+      {!isAdmin && userQuota && (
+        <div className="mb-4 rounded-xl border border-divider bg-default-50/60 px-4 py-3 text-xs text-default-600 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>
+              中转流量：
+              <strong className="text-foreground">
+                {formatTraffic(userQuota.inFlow + userQuota.outFlow)}
+              </strong>{" "}
+              /{" "}
+              {userQuota.flowLimitBytes > 0
+                ? formatTraffic(userQuota.flowLimitBytes)
+                : "不限"}
+            </span>
+            <span>
+              规则数：
+              <strong className="text-foreground">
+                {forwards.length}
+              </strong> / {userQuota.num > 0 ? userQuota.num : "不限"}
+            </span>
+            <span>
+              到期：
+              {userQuota.expTime > 0
+                ? formatDate(userQuota.expTime)
+                : "永不过期"}
+            </span>
+            {userQuota.flowResetTime > 0 && (
+              <span>每月 {userQuota.flowResetTime} 号重置</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {userQuota.expired && (
+              <Chip color="danger" size="sm" variant="flat">
+                已到期
+              </Chip>
+            )}
+            {userQuota.overQuota && (
+              <Chip color="warning" size="sm" variant="flat">
+                流量已用完
+              </Chip>
+            )}
+          </div>
+        </div>
       )}
 
       {selectMode ? (

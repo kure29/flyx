@@ -22,6 +22,8 @@ type Endpoint struct {
 	// Direct marks the landing node's own address; only direct endpoints
 	// carry the Hysteria2 port-hopping range (relays forward one port).
 	Direct bool
+	// RelayID is the InboundRelay id for relay endpoints (0 for direct).
+	RelayID int64
 	// Proxy is set for imported nodes; it replaces Inbound when rendering.
 	Proxy Proxy
 	// Original is the name before ApplySubOptions renamed it.

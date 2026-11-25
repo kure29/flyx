@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { getSubscriptionTraffic } from "@/api";
+import { getSubscriptionTraffic, getUserSubscriptionTraffic } from "@/api";
 import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { Segmented } from "@/pages/subscription/controls";
 
@@ -86,7 +86,13 @@ function axisBytes(v: number): string {
  * A subscription's traffic by hour, day or month: totals, an up / down
  * line chart and the per-bucket list.
  */
-export function SubTrafficStats({ id }: { id: number }) {
+export function SubTrafficStats({
+  id,
+  scope = "admin",
+}: {
+  id: number;
+  scope?: "admin" | "user";
+}) {
   const [range, setRange] = useState<SubTrafficRange>("hour");
   const [data, setData] = useState<{ id: number; traffic: SubTraffic } | null>(
     null,
@@ -104,7 +110,10 @@ export function SubTrafficStats({ id }: { id: number }) {
       if (loading) return;
       loading = true;
       try {
-        const res = await getSubscriptionTraffic(id, range);
+        const res =
+          scope === "user"
+            ? await getUserSubscriptionTraffic(id, range)
+            : await getSubscriptionTraffic(id, range);
 
         if (!active) return;
         if (res.code === 0 && res.data) {
@@ -129,7 +138,7 @@ export function SubTrafficStats({ id }: { id: number }) {
       active = false;
       loadRef.current = null;
     };
-  }, [id, range]);
+  }, [id, range, scope]);
   useVisiblePolling(async () => {
     await loadRef.current?.();
   }, 30_000);

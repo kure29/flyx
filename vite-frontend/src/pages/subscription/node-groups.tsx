@@ -5,13 +5,18 @@ import type {
   NodeGroupPreview,
   RemoteSourceItem,
 } from "@/api";
-import type { InboundApiItem } from "@/api/types";
+import type { InboundApiItem, InboundRelayApiItem } from "@/api/types";
 
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { ArrowDown, ArrowUp } from "lucide-react";
 
-import { deleteNodeGroup, previewNodeGroup, saveNodeGroup } from "@/api";
+import {
+  deleteNodeGroup,
+  getInboundRelays,
+  previewNodeGroup,
+  saveNodeGroup,
+} from "@/api";
 import { EmptyHint } from "@/components/page-kit";
 import { PROTOCOL_LABELS } from "@/pages/inbound/presets";
 import { Button } from "@/shadcn-bridge/heroui/button";
@@ -113,9 +118,22 @@ function namingSummary(o: NodeGroupOptions): string {
   return steps.join("、");
 }
 
-/** Where a group's nodes come from, e.g. "3 个落地 + 1 个订阅源". */
+/** Where a group's nodes come from, e.g. "2 条中转 + 1 个直连". */
 export function groupSourceText(g: NodeGroupItem | NodeGroupDraft): string {
   if (g.sourceAll) return "全部节点";
+
+  if (g.options.explicitLines) {
+    const directCount = g.options.directIds?.length ?? 0;
+    const relayCount = g.options.relayIds?.length ?? 0;
+
+    return [
+      relayCount ? `${relayCount} 条中转` : "",
+      directCount ? `${directCount} 个直连` : "",
+      g.sourceIds.length ? `${g.sourceIds.length} 个订阅源` : "",
+    ]
+      .filter(Boolean)
+      .join(" + ");
+  }
 
   return [
     g.inboundIds.length ? `${g.inboundIds.length} 个节点` : "",
@@ -262,6 +280,7 @@ export function NodeGroupEditor({
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [relays, setRelays] = useState<InboundRelayApiItem[]>([]);
   const o = draft.options;
   const set = (patch: Partial<NodeGroupDraft>) => {
     setDraft({ ...draft, ...patch });
@@ -269,6 +288,83 @@ export function NodeGroupEditor({
   };
   const setOpts = (patch: Partial<NodeGroupOptions>) =>
     set({ options: { ...o, ...patch } });
+
+  useEffect(() => {
+    let active = true;
+
+    getInboundRelays(0)
+      .then((res) => {
+        if (active && res.code === 0 && Array.isArray(res.data)) {
+          setRelays(res.data);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const relaysByInbound = useMemo(() => {
+    const map = new Map<number, InboundRelayApiItem[]>();
+
+    for (const rel of relays) {
+      const list = map.get(rel.inboundId) ?? [];
+
+      list.push(rel);
+      map.set(rel.inboundId, list);
+    }
+
+    return map;
+  }, [relays]);
+
+  const isLoopback = (listen?: string) => {
+    const s = (listen ?? "").trim().toLowerCase();
+
+    return s === "127.0.0.1" || s === "::1" || s === "localhost";
+  };
+  const canDirect = (i: InboundApiItem) =>
+    !i.relayOnly && !isLoopback(i.listen);
+
+  // Effective selected direct/relay IDs: honors legacy groups (where explicitLines
+  // wasn't set) by mirroring what they currently emit.
+  const selectedDirectIds = useMemo(() => {
+    if (o.explicitLines) return o.directIds ?? [];
+
+    return inbounds
+      .filter((i) => draft.inboundIds.includes(i.id) && canDirect(i))
+      .map((i) => i.id);
+  }, [o.explicitLines, o.directIds, draft.inboundIds, inbounds]);
+
+  const selectedRelayIds = useMemo(() => {
+    if (o.explicitLines) return o.relayIds ?? [];
+
+    return relays
+      .filter((rel) => draft.inboundIds.includes(rel.inboundId))
+      .map((rel) => rel.id);
+  }, [o.explicitLines, o.relayIds, draft.inboundIds, relays]);
+
+  const commitExplicitSelection = (
+    nextDirectIds: number[],
+    nextRelayIds: number[],
+  ) => {
+    const derivedInboundIds = new Set<number>(nextDirectIds);
+
+    for (const rel of relays) {
+      if (nextRelayIds.includes(rel.id)) {
+        derivedInboundIds.add(rel.inboundId);
+      }
+    }
+    set({
+      inboundIds: Array.from(derivedInboundIds),
+      options: {
+        ...o,
+        explicitLines: true,
+        directIds: nextDirectIds,
+        relayIds: nextRelayIds,
+      },
+    });
+  };
 
   const protocols = useMemo(
     () =>
@@ -280,11 +376,20 @@ export function NodeGroupEditor({
   const selfBuilt = inbounds.filter((i) => !i.external);
   // Nodes of a remote source are picked as the whole source.
   const imported = inbounds.filter((i) => i.external && !i.sourceId);
+  const pickedInbounds = useMemo(() => {
+    const s = new Set<number>(selectedDirectIds);
+
+    for (const rel of relays) {
+      if (selectedRelayIds.includes(rel.id)) s.add(rel.inboundId);
+    }
+
+    return s;
+  }, [selectedDirectIds, selectedRelayIds, relays]);
   const sharedPicked = inbounds.filter(
     (i) =>
       (draft.sourceAll
         ? i.enabled
-        : draft.inboundIds.includes(i.id) ||
+        : pickedInbounds.has(i.id) ||
           draft.sourceIds.includes(i.sourceId ?? 0)) &&
       usesSharedCredentials(i),
   ).length;
@@ -352,34 +457,104 @@ export function NodeGroupEditor({
     }
   };
 
+  const toggleDirect = (id: number, on: boolean) => {
+    const next = on
+      ? [...selectedDirectIds.filter((x) => x !== id), id]
+      : selectedDirectIds.filter((x) => x !== id);
+
+    commitExplicitSelection(next, selectedRelayIds);
+  };
+
+  const toggleRelay = (rid: number, on: boolean) => {
+    const next = on
+      ? [...selectedRelayIds.filter((x) => x !== rid), rid]
+      : selectedRelayIds.filter((x) => x !== rid);
+
+    commitExplicitSelection(selectedDirectIds, next);
+  };
+
   const pickList = (title: string, list: InboundApiItem[]) =>
     list.length > 0 && (
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         <p className="text-xs text-default-500">{title}</p>
-        {list.map((i) => (
-          <Checkbox
-            key={i.id}
-            className="w-full"
-            isSelected={draft.inboundIds.includes(i.id)}
-            onValueChange={(on) =>
-              set({
-                inboundIds: on
-                  ? [...draft.inboundIds, i.id]
-                  : draft.inboundIds.filter((x) => x !== i.id),
-              })
-            }
-          >
-            <span className="text-sm">{i.name}</span>
-            {!i.enabled && (
-              <span className="ml-1 text-xs text-default-400">已停用</span>
-            )}
-            {usesSharedCredentials(i) && (
-              <span className="ml-1 text-xs text-warning">共用凭据</span>
-            )}
-          </Checkbox>
-        ))}
+        {list.map((i) => {
+          const nodeRelays = relaysByInbound.get(i.id) ?? [];
+          const directable = canDirect(i);
+
+          return (
+            <div key={i.id} className="space-y-1">
+              {directable ? (
+                <Checkbox
+                  className="w-full"
+                  isSelected={selectedDirectIds.includes(i.id)}
+                  onValueChange={(on) => toggleDirect(i.id, on)}
+                >
+                  <span className="text-sm">{i.name}</span>
+                  {nodeRelays.length > 0 && (
+                    <span className="ml-1.5 rounded bg-default-100 px-1.5 py-0.5 text-[11px] text-default-500">
+                      落地直连
+                    </span>
+                  )}
+                  {!i.enabled && (
+                    <span className="ml-1 text-xs text-default-400">
+                      已停用
+                    </span>
+                  )}
+                  {usesSharedCredentials(i) && (
+                    <span className="ml-1 text-xs text-warning">共用凭据</span>
+                  )}
+                </Checkbox>
+              ) : (
+                <div className="flex items-center gap-1.5 pl-1 text-xs text-default-500">
+                  <span>{i.name}</span>
+                  <span className="rounded bg-default-100 px-1.5 py-0.5 text-[11px]">
+                    仅中转
+                  </span>
+                  {!i.enabled && (
+                    <span className="text-default-400">已停用</span>
+                  )}
+                  {usesSharedCredentials(i) && (
+                    <span className="text-warning">共用凭据</span>
+                  )}
+                </div>
+              )}
+              {nodeRelays.length > 0 && (
+                <div className="space-y-1 border-l border-divider pl-4 ml-2">
+                  {nodeRelays.map((rel) => {
+                    const inactive =
+                      !rel.forwardExists || rel.forwardStatus !== 1;
+
+                    return (
+                      <Checkbox
+                        key={rel.id}
+                        className="w-full"
+                        isSelected={selectedRelayIds.includes(rel.id)}
+                        onValueChange={(on) => toggleRelay(rel.id, on)}
+                      >
+                        <span className="text-sm">{rel.name}</span>
+                        <span className="ml-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+                          中转
+                        </span>
+                        {inactive && (
+                          <span className="ml-1 text-xs text-default-400">
+                            {rel.forwardExists ? "已暂停" : "转发已删"}
+                          </span>
+                        )}
+                      </Checkbox>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
+
+  const pickableNodes = [...selfBuilt, ...imported];
+  const pickableRelays = pickableNodes.flatMap(
+    (i) => relaysByInbound.get(i.id) ?? [],
+  );
 
   return (
     <>
@@ -427,49 +602,130 @@ export function NodeGroupEditor({
                 </p>
               )}
             </Section>
-            <Section hint="中转线路会跟着它的节点一起出现" title="来源">
+            <Section
+              hint={
+                draft.sourceAll
+                  ? "包含全部自建、导入节点与订阅源，下方可直接选择中转/直连策略"
+                  : "中转线路和落地直连可分别勾选，互不绑定"
+              }
+              title="来源"
+            >
               <Segmented
                 options={[
                   ["all", "全部节点"],
                   ["pick", "指定节点"],
                 ]}
                 value={draft.sourceAll ? "all" : "pick"}
-                onChange={(v) => set({ sourceAll: v === "all" })}
+                onChange={(v) => {
+                  if (v === "all") {
+                    set({
+                      sourceAll: true,
+                      options: { ...o, explicitLines: false },
+                    });
+                  } else {
+                    set({
+                      sourceAll: false,
+                      options: {
+                        ...o,
+                        explicitLines: true,
+                        directIds: selectedDirectIds,
+                        relayIds: selectedRelayIds,
+                      },
+                    });
+                  }
+                }}
               />
               {draft.sourceAll ? (
-                <p className="text-xs text-default-500">
-                  包括以后新增的节点和订阅源；只想要一部分可以在“处理”里筛选
-                </p>
+                <div className="space-y-2">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-default-600">
+                      中转 / 直连策略
+                    </p>
+                    <Segmented
+                      columns={2}
+                      options={[
+                        ["", "全部（中转 + 直连）"],
+                        ["prefer_relay", "有中转只留中转"],
+                        ["relay", "只要中转"],
+                        ["direct", "只要直连"],
+                      ]}
+                      value={o.lines}
+                      onChange={(lines) => setOpts({ lines })}
+                    />
+                  </div>
+                  <p className="text-xs text-default-500">
+                    包括以后新增的节点和订阅源；更多地区/协议筛选在“处理”里设置
+                  </p>
+                </div>
               ) : (
-                <div className="max-h-56 space-y-3 overflow-y-auto rounded-lg border border-divider p-2">
-                  {pickList("自建", selfBuilt)}
-                  {pickList("导入", imported)}
-                  {sources.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-default-500">
-                        订阅源（整个源，更新后的节点自动跟上）
-                      </p>
-                      {sources.map((src) => (
-                        <Checkbox
-                          key={src.id}
-                          className="w-full"
-                          isSelected={draft.sourceIds.includes(src.id)}
-                          onValueChange={(on) =>
-                            set({
-                              sourceIds: on
-                                ? [...draft.sourceIds, src.id]
-                                : draft.sourceIds.filter((x) => x !== src.id),
-                            })
+                <div className="space-y-2">
+                  {(pickableRelays.length > 0 || pickableNodes.length > 0) && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {pickableRelays.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          onPress={() =>
+                            commitExplicitSelection(
+                              [],
+                              pickableRelays.map((r) => r.id),
+                            )
                           }
                         >
-                          <span className="text-sm">{src.name}</span>
-                          <span className="ml-1 text-xs text-default-400">
-                            {src.nodeCount} 个节点
-                          </span>
-                        </Checkbox>
-                      ))}
+                          仅选中转 ({pickableRelays.length})
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        onPress={() =>
+                          commitExplicitSelection(
+                            pickableNodes.filter(canDirect).map((i) => i.id),
+                            [],
+                          )
+                        }
+                      >
+                        仅选直连
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="light"
+                        onPress={() => commitExplicitSelection([], [])}
+                      >
+                        清空
+                      </Button>
                     </div>
                   )}
+                  <div className="max-h-64 space-y-3 overflow-y-auto rounded-lg border border-divider p-2.5">
+                    {pickList("自建", selfBuilt)}
+                    {pickList("导入", imported)}
+                    {sources.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-default-500">
+                          订阅源（整个源，更新后的节点自动跟上）
+                        </p>
+                        {sources.map((src) => (
+                          <Checkbox
+                            key={src.id}
+                            className="w-full"
+                            isSelected={draft.sourceIds.includes(src.id)}
+                            onValueChange={(on) =>
+                              set({
+                                sourceIds: on
+                                  ? [...draft.sourceIds, src.id]
+                                  : draft.sourceIds.filter((x) => x !== src.id),
+                              })
+                            }
+                          >
+                            <span className="text-sm">{src.name}</span>
+                            <span className="ml-1 text-xs text-default-400">
+                              {src.nodeCount} 个节点
+                            </span>
+                          </Checkbox>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               {sharedPicked > 0 && (

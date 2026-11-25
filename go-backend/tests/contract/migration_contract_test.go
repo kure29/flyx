@@ -331,7 +331,7 @@ func TestUpdatePasswordStoresStrongHash(t *testing.T) {
 	}
 }
 
-// FLYX is single-user: the user, group, permission and speed-limit APIs are gone.
+// Group, permission, speed-limit and announcement APIs remain removed.
 func TestMultiUserAndLimitRoutesRemoved(t *testing.T) {
 	secret := "contract-jwt-secret"
 	router, _ := setupContractRouter(t, secret)
@@ -342,10 +342,10 @@ func TestMultiUserAndLimitRoutesRemoved(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/api/v1/speed-limit/tunnels", "/api/v1/speed-limit/list", "/api/v1/speed-limit/create",
-		"/api/v1/user/list", "/api/v1/user/create", "/api/v1/user/quota/reset",
+		"/api/v1/user/quota/reset",
 		"/api/v1/user/subscription/list", "/api/v1/tunnel/user/assign", "/api/v1/tunnel/user/list",
 		"/api/v1/group/user/list", "/api/v1/group/tunnel/list", "/api/v1/group/permission/list",
-		"/api/v1/monitor/permission/list", "/api/v1/monitor/access", "/api/v1/user/package",
+		"/api/v1/monitor/permission/list", "/api/v1/monitor/access",
 		"/api/v1/announcement/get", "/api/v1/announcement/update",
 	} {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
@@ -387,7 +387,7 @@ func TestBackupExportImportRestoreContracts(t *testing.T) {
 		resp := httptest.NewRecorder()
 
 		router.ServeHTTP(resp, req)
-		assertCodeMsg(t, resp, 401, "只有管理员可以登录")
+		assertCodeMsg(t, resp, 403, "权限不足")
 	})
 
 	t.Run("standard and duplicate export routes both work", func(t *testing.T) {

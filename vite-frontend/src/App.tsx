@@ -11,7 +11,7 @@ import IndexPage from "@/pages/index";
 import AdminLayout from "@/layouts/admin";
 import H5Layout from "@/layouts/h5";
 import H5SimpleLayout from "@/layouts/h5-simple";
-import { isLoggedIn } from "@/utils/auth";
+import { isAdmin, isLoggedIn } from "@/utils/auth";
 import { siteConfig, updateSiteConfig } from "@/config/site";
 import { useH5Mode } from "@/hooks/useH5Mode";
 import { SESSION_UPDATED_EVENT } from "@/utils/session";
@@ -43,6 +43,8 @@ const SubscriptionPage = lazy(loadSubscription);
 const ConfigPage = lazy(loadConfig);
 const PanelSharingPage = lazy(() => import("@/pages/panel-sharing"));
 const GithubCallbackPage = lazy(() => import("@/pages/github-callback"));
+const UserPage = lazy(() => import("@/pages/user"));
+const MySubscriptionPage = lazy(() => import("@/pages/my-subscription"));
 
 let pagesPreloaded = false;
 
@@ -58,14 +60,19 @@ function preloadPages() {
   if (pagesPreloaded || connection?.saveData) return;
   pagesPreloaded = true;
   const run = () => {
-    const pages = [
-      loadDashboard,
-      loadNodeHub,
-      loadInbound,
-      loadRelay,
-      loadSubscription,
-      loadConfig,
-    ];
+    const pages = isAdmin()
+      ? [
+          loadDashboard,
+          loadNodeHub,
+          loadInbound,
+          loadRelay,
+          loadSubscription,
+          loadConfig,
+        ]
+      : [
+          () => import("@/pages/forward"),
+          () => import("@/pages/my-subscription"),
+        ];
 
     for (const load of pages) void load().catch(() => {});
   };
@@ -76,14 +83,18 @@ function preloadPages() {
   }, 2000);
 }
 
+const defaultHomePath = () => (isAdmin() ? "/dashboard" : "/forward");
+
 const ProtectedRoute = ({
   children,
   useSimpleLayout = false,
   skipLayout = false,
+  adminOnly = false,
 }: {
   children: React.ReactNode;
   useSimpleLayout?: boolean;
   skipLayout?: boolean;
+  adminOnly?: boolean;
 }) => {
   const isH5 = useH5Mode();
   const authenticated = isLoggedIn();
@@ -91,6 +102,9 @@ const ProtectedRoute = ({
 
   if (!authenticated) {
     return <Navigate replace to="/" />;
+  }
+  if (adminOnly && !isAdmin()) {
+    return <Navigate replace to="/forward" />;
   }
 
   // 如果跳过布局，直接返回子组件
@@ -115,20 +129,19 @@ const ProtectedRoute = ({
   return <Layout>{page}</Layout>;
 };
 
-// 登录页面路由组件 - 已登录则重定向到dashboard
+// 登录页面路由组件 - 已登录则按角色重定向
 const LoginRoute = () => {
   const authenticated = isLoggedIn();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (authenticated) {
-      // 使用 React Router 导航，避免无限跳转
-      navigate("/dashboard", { replace: true });
+      navigate(defaultHomePath(), { replace: true });
     }
   }, [authenticated, navigate]);
 
   if (authenticated) {
-    return <Navigate replace to="/dashboard" />;
+    return <Navigate replace to={defaultHomePath()} />;
   }
 
   return <IndexPage />;
@@ -246,7 +259,7 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <DashboardPage />
           </ProtectedRoute>
         }
@@ -254,7 +267,7 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <MonitorPage />
           </ProtectedRoute>
         }
@@ -270,7 +283,7 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <TunnelPage />
           </ProtectedRoute>
         }
@@ -278,7 +291,7 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <NodePage />
           </ProtectedRoute>
         }
@@ -294,7 +307,7 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <InboundPage />
           </ProtectedRoute>
         }
@@ -302,7 +315,7 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <RelayPage />
           </ProtectedRoute>
         }
@@ -310,7 +323,7 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute>
+          <ProtectedRoute adminOnly>
             <SubscriptionPage />
           </ProtectedRoute>
         }
@@ -319,6 +332,22 @@ function App() {
       <Route
         element={
           <ProtectedRoute>
+            <MySubscriptionPage />
+          </ProtectedRoute>
+        }
+        path="/my-subscription"
+      />
+      <Route
+        element={
+          <ProtectedRoute adminOnly useSimpleLayout={true}>
+            <UserPage />
+          </ProtectedRoute>
+        }
+        path="/user"
+      />
+      <Route
+        element={
+          <ProtectedRoute adminOnly>
             <ConfigPage />
           </ProtectedRoute>
         }
@@ -326,15 +355,16 @@ function App() {
       />
       <Route
         element={
-          <ProtectedRoute useSimpleLayout={true}>
+          <ProtectedRoute adminOnly useSimpleLayout={true}>
             <PanelSharingPage />
           </ProtectedRoute>
         }
         path="/panel-sharing"
       />
-      {/* Unknown addresses, and pages that are gone (用户, 分组, 限速, 我的订阅). */}
       <Route
-        element={<Navigate replace to={isLoggedIn() ? "/dashboard" : "/"} />}
+        element={
+          <Navigate replace to={isLoggedIn() ? defaultHomePath() : "/"} />
+        }
         path="*"
       />
     </Routes>

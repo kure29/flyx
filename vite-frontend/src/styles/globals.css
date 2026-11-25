@@ -631,3 +631,186 @@ html {
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
     "Noto Color Emoji";
 }
+
+/* ---------------------------------------------------------------- desktop
+   Subtle GPU-composited motion and tactile depth for the desktop layout
+   (layouts/admin.tsx, class desktop-shell). Mobile (.h5-shell) keeps its
+   own iOS-settings transitions above. */
+.desktop-shell .desktop-page-enter {
+  animation: desktopPageEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes desktopPageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.desktop-shell .page-tabs {
+  position: relative;
+}
+
+.desktop-shell .page-tabs[data-indicator] > [role="tab"][aria-selected="true"] {
+  border-bottom-color: transparent;
+}
+
+.desktop-shell .page-tabs-indicator {
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 9999px;
+  background-color: var(--foreground);
+  pointer-events: none;
+}
+
+.desktop-shell .page-tabs[data-indicator="moving"] .page-tabs-indicator {
+  transition:
+    transform 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.desktop-shell .tabs-switched > .page-tabs ~ * {
+  animation: desktopTabContentIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes desktopTabContentIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.desktop-shell .sidebar-active-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-radius: 0.5rem;
+  background-color: var(--default-200);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dark .desktop-shell .sidebar-active-indicator {
+  background-color: var(--default-100);
+}
+
+.desktop-shell .sidebar-active-indicator::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 2.5px;
+  border-radius: 9999px;
+  background-color: var(--foreground);
+}
+
+.desktop-shell .sidebar-nav[data-indicator="moving"] .sidebar-active-indicator {
+  transition:
+    transform 0.24s cubic-bezier(0.32, 0.72, 0, 1),
+    height 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.desktop-shell .list-row {
+  border-radius: 0.5rem;
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.desktop-shell .list-row:active {
+  transform: scale(0.996);
+}
+
+/* Unobtrusive thin scrollbar for desktop main pane. */
+.desktop-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.desktop-scrollbar:hover {
+  scrollbar-color: var(--default-300) transparent;
+}
+
+.desktop-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.desktop-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.desktop-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: transparent;
+  transition: background-color 0.2s ease;
+}
+
+.desktop-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: var(--default-300);
+}
+
+.desktop-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--default-400);
+}
+
+.ui-fade-in {
+  animation: uiFadeIn 0.2s ease-out;
+}
+
+@keyframes uiFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--default-100) 25%,
+    var(--default-200) 50%,
+    var(--default-100) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-shell .desktop-page-enter,
+  .desktop-shell .tabs-switched > .page-tabs ~ *,
+  .ui-fade-in,
+  .skeleton-shimmer {
+    animation: none;
+  }
+  .desktop-shell .page-tabs[data-indicator="moving"] .page-tabs-indicator,
+  .desktop-shell .sidebar-nav[data-indicator="moving"] .sidebar-active-indicator,
+  .desktop-shell .list-row {
+    transition: none;
+  }
+}
+

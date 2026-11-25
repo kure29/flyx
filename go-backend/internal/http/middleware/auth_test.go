@@ -248,7 +248,7 @@ func TestShouldSkipBypassesPublicStatus(t *testing.T) {
 	}
 }
 
-func TestJWTRejectsNonAdminToken(t *testing.T) {
+func TestJWTNonAdminAllowlist(t *testing.T) {
 	secret := "unit-test-secret"
 	token, err := auth.GenerateToken(2, "alice", 1, secret)
 	if err != nil {
@@ -262,12 +262,19 @@ func TestJWTRejectsNonAdminToken(t *testing.T) {
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.OK("pass"))
 	}))
-	// Even a path ordinary users could use before: FLYX is single-user now.
+	// User-scoped path is allowed.
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/forward/list", nil)
 	req.Header.Set("Authorization", token)
 	res := httptest.NewRecorder()
 	wrapped.ServeHTTP(res, req)
-	assertCodeMsg(t, res, 401, "只有管理员可以登录")
+	assertCodeMsg(t, res, 0, "操作成功")
+
+	// Admin-only path is refused.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/user/list", nil)
+	req2.Header.Set("Authorization", token)
+	res2 := httptest.NewRecorder()
+	wrapped.ServeHTTP(res2, req2)
+	assertCodeMsg(t, res2, 403, "权限不足")
 }
 
 func TestShouldSkipBypassesLoginMethods(t *testing.T) {

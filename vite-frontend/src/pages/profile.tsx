@@ -9,6 +9,7 @@ import {
   LogOut,
   Settings,
   Share2,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ import {
   useDisclosure,
 } from "@/shadcn-bridge/heroui/modal";
 import { Input } from "@/shadcn-bridge/heroui/input";
+import { isAdmin } from "@/utils/auth";
 import { isWebViewFunc } from "@/utils/panel";
 import { siteConfig } from "@/config/site";
 import { VersionFooter } from "@/components/version-footer";
@@ -213,9 +215,12 @@ export default function ProfilePage() {
       })
       .catch(() => setGithub(null));
 
+  const admin = isAdmin();
+
   useEffect(() => {
     // 获取用户信息
-    setUsername(getSessionName() || "Admin");
+    setUsername(getSessionName() || (admin ? "Admin" : "User"));
+    if (!admin) return;
     void loadGithub();
     if (
       window.isSecureContext &&
@@ -230,12 +235,19 @@ export default function ProfilePage() {
         })
         .catch(() => setPasskeyEnabled(false));
     }
-  }, []);
+  }, [admin]);
 
   const go = (path: string) => () => navigate(path);
 
   // On phones the sidebar is gone; these are its admin pages.
   const shortcuts: RowItem[] = [
+    {
+      key: "/user",
+      label: "用户管理",
+      description: "分配中转隧道与订阅",
+      icon: Users,
+      onPress: go("/user"),
+    },
     {
       key: "/panel-sharing",
       label: "面板共享",
@@ -374,13 +386,17 @@ export default function ProfilePage() {
         <span className="block truncate text-[17px] font-semibold">
           {username}
         </span>
-        <span className="block text-[13px] text-default-500">管理员</span>
+        <span className="block text-[13px] text-default-500">
+          {admin ? "管理员" : "普通用户"}
+        </span>
       </span>
     </div>
   ) : (
     <div className="flex items-baseline justify-between gap-3 border-b border-divider px-1 pb-3">
       <span className="truncate text-sm">{username}</span>
-      <span className="shrink-0 text-xs text-default-400">管理员</span>
+      <span className="shrink-0 text-xs text-default-400">
+        {admin ? "管理员" : "普通用户"}
+      </span>
     </div>
   );
   const logoutRow = (
@@ -399,11 +415,11 @@ export default function ProfilePage() {
       <div className="mx-auto w-full max-w-2xl flex-1">
         <PageHeader
           description={isH5 ? undefined : "你的账户和登录方式"}
-          title={isH5 ? "更多" : "账户与登录"}
+          title={isH5 ? (admin ? "更多" : "我的") : "账户与登录"}
         />
         <div className={isH5 ? "space-y-6" : "space-y-8"}>
           {account}
-          {isH5 && <RowGroup tiles items={shortcuts} title="管理" />}
+          {isH5 && admin && <RowGroup tiles items={shortcuts} title="管理" />}
           <RowGroup items={securityItems} tiles={isH5} title="登录与安全" />
           {logoutRow}
         </div>

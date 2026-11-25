@@ -217,11 +217,19 @@ func (h *Handler) runResetAndExpiryJob(now time.Time) {
 	}
 
 	h.resetMonthlyFlow(now)
+	h.pauseExpiredUsersForwards(now.UnixMilli())
 }
 
 func (h *Handler) resetMonthlyFlow(now time.Time) {
-	if err := h.repo.RollMonthlyFlows(now); err != nil {
+	resetUsers, err := h.repo.RollMonthlyFlowsWithResetUsers(now)
+	if err != nil {
 		log.Printf("monthly flow reset failed: %v", err)
+		return
+	}
+	for _, uid := range resetUsers {
+		h.quotaControlMu.Lock()
+		h.resumeUserPausedForwards(uid)
+		h.quotaControlMu.Unlock()
 	}
 }
 

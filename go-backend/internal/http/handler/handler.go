@@ -259,6 +259,15 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/captcha/check", h.checkCaptcha)
 	mux.HandleFunc("/api/v1/captcha/verify", h.captchaVerify)
 	mux.HandleFunc("/api/v1/user/updatePassword", h.updatePassword)
+	mux.HandleFunc("/api/v1/user/list", h.userList)
+	mux.HandleFunc("/api/v1/user/create", h.userCreate)
+	mux.HandleFunc("/api/v1/user/update", h.userUpdate)
+	mux.HandleFunc("/api/v1/user/delete", h.userDelete)
+	mux.HandleFunc("/api/v1/user/reset", h.userResetFlow)
+	mux.HandleFunc("/api/v1/user/package", h.userPackage)
+	mux.HandleFunc("/api/v1/user/subscriptions", h.userSubscriptions)
+	mux.HandleFunc("/api/v1/user/subscription/reset", h.userSubscriptionReset)
+	mux.HandleFunc("/api/v1/user/subscription/traffic", h.userSubscriptionTraffic)
 	mux.HandleFunc("/api/v1/node/list", h.nodeList)
 	mux.HandleFunc("/api/v1/node/create", h.nodeCreate)
 	mux.HandleFunc("/api/v1/node/update", h.nodeUpdate)
@@ -473,12 +482,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("账号被停用"))
 		return
 	}
-	// Checked after the password so it doesn't reveal which names exist.
-	if user.RoleID != 0 {
-		response.WriteJSON(w, response.ErrDefault("只有管理员可以登录"))
-		return
-	}
-	if h.adminPasswordLoginDisabled() {
+	if user.RoleID == 0 && h.adminPasswordLoginDisabled() {
 		response.WriteJSON(w, response.ErrDefault("已禁止密码登录，请使用 GitHub 或通行证密钥登录"))
 		return
 	}
@@ -759,7 +763,18 @@ func (h *Handler) userTunnelVisibleList(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	items, err := h.repo.ListEnabledTunnelSummaries()
+	userID, roleID, err := userRoleFromRequest(r)
+	if err != nil {
+		response.WriteJSON(w, response.Err(401, "无效的token或token已过期"))
+		return
+	}
+
+	var items []map[string]interface{}
+	if roleID == 0 {
+		items, err = h.repo.ListEnabledTunnelSummaries()
+	} else {
+		items, err = h.repo.ListEnabledTunnelSummariesForUser(userID)
+	}
 	if err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return

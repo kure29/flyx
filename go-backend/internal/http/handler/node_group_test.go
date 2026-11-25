@@ -103,3 +103,110 @@ func mustGroup(t *testing.T, r *repo.Repository, id int64) *model.NodeGroup {
 	}
 	return g
 }
+
+func TestNodeGroupExplicitLineSelection(t *testing.T) {
+	r, err := repo.Open(t.TempDir() + "/groups_explicit.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	h := New(r, "unit-test-secret")
+	mux := http.NewServeMux()
+	h.Register(mux)
+	router := middleware.JWT(middleware.AuthOptions{JWTSecret: "unit-test-secret", GetUserAuthState: h.GetUserAuthState})(mux)
+	admin := mustGenerateConfigAccessToken(t, 1, "admin_user", 0)
+	post := func(path, body string) response.R {
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", admin)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		var out response.R
+		_ = json.NewDecoder(rec.Body).Decode(&out)
+		return out
+	}
+
+	now := time.Now().UnixMilli()
+	// Landing node + entry relay node.
+	if err := r.DB().Exec(`INSERT INTO node(name, secret, server_ip, port, created_time, status) VALUES('jp', 's1', '203.0.113.10', '1000-9000', ?, 1)`, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	landingNodeID := mustLastInsertID(t, r, "node_jp")
+	if err := r.DB().Exec(`INSERT INTO node(name, secret, server_ip, port, created_time, status) VALUES('hk', 's2', '198.51.100.20', '1000-9000', ?, 1)`, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	entryNodeID := mustLastInsertID(t, r, "node_hk")
+	if err := r.DB().Exec(`INSERT INTO node_kernel(node_id, kernel_type, version, status, created_time, updated_time) VALUES(?, 'xray', 'latest', 'running', ?, ?)`, landingNodeID, now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	kernelID := mustLastInsertID(t, r, "kernel")
+	if err := r.DB().Exec(`INSERT INTO node_inbound(kernel_id, node_id, name, protocol, listen, port, settings, enabled, created_time, updated_time)
+		VALUES(?, ?, 'JP-落地', 'trojan', '::', 443, '{"password":"owner-pw"}', 1, ?, ?)`, kernelID, landingNodeID, now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	inboundID := mustLastInsertID(t, r, "node_inbound")
+
+	if err := r.DB().Exec(`INSERT INTO tunnel(name, type, protocol, flow, status, created_time, updated_time, inx) VALUES('T1', 1, 'tls', 1, 1, ?, ?, 1)`, now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	tunnelID := mustLastInsertID(t, r, "tunnel")
+
+	addRelay := func(name string, port int) int64 {
+		if err := r.DB().Exec(`INSERT INTO forward(user_id, user_name, name, tunnel_id, remote_addr, strategy, status, created_time, updated_time, inx) VALUES(1, 'admin_user', ?, ?, '203.0.113.10:443', 'fifo', 1, ?, ?, 1)`, name, tunnelID, now, now).Error; err != nil {
+			t.Fatal(err)
+		}
+		fwdID := mustLastInsertID(t, r, "forward")
+		if err := r.DB().Exec(`INSERT INTO forward_port(forward_id, node_id, port) VALUES(?, ?, ?)`, fwdID, entryNodeID, port).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := r.DB().Exec(`INSERT INTO node_inbound_relay(inbound_id, forward_id, name, created_time) VALUES(?, ?, ?, ?)`, inboundID, fwdID, name, now).Error; err != nil {
+			t.Fatal(err)
+		}
+		return mustLastInsertID(t, r, "node_inbound_relay")
+	}
+	relay1 := addRelay("HK-中转1", 20001)
+	relay2 := addRelay("SG-中转2", 20002)
+
+	previewNames := func(body string) []string {
+		out := post("/api/v1/subscription/group/preview", body)
+		if out.Code != 0 {
+			t.Fatalf("preview failed: %+v", out)
+		}
+		items := out.Data.(map[string]interface{})["items"].([]interface{})
+		var names []string
+		for _, it := range items {
+			names = append(names, it.(map[string]interface{})["name"].(string))
+		}
+		return names
+	}
+
+	// 1. Pick ONLY relay1: landing direct and relay2 must NOT appear.
+	got := previewNames(`{"name":"only-r1","sourceAll":false,"options":{"explicitLines":true,"directIds":[],"relayIds":[` + strconv.FormatInt(relay1, 10) + `]}}`)
+	if len(got) != 1 || got[0] != "HK-中转1" {
+		t.Fatalf("expected only [HK-中转1], got %v", got)
+	}
+
+	// 2. Pick ONLY direct landing: relays must NOT appear.
+	got = previewNames(`{"name":"only-direct","sourceAll":false,"options":{"explicitLines":true,"directIds":[` + strconv.FormatInt(inboundID, 10) + `],"relayIds":[]}}`)
+	if len(got) != 1 || got[0] != "JP-落地" {
+		t.Fatalf("expected only [JP-落地], got %v", got)
+	}
+
+	// 3. Saving a relay-only group still includes its inboundID for share credentials.
+	saveOut := post("/api/v1/subscription/group/save", `{"name":"relay-only","sourceAll":false,"options":{"explicitLines":true,"directIds":[],"relayIds":[`+strconv.FormatInt(relay1, 10)+`]}}`)
+	if saveOut.Code != 0 {
+		t.Fatalf("save relay-only group: %+v", saveOut)
+	}
+	gid := int64(saveOut.Data.(map[string]interface{})["id"].(float64))
+	savedGroup := mustGroup(t, r, gid)
+	if savedGroup.InboundIDs != strconv.FormatInt(inboundID, 10) {
+		t.Fatalf("expected derived inbound_ids=%d for share credentials, got %q", inboundID, savedGroup.InboundIDs)
+	}
+
+	// 4. Legacy group without explicitLines still emits direct + all relays.
+	_ = relay2
+	got = previewNames(`{"name":"legacy","sourceAll":false,"inboundIds":[` + strconv.FormatInt(inboundID, 10) + `]}`)
+	if len(got) != 3 {
+		t.Fatalf("expected legacy group to emit direct + 2 relays (3 items), got %v", got)
+	}
+}

@@ -133,6 +133,44 @@ func (r *Repository) ListEnabledTunnelSummaries() ([]map[string]interface{}, err
 	return items, nil
 }
 
+func (r *Repository) ListEnabledTunnelSummariesForUser(userID int64) ([]map[string]interface{}, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+
+	type row struct {
+		ID   int64
+		Name string
+	}
+	var rows []row
+	err := r.db.Model(&model.Tunnel{}).
+		Select("tunnel.id, tunnel.name").
+		Joins("INNER JOIN user_tunnel ON user_tunnel.tunnel_id = tunnel.id").
+		Where("tunnel.status = 1 AND user_tunnel.user_id = ? AND user_tunnel.status = 1", userID).
+		Order("tunnel.inx ASC, tunnel.id ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	tunnelIDs := make([]int64, 0, len(rows))
+	for _, rw := range rows {
+		tunnelIDs = append(tunnelIDs, rw.ID)
+	}
+	portRangeMap := r.getTunnelEntryPortRanges(tunnelIDs)
+
+	items := make([]map[string]interface{}, 0, len(rows))
+	for _, rw := range rows {
+		item := map[string]interface{}{"id": rw.ID, "name": rw.Name}
+		if pr, ok := portRangeMap[rw.ID]; ok {
+			item["portRangeMin"] = pr.min
+			item["portRangeMax"] = pr.max
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
 type tunnelPortRange struct {
 	min int
 	max int

@@ -353,9 +353,9 @@ export function SelectionBar({
 export type RowStatus = "ok" | "warn" | "bad" | "off";
 
 const STATUS_DOT: Record<RowStatus, string> = {
-  ok: "bg-success",
-  warn: "bg-warning",
-  bad: "bg-danger",
+  ok: "bg-success ring-[3px] ring-success/20",
+  warn: "bg-warning ring-[3px] ring-warning/20",
+  bad: "bg-danger ring-[3px] ring-danger/20",
   off: "bg-default-300",
 };
 
@@ -392,8 +392,10 @@ export function ListRow({
   return (
     <div
       aria-pressed={selectMode ? selected : undefined}
-      className={`list-row group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2 py-3 text-left transition-colors ${
-        selected ? "bg-default-100" : "hover:bg-default-50"
+      className={`list-row group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2.5 py-3 text-left transition-colors ${
+        selected
+          ? "bg-default-100"
+          : "hover:bg-default-100/60 dark:hover:bg-default-100/30"
       }`}
       data-selected={selected ? "true" : undefined}
       role="button"
@@ -418,7 +420,7 @@ export function ListRow({
       )}
       {status && (
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
+          className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[status]}`}
           title={statusTitle}
         />
       )}

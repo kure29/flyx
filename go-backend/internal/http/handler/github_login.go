@@ -190,10 +190,12 @@ func (h *Handler) loginMethods(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _, github := h.githubOAuthConfig()
 	wa, _ := passkeyConfig()
+	hasUsers, _ := h.repo.HasActiveNonAdminUsers()
 	response.WriteJSON(w, response.OK(map[string]bool{
-		"password": !h.adminPasswordLoginDisabled(),
-		"github":   github,
-		"passkey":  wa != nil,
+		"password":     !h.adminPasswordLoginDisabled(),
+		"userPassword": hasUsers,
+		"github":       github,
+		"passkey":      wa != nil,
 	}))
 }
 

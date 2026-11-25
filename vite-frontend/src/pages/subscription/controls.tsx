@@ -34,9 +34,9 @@ export function Segmented<T extends string>({
         <button
           key={k}
           aria-checked={value === k}
-          className={`rounded-xl border px-2 py-2 text-sm transition-colors ${
+          className={`rounded-xl border px-2 py-2 text-sm transition-all duration-150 active:scale-[0.98] ${
             value === k
-              ? "border-primary bg-primary-50 font-medium text-primary dark:bg-primary-900/30"
+              ? "border-primary bg-primary-50 font-medium text-primary shadow-xs dark:bg-primary-900/30"
               : "border-default-200 bg-content1 text-default-600 hover:border-default-400 dark:border-default-100"
           }`}
           role="radio"
@@ -74,7 +74,7 @@ export function EditorTabs<T extends string>({
         <button
           key={t.key}
           aria-selected={value === t.key}
-          className={`relative whitespace-nowrap rounded-full px-1 py-1.5 text-sm transition-colors ${
+          className={`relative whitespace-nowrap rounded-full px-1 py-1.5 text-sm transition-all duration-150 active:scale-[0.98] ${
             value === t.key
               ? "bg-content1 font-medium text-primary shadow-sm"
               : "text-default-500 hover:text-foreground"

@@ -16,4 +16,15 @@ func (h *Handler) enforceFlowUploadBatch(nodeID int64, batch flowUploadBatch) {
 			h.enforcePeerShareFlowLimit(id)
 		}
 	}
+	seenUsers := make(map[int64]struct{})
+	for _, delta := range batch.flowDeltas {
+		if delta.UserID <= 0 {
+			continue
+		}
+		if _, ok := seenUsers[delta.UserID]; ok {
+			continue
+		}
+		seenUsers[delta.UserID] = struct{}{}
+		h.enforceUserForwardFlowLimit(delta.UserID)
+	}
 }

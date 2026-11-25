@@ -32,6 +32,12 @@ type groupPipeline struct {
 	Dedupe    bool     `json:"dedupe"`
 	Sort      string   `json:"sort"`
 	Script    string   `json:"script"`
+	// ExplicitLines, when true on a non-SourceAll group, picks direct
+	// endpoints (DirectIDs) and relay endpoints (RelayIDs) independently
+	// rather than pulling in every direct + relay line of each inbound.
+	ExplicitLines bool    `json:"explicitLines,omitempty"`
+	DirectIDs     []int64 `json:"directIds,omitempty"`
+	RelayIDs      []int64 `json:"relayIds,omitempty"`
 }
 
 func (p groupPipeline) options() kernel.SubOptions {
@@ -39,6 +45,21 @@ func (p groupPipeline) options() kernel.SubOptions {
 		Lines: p.Lines, Regions: p.Regions, Protocols: p.Protocols, Include: p.Include, Exclude: p.Exclude,
 		Rename: p.Rename, AddFlag: p.AddFlag, Prefix: p.Prefix, Dedupe: p.Dedupe, Sort: p.Sort, Script: p.Script,
 	}
+}
+
+func dedupePositiveIDs(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (p *groupPipeline) normalize() error {
@@ -63,6 +84,13 @@ func (p *groupPipeline) normalize() error {
 	}
 	if p.Protocols == nil {
 		p.Protocols = []string{}
+	}
+	if p.ExplicitLines {
+		p.DirectIDs = dedupePositiveIDs(p.DirectIDs)
+		p.RelayIDs = dedupePositiveIDs(p.RelayIDs)
+	} else {
+		p.DirectIDs = nil
+		p.RelayIDs = nil
 	}
 	return p.options().Validate()
 }
@@ -195,6 +223,38 @@ func (h *Handler) groupSource(c *subContext, g *model.NodeGroup, s *model.Subscr
 		user = &credentials
 	}
 	endpoints, _ := h.inboundEndpointsForUser(selected, user, s == nil || s.ID == 0)
+	if g.SourceAll != 1 {
+		pipe := parseGroupPipeline(g.Options)
+		if pipe.ExplicitLines {
+			wantDirect := make(map[int64]bool, len(pipe.DirectIDs))
+			for _, id := range pipe.DirectIDs {
+				wantDirect[id] = true
+			}
+			wantRelay := make(map[int64]bool, len(pipe.RelayIDs))
+			for _, id := range pipe.RelayIDs {
+				wantRelay[id] = true
+			}
+			wantSource := make(map[int64]bool)
+			for _, id := range parseIDList(g.SourceIDs) {
+				wantSource[id] = true
+			}
+			filtered := make([]kernel.Endpoint, 0, len(endpoints))
+			for _, ep := range endpoints {
+				if ep.SourceID != 0 && wantSource[ep.SourceID] {
+					filtered = append(filtered, ep)
+					continue
+				}
+				if ep.Direct && wantDirect[ep.Inbound.ID] {
+					filtered = append(filtered, ep)
+					continue
+				}
+				if !ep.Direct && ep.RelayID > 0 && wantRelay[ep.RelayID] {
+					filtered = append(filtered, ep)
+				}
+			}
+			endpoints = filtered
+		}
+	}
 	return endpoints
 }
 
@@ -319,11 +379,14 @@ type nodeGroupRequest struct {
 	Options    groupPipeline `json:"options"`
 }
 
-// validate checks the request and keeps the inbounds that exist.
-func (req *nodeGroupRequest) validate(rows []model.NodeInbound) error {
+// validate checks the request and keeps the inbounds/relays that exist.
+func (req *nodeGroupRequest) validate(rows []model.NodeInbound, relays []relayView) error {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" || len([]rune(req.Name)) > 100 {
 		return errText("请填写名称（最多 100 个字）")
+	}
+	if req.SourceAll {
+		req.Options.ExplicitLines = false
 	}
 	if err := req.Options.normalize(); err != nil {
 		return err
@@ -333,9 +396,41 @@ func (req *nodeGroupRequest) validate(rows []model.NodeInbound) error {
 		known[r.ID] = true
 	}
 	var ids []int64
-	for _, id := range req.InboundIDs {
-		if known[id] {
-			ids = append(ids, id)
+	if !req.SourceAll && req.Options.ExplicitLines {
+		relayInbound := make(map[int64]int64, len(relays))
+		for _, rel := range relays {
+			if known[rel.InboundID] {
+				relayInbound[rel.ID] = rel.InboundID
+			}
+		}
+		directs := make([]int64, 0, len(req.Options.DirectIDs))
+		pickedInbound := make(map[int64]bool)
+		for _, id := range req.Options.DirectIDs {
+			if known[id] {
+				directs = append(directs, id)
+				if !pickedInbound[id] {
+					pickedInbound[id] = true
+					ids = append(ids, id)
+				}
+			}
+		}
+		validRelays := make([]int64, 0, len(req.Options.RelayIDs))
+		for _, rid := range req.Options.RelayIDs {
+			if inID, ok := relayInbound[rid]; ok {
+				validRelays = append(validRelays, rid)
+				if !pickedInbound[inID] {
+					pickedInbound[inID] = true
+					ids = append(ids, inID)
+				}
+			}
+		}
+		req.Options.DirectIDs = directs
+		req.Options.RelayIDs = validRelays
+	} else {
+		for _, id := range req.InboundIDs {
+			if known[id] {
+				ids = append(ids, id)
+			}
 		}
 	}
 	req.InboundIDs = ids
@@ -347,7 +442,7 @@ func (req *nodeGroupRequest) validate(rows []model.NodeInbound) error {
 	}
 	req.SourceIDs = sources
 	if !req.SourceAll && len(ids) == 0 && len(sources) == 0 {
-		return errText("请至少选择一个入站或订阅源，或选择全部")
+		return errText("请至少选择一个入站、中转或订阅源，或选择全部")
 	}
 	return nil
 }
@@ -373,7 +468,11 @@ func (h *Handler) nodeGroupSave(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	if err := req.validate(c.rows); err != nil {
+	var relays []relayView
+	if !req.SourceAll && req.Options.ExplicitLines {
+		relays, _ = h.relayViews(0)
+	}
+	if err := req.validate(c.rows, relays); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
@@ -474,7 +573,11 @@ func (h *Handler) nodeGroupPreview(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	if err := req.validate(c.rows); err != nil {
+	var relays []relayView
+	if !req.SourceAll && req.Options.ExplicitLines {
+		relays, _ = h.relayViews(0)
+	}
+	if err := req.validate(c.rows, relays); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}

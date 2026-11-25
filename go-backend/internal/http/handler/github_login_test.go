@@ -191,8 +191,8 @@ func TestAdminPasswordLoginCanBeDisabledOnlyWithGithub(t *testing.T) {
 	if out := githubPost(t, router, "", "/api/v1/user/login", `{"username":"admin_user","password":"wrong"}`); strings.Contains(out.Msg, "禁止") {
 		t.Fatal("a wrong password must not reveal the account is an admin")
 	}
-	if out := userLogin(); out.Code == 0 || !strings.Contains(out.Msg, "只有管理员") {
-		t.Fatalf("only the admin may log in: %+v", out)
+	if out := userLogin(); out.Code != 0 {
+		t.Fatalf("normal user password login must remain allowed: %+v", out)
 	}
 	methods := func() map[string]bool {
 		t.Helper()
@@ -204,8 +204,8 @@ func TestAdminPasswordLoginCanBeDisabledOnlyWithGithub(t *testing.T) {
 		}
 		return m
 	}
-	if m := methods(); m["password"] || !m["github"] {
-		t.Fatalf("with password login off the page must offer GitHub only: %v", m)
+	if m := methods(); m["password"] || !m["github"] || !m["userPassword"] {
+		t.Fatalf("with admin password login off and active users, expected password=false, github=true, userPassword=true: %v", m)
 	}
 	if out := githubPost(t, router, admin, "/api/v1/user/github/unbind", `{"password":"admin_user"}`); out.Code == 0 {
 		t.Fatal("an admin must not unbind while admin password login is off")

@@ -25,11 +25,17 @@ export const PageLoadingState = ({
 
   return (
     <div
-      className={`flex flex-col items-center justify-center gap-3 ${className}`}
+      className={`ui-fade-in flex flex-col items-center justify-center gap-4 ${className}`}
     >
-      <div className="flex items-center gap-3">
+      <div className="w-full max-w-md space-y-2.5 px-4 opacity-70">
+        <div className="skeleton-shimmer h-3 w-1/3 rounded-full" />
+        <div className="skeleton-shimmer h-10 w-full rounded-lg" />
+        <div className="skeleton-shimmer h-10 w-full rounded-lg" />
+        <div className="skeleton-shimmer h-10 w-5/6 rounded-lg" />
+      </div>
+      <div className="flex items-center gap-2.5 text-sm">
         <Spinner size="sm" />
-        <span className="text-default-600">{message}</span>
+        <span className="text-default-500">{message}</span>
       </div>
       {slow && (
         <div className="flex flex-col items-center gap-2 text-center">
