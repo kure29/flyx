@@ -6,6 +6,7 @@ import type {
 
 import { useCallback, useEffect, useState, useRef } from "react";
 
+import { useI18n } from "@/i18n";
 import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { getKernelCapabilities, getKernelList, getNodeList } from "@/api";
 import { PageLoadingState } from "@/components/page-state";
@@ -19,6 +20,7 @@ export function KernelsTab({
   installRequest: InstallRequest | null;
   onInstallRequestHandled: () => void;
 }) {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [caps, setCaps] = useState<KernelCapabilitiesApiData | null>(null);
   const [nodes, setNodes] = useState<NodeApiItem[]>([]);
@@ -55,7 +57,7 @@ export function KernelsTab({
     30_000,
   );
 
-  if (loading) return <PageLoadingState message="正在加载..." />;
+  if (loading) return <PageLoadingState message={t("正在加载...")} />;
 
   return (
     <KernelPanel

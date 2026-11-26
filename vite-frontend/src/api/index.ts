@@ -1025,6 +1025,8 @@ export interface SubscriptionItem {
   enabled: boolean;
   active: boolean;
   remark: string;
+  pinned?: boolean;
+  tags?: string[];
   nodeCount: number;
   uploadBytes: number;
   downloadBytes: number;
@@ -1048,9 +1050,21 @@ export interface SubscriptionDraft {
   expireTime: number;
   enabled?: boolean;
   remark: string;
+  pinned?: boolean;
+  tags?: string[];
   trafficLimit: number;
   resetDay: number;
 }
+export type SubscriptionBatchAction =
+  | "enable"
+  | "disable"
+  | "reset-traffic"
+  | "extend-days"
+  | "set-tags"
+  | "add-tag"
+  | "remove-tag"
+  | "pin"
+  | "unpin";
 export interface SubPreviewItem {
   orderKey?: string;
   name: string;
@@ -1076,6 +1090,12 @@ export const deleteSubscription = (id: number) =>
   Network.post("/subscription/delete", { id });
 export const orderSubscriptions = (ids: number[]) =>
   Network.post("/subscription/order", { ids });
+export const batchSubscriptions = (data: {
+  ids: number[];
+  action: SubscriptionBatchAction;
+  days?: number;
+  tags?: string[];
+}) => Network.post<{ updated: number }>("/subscription/batch", data);
 export const resetSubscription = (id: number) =>
   Network.post<SubscriptionItem>("/subscription/reset", { id });
 /** A subscription as the user it is assigned to sees it. */

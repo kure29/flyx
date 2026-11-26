@@ -16,7 +16,8 @@ import path from "node:path";
 const dir = path.resolve(process.argv[2] || "dist-demo");
 const BASE = "/flyx/demo/";
 // Admins' 监控 redirects to 节点, which is already on the list.
-const ADMIN_PAGES = ["dashboard", "node", "inbound", "relay", "forward", "tunnel", "subscription", "panel-sharing", "config", "profile"];
+const ADMIN_PAGES = ["dashboard", "node", "inbound", "relay", "forward", "tunnel", "subscription", "user", "panel-sharing", "config", "profile"];
+const USER_PAGES = ["forward", "my-subscription", "profile"];
 const SETTLE_MS = 2500;
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
@@ -108,11 +109,21 @@ await page("Page.navigate", { url: `${origin}${BASE}` });
 await sleep(SETTLE_MS);
 for (const r of ADMIN_PAGES) await visit("admin", r);
 
+// Switch to normal user demo session (xiaoming) and verify user portal pages.
+await evaluate(`(() => {
+  const payload = btoa(JSON.stringify({ sub: "2", role_id: 1, user: "xiaoming", exp: 4102444800, iat: 1760000000 }));
+  localStorage.setItem("token", "demo." + payload + ".demo");
+  localStorage.setItem("role_id", "1");
+  localStorage.setItem("name", "xiaoming");
+  localStorage.setItem("admin", "false");
+})()`);
+for (const r of USER_PAGES) await visit("user", r);
+
 for (const n of notes) console.log(`note  ${n}`);
 for (const p of problems) console.log(`FAIL  ${p}`);
 console.log(problems.length
   ? `\n${problems.length} problem(s). Recording missing for new pages? See scripts/demo/README.md.`
-  : `demo ok: ${ADMIN_PAGES.length} pages`);
+  : `demo ok: ${ADMIN_PAGES.length} admin + ${USER_PAGES.length} user pages`);
 
 // Chrome keeps writing its profile until it has exited; clean up after
 // that, and never let cleanup decide the result.

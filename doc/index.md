@@ -3,8 +3,11 @@ layout: home
 
 hero:
   name: FLYX
-  text: 转发 + 节点搭建面板
-  tagline: 在一个面板里管理服务器、节点与中转，一键部署 Xray / sing-box / Snell 节点并对接中转
+  text: 转发 + 多内核节点面板
+  tagline: 在一个面板里统一管理服务器、多内核节点、中转线路、订阅分发与轻量多用户，支持中英文实时切换
+  image:
+    src: /screenshots/overview.png
+    alt: FLYX 控制台概览
   actions:
     - theme: brand
       text: 快速上手
@@ -24,17 +27,15 @@ hero:
 
 features:
   - title: 多内核节点
-    details: Xray、sing-box、Snell 按服务器安装，VLESS Reality、Hysteria2、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Snell v6 等模板一键创建。
-  - title: 一键对接中转
-    details: 端口转发、隧道转发，或经 IX 的多跳线路；中转线路自动进入订阅，可开启入站白名单和真实客户端 IP。
-  - title: 导入节点
-    details: 粘贴分享链接、Clash / sing-box / Surge 配置或订阅地址，别处搭好的节点也能对接中转、加入订阅。
-  - title: 订阅
-    details: 参考 Sub-Store：节点组统一挑选节点、过滤、改名，多个订阅自由组合、按地区分组，可分享给他人；按客户端自动返回 Clash / Mihomo、sing-box、Surge 或 base64。
-  - title: 延迟与回程
-    details: 服务器定时测到北京 / 上海 / 广东三网的延迟和丢包，识别 CN2 GIA、9929、CMIN2 等回程线路，有趋势图和异常告警。
-  - title: 流量转发
-    details: TCP / UDP 端口转发与隧道转发，realm、nftables 引擎，按规则统计上下行流量。
-  - title: 面板内升级
-    details: 设置里检查更新、一键升级，也可以用安装脚本更新；agent 可以批量升级。
+    details: 按服务器安装 Xray、sing-box、Snell v4 / v5，一键创建 VLESS Reality、Hysteria2（端口跳跃）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022 等入站。
+  - title: 灵活中转与转发
+    details: 支持 TCP / UDP 端口转发、隧道转发与多跳链路，内置 GOST / realm / nftables 引擎；中转线路自动进入订阅，支持入站白名单与真实客户端 IP。
+  - title: Sub-Store 风格订阅
+    details: 节点组支持独立勾选落地直连与中转线路，统一筛选、改名与脚本加工；多订阅自由组合与分享（独立凭据、流量限额与到期自动断开），自动适配主流客户端。
+  - title: 轻量多用户
+    details: 管理员可创建普通用户并分别分配中转隧道配额与分享订阅（两者分开计算）；普通用户登录后仅见精简门户，超额或到期自动暂停转发，重置后自动恢复。
+  - title: 延迟监控与三网回程
+    details: 服务器定时测到北京 / 上海 / 广东三网的延迟与丢包，自动识别 CN2 GIA、9929、CMIN2 等回程线路，配套趋势图、公开状态页与异常告警。
+  - title: 现代体验与中英双语
+    details: 电脑端与移动端 H5 自适应界面，内置深浅色主题与简体中文 / English 实时切换；支持 Passkey / GitHub 登录、Gist 加密备份与面板内一键升级。
 ---

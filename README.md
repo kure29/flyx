@@ -4,54 +4,115 @@
 
 # FLYX
 
-转发 + 节点搭建面板
+**现代化的流量转发 + 多内核代理节点管理面板**
 
-在一个面板里管理服务器、节点与中转：一键部署 Xray / sing-box / Snell 节点，对接中转，生成订阅。
+在一个面板里统一管理服务器、多内核节点、中转线路、订阅分发与轻量多用户。
 
-[在线演示](https://kure29.github.io/flyx/demo/) · [使用文档](https://kure29.github.io/flyx/) · [快速上手](https://kure29.github.io/flyx/guide/getting-started) · [下载](https://github.com/kure29/flyx/releases) · [Telegram 交流群](https://t.me/flyx_chat)
+[![Release](https://img.shields.io/github/v/release/kure29/flyx?style=flat-square&color=111827)](https://github.com/kure29/flyx/releases)
+[![License](https://img.shields.io/github/license/kure29/flyx?style=flat-square&color=2563eb)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go&logoColor=white)](go-backend/go.mod)
+[![React](https://img.shields.io/badge/React-Vite%20%2B%20Tailwind-61DAFB?style=flat-square&logo=react&logoColor=111827)](vite-frontend/package.json)
+[![Telegram](https://img.shields.io/badge/Telegram-交流群-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/flyx_chat)
+
+**简体中文** · [English](README_EN.md)
+
+[🚀 在线演示（支持管理员/用户双视角）](https://kure29.github.io/flyx/demo/) · [📖 使用文档](https://kure29.github.io/flyx/) · [⚡ 快速上手](https://kure29.github.io/flyx/guide/getting-started) · [📦 下载发布](https://github.com/kure29/flyx/releases)
+
+<br />
+
+<img src="doc/public/screenshots/overview.png" alt="FLYX 概览界面" width="960" />
 
 </div>
 
-## 功能
+<details>
+<summary>📸 查看更多界面截图（节点管理 / 轻量多用户 / 深色英文界面）</summary>
 
-- **多内核节点**：Xray、sing-box、Snell v4 / v5 按服务器安装；VLESS Reality、Hysteria2（端口跳跃）、TUIC、AnyTLS、NaïveProxy、ShadowTLS 等模板一键创建
-- **证书**：自签、服务器上的证书文件，或由 sing-box 自动申请（ACME，HTTP / Cloudflare / 阿里云 DNS 验证）
-- **对接中转**：端口转发、隧道转发，或“前置 → IX → 落地”多跳线路；入站白名单、真实客户端 IP
-- **导入节点**：粘贴分享链接、Clash / sing-box / Surge 配置或订阅地址，别处搭好的节点也能对接中转
-- **订阅**：参考 Sub-Store，节点组统一挑选节点、过滤、改名，多个订阅自由组合、加国旗、按地区分组，可分享给他人（独立凭据、到期自动断开）；按客户端自动返回 Clash / Mihomo、sing-box、Surge 或通用 base64
-- **流量转发**：TCP / UDP 端口转发与隧道转发，realm、nftables 引擎，按规则统计上下行流量
-- **单用户**：只有管理员一个账号，可以只用 GitHub 或通行证密钥登录
-- **状态页**：不用登录的公开页面，显示服务器在线情况、近 30 天可用率、负载与流量，不显示 IP、用户和协议
-- **面板内升级**：检查更新、一键升级
+<br />
 
-## 安装
+**节点与多内核管理**
+<img src="doc/public/screenshots/nodes.png" alt="节点管理" width="960" />
 
-面板（需要 Docker）：
+**轻量多用户（中转配额与订阅分发）**
+<img src="doc/public/screenshots/users.png" alt="用户管理" width="960" />
+
+**深色模式 & 英文界面（支持实时中英切换）**
+<img src="doc/public/screenshots/dark-en.png" alt="深色英文模式" width="960" />
+
+</details>
+
+---
+
+## ✨ 核心特性
+
+- **多内核一键建节点**：按服务器安装与管理 **Xray**、**sing-box**、**Snell v4 / v5**；内置 VLESS Reality、Hysteria2（端口跳跃）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022 等开箱即用模板
+- **证书自动管理**：支持自签证书、本地证书文件，或由 sing-box 自动申请与续期（ACME HTTP / Cloudflare / 阿里云 DNS 验证）
+- **灵活中转与流量转发**：支持 TCP / UDP 端口转发、加密隧道转发与多跳链路（如 前置 → IX → 落地），内置 GOST / realm / nftables 转发引擎，支持入站白名单、Proxy Protocol 透传真实 IP 与按规则上下行统计
+- **外部节点与订阅源导入**：粘贴分享链接、Clash / sing-box / Surge 配置或远程订阅 URL，外部节点同样可对接中转、参与编排与分发
+- **Sub-Store 风格订阅系统**：通过「节点组」统一挑选、过滤、去重、改名、脚本加工，支持**独立勾选落地直连与中转线路**；多个订阅自由组合、按地区分组与链式代理；支持分享订阅（独立凭据、流量限额、到期自动断开，Xray Shadowsocks / SS2022 支持按订阅独立密码与计量）
+- **轻量多用户管理**：管理员可创建普通用户并分别分配中转隧道额度（流量上限、每月重置日、规则数上限、到期日）与关联订阅（中转与订阅额度分开计算）；普通用户登录后仅见精简门户（转发与我的订阅），超额/到期自动暂停、重置后自动恢复
+- **延迟监控与三网回程**：定时检测服务器至电信 / 联通 / 移动节点延迟与丢包，自动识别 CN2 GIA / 9929 / CMIN2 等回程路由，提供趋势图与 Telegram / Webhook 异常告警
+- **公开状态页与联邦共享**：内置免登录状态页（支持自定义主题，不暴露 IP 与协议细节）；支持跨面板联邦共享服务器端口与流量配额
+- **现代交互与中英双语**：电脑端与移动端 H5 自适应布局，支持深浅色主题与 **简体中文 / English 实时切换**；支持 Passkey 通行证密钥与 GitHub OAuth 登录、JSON / GitHub Gist 加密备份以及面板内一键检查更新与自升级
+
+---
+
+## 🧩 协议与客户端支持
+
+| 维度 | 支持范围 |
+| --- | --- |
+| **代理内核** | Xray-core · sing-box · Snell v4 / v5 |
+| **节点协议** | VLESS (Reality / Vision / WS / gRPC / xHTTP) · VMess · Trojan · Shadowsocks / SS2022 · Hysteria2 · TUIC · AnyTLS · NaïveProxy · ShadowTLS · Snell |
+| **转发引擎** | GOST（TCP / UDP / TLS / WS / WSS / mTLS 隧道）· realm · nftables |
+| **订阅格式** | 自动识别客户端：Clash / Mihomo · sing-box · Surge · Stash · Shadowrocket · Loon · Quantumult X · 通用 Base64（支持自定义模板） |
+| **数据库** | SQLite（开箱即用）· PostgreSQL |
+
+---
+
+## 🚀 快速部署
+
+### 1. 安装面板（需要 Docker）
 
 ```bash
 curl -L https://github.com/kure29/flyx/releases/latest/download/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
 
-选 `1. 安装面板`，完成后访问 `http://服务器IP:6366`，默认账号 `admin_user` / `admin_user`，登录后请立即修改密码。
+选择 `1. 安装面板`，安装完成后访问 `http://<服务器IP>:6366`：
+- 默认账号：`admin_user` / `admin_user`（首次登录会引导修改用户名与密码）
+- 后续可在面板 **设置 → 系统与升级** 中检查更新并一键升级
 
-agent：在面板 **服务器** 页新建服务器，复制生成的安装命令到服务器上执行。
+### 2. 接入服务器（Node Agent）
 
-更多说明见 [使用文档](https://kure29.github.io/flyx/)：[安装面板](https://kure29.github.io/flyx/guide/install) · [安装 agent](https://kure29.github.io/flyx/guide/agent) · [内核与协议](https://kure29.github.io/flyx/guide/kernels) · [新建入站](https://kure29.github.io/flyx/guide/nodes) · [对接中转](https://kure29.github.io/flyx/guide/relay) · [延迟与回程](https://kure29.github.io/flyx/guide/latency) · [订阅](https://kure29.github.io/flyx/guide/subscription) · [升级](https://kure29.github.io/flyx/guide/upgrade) · [常见问题](https://kure29.github.io/flyx/guide/faq)
+在面板 **服务器** 页点击「新建服务器」，复制自动生成的安装命令到目标服务器执行即可上线（支持 systemd 与 Docker 容器化部署）。
 
-## 许可
+### 3. 在线体验
 
-以 GPLv3 发布，见 [LICENSE](LICENSE)；所含第三方代码的来源与许可见 [NOTICE](NOTICE)。
+无需安装，直接打开 **[FLYX 在线演示](https://kure29.github.io/flyx/demo/)** —— 演示站支持右下角一键切换 **管理员 / 普通用户** 视角与 **中英文界面**（数据为浏览器端示例，刷新即还原）。
 
-## 免责声明
+---
 
-本项目仅供个人学习与研究使用，仅限合法、合规用途。使用者须确保其使用行为符合所在国家或地区的法律法规，并自行承担使用本项目带来的一切风险。作者不对因使用本项目导致的任何后果承担责任，亦不提供任何形式的担保。禁止将本项目用于网络攻击、数据窃取、非法访问等任何违法或未经授权的行为。
+## 📚 文档导航
 
+完整文档见 **[使用文档](https://kure29.github.io/flyx/)**：
 
-## ⭐ 喝杯咖啡！（USDT）
+- 入门：[基本概念](https://kure29.github.io/flyx/guide/concepts) · [快速上手](https://kure29.github.io/flyx/guide/getting-started) · [安装面板](https://kure29.github.io/flyx/guide/install) · [安装 Agent](https://kure29.github.io/flyx/guide/agent) · [服务器设置](https://kure29.github.io/flyx/guide/servers) · [升级指南](https://kure29.github.io/flyx/guide/upgrade)
+- 节点与中转：[内核与协议](https://kure29.github.io/flyx/guide/kernels) · [新建入站](https://kure29.github.io/flyx/guide/nodes) · [导入节点](https://kure29.github.io/flyx/guide/import) · [对接中转](https://kure29.github.io/flyx/guide/relay) · [延迟与回程](https://kure29.github.io/flyx/guide/latency)
+- 订阅与运维：[订阅与节点组](https://kure29.github.io/flyx/guide/subscription) · [凭据与流量限额](https://kure29.github.io/flyx/guide/subscription-users) · [公开状态页](https://kure29.github.io/flyx/guide/status-page) · [通知与备份](https://kure29.github.io/flyx/guide/backup) · [常见问题](https://kure29.github.io/flyx/guide/faq)
 
-| 网络       | 地址                                                                 |
-|------------|----------------------------------------------------------------------|
-| BNB(BEP20) | `0x736f077bb3717b467d3da1576828dd6cbe089015`                          |
-| TRC20      | `TWjh5CRZ2qe1NxzPgHWkwLA9zgMUfjijpH`                                  |
-| polygon    |  `0x736f077bb3717b467d3da1576828dd6cbe089015`    |
+---
 
+## 📄 许可与免责声明
+
+- 本项目以 **GPLv3** 协议开源，详见 [LICENSE](LICENSE)；第三方组件来源与许可见 [NOTICE](NOTICE)。
+- 本项目仅供个人学习与网络技术研究使用，仅限合法、合规用途。使用者须确保其使用行为符合所在国家或地区的法律法规，并自行承担使用本项目带来的一切风险。作者不对因使用本项目导致的任何后果承担责任，亦不提供任何形式的担保。禁止将本项目用于网络攻击、数据窃取、非法访问等任何违法或未经授权的行为。
+
+---
+
+## ⭐ 支持项目（USDT）
+
+如果 FLYX 对你有帮助，欢迎点一颗 ⭐ Star 或请作者喝杯咖啡：
+
+| 网络 | 地址 |
+| --- | --- |
+| **BNB (BEP20)** | `0x736f077bb3717b467d3da1576828dd6cbe089015` |
+| **TRC20** | `TWjh5CRZ2qe1NxzPgHWkwLA9zgMUfjijpH` |
+| **Polygon** | `0x736f077bb3717b467d3da1576828dd6cbe089015` |

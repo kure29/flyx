@@ -840,11 +840,8 @@ export default function NodePage({
     [handleCopyInstallCommand],
   );
 
-  const handleCopyCommand = async (command: string) => {
-    if (await copyWithToast(command, "安装命令已复制到剪贴板")) {
-      setInstallCommandModal(false);
-    }
-  };
+  const handleCopyCommand = async (command: string) =>
+    copyWithToast(command, "安装命令已复制到剪贴板");
 
   const loadReleasesByChannel = useCallback(async (channel: ReleaseChannel) => {
     setReleasesLoading(true);

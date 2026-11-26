@@ -3,9 +3,11 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -399,5 +401,98 @@ func TestSubTrafficSince(t *testing.T) {
 		if got := subTrafficSince(&c.s); got != c.want {
 			t.Fatalf("%+v: got %d, want %d", c.s, got, c.want)
 		}
+	}
+}
+
+func TestSubscriptionTagsPinAndBatch(t *testing.T) {
+	r, err := repo.Open(filepath.Join(t.TempDir(), "sub-batch.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	h := New(r, "secret")
+
+	post := func(fn func(http.ResponseWriter, *http.Request), body string) map[string]interface{} {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		fn(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+		var out map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode response %q: %v", rec.Body.String(), err)
+		}
+		if code, _ := out["code"].(float64); code != 0 {
+			t.Fatalf("unexpected error response: %s", rec.Body.String())
+		}
+		return out
+	}
+
+	g := &model.NodeGroup{Name: "拼车组", SourceAll: 1, CreatedTime: 1, UpdatedTime: 1}
+	if err := r.SaveNodeGroup(g); err != nil {
+		t.Fatalf("save group: %v", err)
+	}
+
+	// Create two subscriptions with pinned and tags (including Chinese comma + dupes).
+	res1 := post(h.subscriptionSave, fmt.Sprintf(`{"name":"车友A","groupIds":[%d],"pinned":true,"tags":["拼车，月付"," 拼车 ","VIP"]}`, g.ID))
+	data1 := res1["data"].(map[string]interface{})
+	id1 := int64(data1["id"].(float64))
+	if pinned, _ := data1["pinned"].(bool); !pinned {
+		t.Fatalf("expected pinned=true, got %+v", data1)
+	}
+	rawTags := data1["tags"].([]interface{})
+	if len(rawTags) != 3 || rawTags[0] != "拼车" || rawTags[1] != "月付" || rawTags[2] != "VIP" {
+		t.Fatalf("unexpected normalized tags: %+v", rawTags)
+	}
+
+	// Partial save omitting pinned & tags must preserve existing values.
+	res1b := post(h.subscriptionSave, fmt.Sprintf(`{"id":%d,"name":"车友A改名","groupIds":[%d]}`, id1, g.ID))
+	data1b := res1b["data"].(map[string]interface{})
+	if pinned, _ := data1b["pinned"].(bool); !pinned {
+		t.Fatalf("expected pinned preserved on partial save: %+v", data1b)
+	}
+	if len(data1b["tags"].([]interface{})) != 3 {
+		t.Fatalf("expected tags preserved on partial save: %+v", data1b["tags"])
+	}
+
+	res2 := post(h.subscriptionSave, fmt.Sprintf(`{"name":"车友B","groupIds":[%d]}`, g.ID))
+	id2 := int64(res2["data"].(map[string]interface{})["id"].(float64))
+
+	// Batch disable, extend-days, add-tag, remove-tag, pin/unpin.
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d,%d],"action":"disable"}`, id1, id2))
+	s1, _ := r.GetSubscription(id1)
+	s2, _ := r.GetSubscription(id2)
+	if s1.Enabled != 0 || s2.Enabled != 0 {
+		t.Fatalf("batch disable failed: s1=%d s2=%d", s1.Enabled, s2.Enabled)
+	}
+
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d,%d],"action":"enable"}`, id1, id2))
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d,%d],"action":"extend-days","days":30}`, id1, id2))
+	s1, _ = r.GetSubscription(id1)
+	if s1.ExpireTime <= time.Now().Add(29*24*time.Hour).UnixMilli() {
+		t.Fatalf("expected expireTime extended by ~30 days, got %d", s1.ExpireTime)
+	}
+	prevExp := s1.ExpireTime
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d],"action":"extend-days","days":30}`, id1))
+	s1, _ = r.GetSubscription(id1)
+	if s1.ExpireTime != prevExp+30*86400*1000 {
+		t.Fatalf("expected active expiry extended by exact 30d: got %d want %d", s1.ExpireTime, prevExp+30*86400*1000)
+	}
+
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d,%d],"action":"add-tag","tags":["续费提醒"]}`, id1, id2))
+	s2, _ = r.GetSubscription(id2)
+	if s2.Tags != "续费提醒" {
+		t.Fatalf("expected s2 tags=续费提醒, got %q", s2.Tags)
+	}
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d],"action":"remove-tag","tags":["VIP"]}`, id1))
+	s1, _ = r.GetSubscription(id1)
+	if strings.Contains(s1.Tags, "VIP") || !strings.Contains(s1.Tags, "续费提醒") {
+		t.Fatalf("unexpected s1 tags after add/remove: %q", s1.Tags)
+	}
+
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d],"action":"unpin"}`, id1))
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d],"action":"pin"}`, id2))
+	s1, _ = r.GetSubscription(id1)
+	s2, _ = r.GetSubscription(id2)
+	if s1.Pinned != 0 || s2.Pinned != 1 {
+		t.Fatalf("batch pin/unpin failed: s1=%d s2=%d", s1.Pinned, s2.Pinned)
 	}
 }

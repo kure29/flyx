@@ -54,6 +54,10 @@ type Subscription struct {
 	// the last reset; unix ms). 0 on subscriptions from before it was kept.
 	TrafficSince int64  `gorm:"column:traffic_since;not null;default:0"`
 	Remark       string `gorm:"type:text;not null;default:''"`
+	// Pinned floats key subscriptions (e.g. personal/landing) to the top.
+	Pinned int `gorm:"not null;default:0"`
+	// Tags is a comma-separated list of custom category tags (e.g. "拼车,月付").
+	Tags string `gorm:"type:text;not null;default:''"`
 	// UserID is the panel user the subscription is assigned to (0 = none):
 	// they see it under 订阅 in their panel and may reset its link.
 	UserID      int64 `gorm:"column:user_id;not null;default:0;index"`

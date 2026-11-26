@@ -100,7 +100,7 @@ func (r *Repository) exportInbounds() (*model.InboundsBackup, error) {
 		out.Subscriptions = append(out.Subscriptions, model.SubscriptionBackup{
 			ID: sub.ID, Name: sub.Name, Kind: sub.Kind, Token: sub.Token, UUID: sub.UUID, Password: sub.Password,
 			SourceAll: sub.SourceAll, InboundIDs: sub.InboundIDs, SourceIDs: sub.SourceIDs, GroupIDs: sub.GroupIDs, Options: sub.Options, ExpireTime: sub.ExpireTime,
-			Enabled: sub.Enabled, Remark: sub.Remark, Inx: sub.Inx, CreatedTime: sub.CreatedTime,
+			Enabled: sub.Enabled, Remark: sub.Remark, Pinned: sub.Pinned, Tags: sub.Tags, Inx: sub.Inx, CreatedTime: sub.CreatedTime,
 			UploadBytes: sub.UploadBytes, DownloadBytes: sub.DownloadBytes, TrafficLimit: sub.TrafficLimit,
 			ResetDay: sub.ResetDay, TrafficResetTime: sub.TrafficResetTime, TrafficSince: sub.TrafficSince, UserID: sub.UserID,
 		})
@@ -276,7 +276,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 		item := model.Subscription{
 			Name: sb.Name, Kind: sb.Kind, Token: sb.Token, UUID: sb.UUID, Password: sb.Password,
 			SourceAll: sb.SourceAll, InboundIDs: sb.InboundIDs, SourceIDs: sb.SourceIDs, GroupIDs: sb.GroupIDs, Options: sb.Options, ExpireTime: sb.ExpireTime,
-			Enabled: sb.Enabled, Remark: sb.Remark, Inx: sb.Inx, CreatedTime: sb.CreatedTime, UpdatedTime: now,
+			Enabled: sb.Enabled, Remark: sb.Remark, Pinned: sb.Pinned, Tags: sb.Tags, Inx: sb.Inx, CreatedTime: sb.CreatedTime, UpdatedTime: now,
 			UploadBytes: sb.UploadBytes, DownloadBytes: sb.DownloadBytes, TrafficLimit: sb.TrafficLimit,
 			ResetDay: sb.ResetDay, TrafficResetTime: sb.TrafficResetTime, TrafficSince: sb.TrafficSince, UserID: sb.UserID,
 		}

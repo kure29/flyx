@@ -7,6 +7,8 @@ import type {
 import axios from "axios";
 import toast from "react-hot-toast";
 
+import { t } from "@/i18n";
+
 /**
  * The online demo (VITE_DEMO=true builds, published with the docs): the
  * panel runs without a backend. Every API call is answered in the browser
@@ -14,6 +16,8 @@ import toast from "react-hot-toast";
  * (fixtures.json); changes report success but are not kept.
  */
 export const IS_DEMO = import.meta.env.VITE_DEMO === "true";
+
+export type DemoRole = "admin" | "user";
 
 type Entry = {
   key: string;
@@ -29,14 +33,33 @@ type Fixtures = {
 const demoToken = (sub: number, roleId: number, user: string) =>
   `demo.${btoa(JSON.stringify({ sub: String(sub), role_id: roleId, user, exp: 4102444800, iat: 1760000000 }))}.demo`;
 
-const SESSIONS: Record<"admin", Record<string, string>> = {
+const SESSIONS: Record<DemoRole, Record<string, string>> = {
   admin: {
     token: demoToken(1, 0, "admin_user"),
     role_id: "0",
     name: "admin_user",
     admin: "true",
   },
+  user: {
+    token: demoToken(2, 1, "xiaoming"),
+    role_id: "1",
+    name: "xiaoming",
+    admin: "false",
+  },
 };
+
+export function getDemoRole(): DemoRole {
+  return localStorage.getItem("role_id") === "1" ? "user" : "admin";
+}
+
+export function switchDemoRole(role: DemoRole) {
+  for (const [k, v] of Object.entries(SESSIONS[role])) {
+    localStorage.setItem(k, v);
+  }
+  // Demo uses HashRouter: move to the role's home route and reload to reset caches.
+  window.location.hash = role === "admin" ? "#/dashboard" : "#/forward";
+  window.location.reload();
+}
 
 /**
  * Writes report success without a stored result; the first word of the
@@ -145,6 +168,30 @@ async function answer(config: InternalAxiosRequestConfig) {
   const last = bare.split("/").pop() ?? "";
   const write = isWrite(last);
   const delta = Math.max(0, Date.now() - fixtures.recordedAt);
+  const role = getDemoRole();
+
+  if (bare === "node/install") {
+    const version = "3.10.1";
+    const addr = "panel.demo.flyx.dev:6365";
+    const secret = "demo8f2c4a9e1b7d3f6a0c5e2b8d4f1a";
+    const makeDocker = (priv: boolean) =>
+      `sh -c 'set -eu\nname=flyx-agent\ndata=/etc/flyx-agent\nimage=ghcr.io/kure29/flyx-agent:${version}\ndocker pull "$image"\ndocker rm -f "$name" 2>/dev/null || true\ndocker run -d --name "$name" --restart unless-stopped \\\n  --network host --cap-add NET_ADMIN${priv ? " --privileged" : ""} \\\n  -v "$data:/etc/flyx-agent" \\\n  -e FLYX_AGENT_ADDR="${addr}" \\\n  -e FLYX_AGENT_SECRET="${secret}" "$image"'`;
+    const makeCompose = (priv: boolean) =>
+      `mkdir -p /opt/docker/flyx-agent\ncat <<'EOF' > /opt/docker/flyx-agent/docker-compose.yaml\nservices:\n  flyx-agent:\n    image: ghcr.io/kure29/flyx-agent:${version}\n    container_name: flyx-agent\n    restart: unless-stopped\n    network_mode: host\n    cap_add:\n      - NET_ADMIN\n${priv ? "    privileged: true\n" : ""}    volumes:\n      - /etc/flyx-agent:/etc/flyx-agent\n    environment:\n      FLYX_AGENT_ADDR: "${addr}"\n      FLYX_AGENT_SECRET: "${secret}"\nEOF\nchmod 600 /opt/docker/flyx-agent/docker-compose.yaml\ndocker compose -f /opt/docker/flyx-agent/docker-compose.yaml up -d`;
+
+    return {
+      code: 0,
+      msg: "操作成功",
+      data: {
+        script: `curl -L https://github.com/kure29/flyx/releases/download/${version}/install.sh -o ./install.sh && chmod +x ./install.sh && VERSION=${version} ./install.sh -a ${addr} -s ${secret}`,
+        docker: makeDocker(false),
+        dockerPrivileged: makeDocker(true),
+        dockerCompose: makeCompose(false),
+        dockerComposePrivileged: makeCompose(true),
+      },
+      ts: Date.now(),
+    };
+  }
 
   if (PROBES[bare]) {
     const [list, field] = PROBES[bare];
@@ -169,13 +216,30 @@ async function answer(config: InternalAxiosRequestConfig) {
   }
   if (entries?.length && !write) {
     const hit = entries.find((e) => e.key === key) ?? entries[0];
+    const cloned = structuredClone(hit.res);
 
-    return shiftTimes(structuredClone(hit.res), fixtures.recordedAt, delta);
+    // Scope forwards & authorized tunnels when browsing as the demo user (xiaoming, id=2).
+    if (role === "user" && Array.isArray(cloned.data)) {
+      if (bare === "forward/list") {
+        cloned.data = (cloned.data as Array<{ userId?: number }>).filter(
+          (item) => item.userId === 2,
+        );
+      } else if (bare === "tunnel/user/tunnel") {
+        cloned.data = (cloned.data as Array<{ id?: number }>).filter(
+          (item) => item.id === 1 || item.id === 2,
+        );
+      }
+    }
+
+    return shiftTimes(cloned, fixtures.recordedAt, delta);
   }
   if (write) {
     if (Date.now() - lastNotice > 4000) {
       lastNotice = Date.now();
-      toast("演示站不会保存修改，刷新后还原", { icon: "ℹ️", id: "demo-write" });
+      toast(t("演示站不会保存修改，刷新后还原"), {
+        icon: "ℹ️",
+        id: "demo-write",
+      });
     }
     let echo: unknown = null;
 

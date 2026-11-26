@@ -1,6 +1,7 @@
 import { Languages } from "lucide-react";
 
 import { useI18n, type Locale } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 interface LanguageToggleProps {
   /**
@@ -26,7 +27,10 @@ export function LanguageToggle({
   if (variant === "segmented") {
     return (
       <div
-        className={`inline-flex gap-1 rounded-lg bg-default-100 p-1 ${className}`}
+        className={cn(
+          "inline-flex gap-1 rounded-lg bg-default-100 p-1",
+          className,
+        )}
         role="group"
       >
         {OPTIONS.map((opt) => {
@@ -56,7 +60,10 @@ export function LanguageToggle({
     return (
       <button
         aria-label={isEn ? "切换到中文" : "Switch to English"}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-full border border-divider bg-content1/85 px-3 text-xs font-medium text-default-600 shadow-xs backdrop-blur-md transition-[color,background-color,transform] duration-150 hover:bg-default-100 hover:text-foreground active:scale-95 dark:bg-default-50/85 ${className}`}
+        className={cn(
+          "inline-flex h-8 items-center gap-1.5 rounded-full border border-divider bg-content1/85 px-3 text-xs font-medium text-default-600 shadow-xs backdrop-blur-md transition-[color,background-color,transform] duration-150 hover:bg-default-100 hover:text-foreground active:scale-95 dark:bg-default-50/85",
+          className,
+        )}
         title={isEn ? "切换到中文" : "Switch to English"}
         type="button"
         onClick={toggleLocale}
@@ -70,7 +77,10 @@ export function LanguageToggle({
   return (
     <button
       aria-label={isEn ? "切换到中文" : "Switch to English"}
-      className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tracking-tight text-default-400 transition-[color,background-color,transform] duration-150 hover:bg-default-200/60 hover:text-foreground active:scale-90 dark:hover:bg-default-100 ${className}`}
+      className={cn(
+        "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tracking-tight text-default-400 transition-[color,background-color,transform] duration-150 hover:bg-default-200/60 hover:text-foreground active:scale-90 dark:hover:bg-default-100",
+        className,
+      )}
       title={isEn ? "切换到中文" : "Switch to English"}
       type="button"
       onClick={toggleLocale}

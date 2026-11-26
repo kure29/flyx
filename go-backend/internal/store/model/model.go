@@ -598,6 +598,8 @@ type SubscriptionBackup struct {
 	ExpireTime  int64  `json:"expireTime"`
 	Enabled     int    `json:"enabled"`
 	Remark      string `json:"remark"`
+	Pinned      int    `json:"pinned,omitempty"`
+	Tags        string `json:"tags,omitempty"`
 	Inx         int    `json:"inx"`
 	CreatedTime int64  `json:"createdTime"`
 	// Traffic (share subscriptions).
