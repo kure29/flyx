@@ -65,6 +65,7 @@ import {
   ToolbarButton,
 } from "@/components/page-kit";
 import { PageLoadingState } from "@/components/page-state";
+import { useI18n } from "@/i18n";
 import {
   markPageCached,
   pageCached,
@@ -1258,6 +1259,7 @@ function Editor({
 const PAGE = "subscription";
 
 export default function SubscriptionPage() {
+  const { t: tr } = useI18n();
   // A revisit shows the last data at once and reloads in the background.
   const [loading, setLoading] = useState(() => !pageCached(PAGE));
   const [subs, setSubs] = useCachedState<SubscriptionItem[]>(PAGE, "subs", []);
@@ -1644,10 +1646,14 @@ export default function SubscriptionPage() {
       <PageHeader
         description={
           tab === "subs"
-            ? "每个订阅一个链接：选节点组、分流和链式代理，客户端自动识别格式"
-            : "节点组：从自建、导入的节点和订阅源里挑选，筛选、改名后给订阅用，多个订阅可以共用"
+            ? tr(
+                "每个订阅一个链接：选节点组、分流和链式代理，客户端自动识别格式",
+              )
+            : tr(
+                "节点组：从自建、导入的节点和订阅源里挑选，筛选、改名后给订阅用，多个订阅可以共用",
+              )
         }
-        title="订阅"
+        title={tr("订阅")}
       />
 
       <TemplatesModal
@@ -1660,24 +1666,26 @@ export default function SubscriptionPage() {
 
       <PageTabs
         tabs={[
-          { key: "subs", label: "订阅", badge: subs.length },
-          { key: "groups", label: "节点组", badge: groups.length },
+          { key: "subs", label: tr("订阅"), badge: subs.length },
+          { key: "groups", label: tr("节点组"), badge: groups.length },
         ]}
         value={tab}
         onChange={setTab}
       />
       <PageToolbar
-        placeholder={tab === "subs" ? "搜索订阅名称或备注" : "搜索节点组名称"}
+        placeholder={
+          tab === "subs" ? tr("搜索订阅名称或备注") : tr("搜索节点组名称")
+        }
         primary={
           tab === "subs"
             ? {
                 key: "create",
-                label: "新建订阅",
+                label: tr("新建订阅"),
                 onPress: () => setDraft(draftFrom(undefined, sources)),
               }
             : {
                 key: "create-group",
-                label: "新建节点组",
+                label: tr("新建节点组"),
                 onPress: () => setGroupDraft(groupDraftFrom()),
               }
         }
@@ -1686,7 +1694,7 @@ export default function SubscriptionPage() {
       >
         <ToolbarButton onPress={() => setTemplatesOpen(true)}>
           <LayoutTemplate className="h-3.5 w-3.5" />
-          模板
+          {tr("模板")}
           {templates.length > 0 && (
             <span className="tabular-nums text-default-400">
               {templates.length}
@@ -1707,8 +1715,10 @@ export default function SubscriptionPage() {
         <EmptyHint
           text={
             inbounds.length === 0
-              ? "还没有节点。先在“节点”里搭建或导入，订阅里才会有内容"
-              : "每个订阅一个链接，有独立凭据：可以设到期和流量上限，停用后自动断开"
+              ? tr("还没有节点。先在“节点”里搭建或导入，订阅里才会有内容")
+              : tr(
+                  "每个订阅一个链接，有独立凭据：可以设到期和流量上限，停用后自动断开",
+                )
           }
         />
       ) : (
@@ -1737,7 +1747,7 @@ export default function SubscriptionPage() {
                     {detail.name}
                   </h2>
                   <p className="text-small font-normal text-default-500">
-                    {detail.nodeCount} 个节点
+                    {tr("{count} 个节点", { count: detail.nodeCount })}
                     {detail.expireTime
                       ? ` · ${expiryLabel(detail.expireTime)}`
                       : ""}
@@ -1753,7 +1763,7 @@ export default function SubscriptionPage() {
                         <span className="text-default-500">
                           {detail.trafficLimit
                             ? ` / ${formatTraffic(detail.trafficLimit)}`
-                            : " · 不限流量"}
+                            : tr(" · 不限流量")}
                         </span>
                       </span>
                       <Button
@@ -1766,7 +1776,7 @@ export default function SubscriptionPage() {
                         variant="flat"
                         onPress={resetTraffic}
                       >
-                        重置流量
+                        {tr("重置流量")}
                       </Button>
                     </div>
                     {detail.trafficLimit > 0 && (
@@ -1776,20 +1786,22 @@ export default function SubscriptionPage() {
                       className={`text-xs ${detail.overQuota ? "text-danger" : "text-default-500"}`}
                     >
                       {detail.overQuota
-                        ? "流量已用完，已从服务器上断开"
+                        ? tr("流量已用完，已从服务器上断开")
                         : [
                             `↑ ${formatTraffic(detail.uploadBytes)} ↓ ${formatTraffic(detail.downloadBytes)}`,
                             `${new Date(detail.trafficSince).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })} 起`,
                             detail.resetDay
-                              ? `每月 ${detail.resetDay} 号重置`
-                              : "不自动重置",
+                              ? tr("每月 {day} 号重置", {
+                                  day: detail.resetDay,
+                                })
+                              : tr("不自动重置"),
                           ].join(" · ")}
                     </p>
                   </div>
                   <Segmented
                     options={[
-                      ["import", "导入"],
-                      ["traffic", "流量统计"],
+                      ["import", tr("导入")],
+                      ["traffic", tr("流量统计")],
                     ]}
                     value={detailTab}
                     onChange={setDetailTab}
@@ -1805,17 +1817,17 @@ export default function SubscriptionPage() {
                           size="sm"
                           startContent={<Copy className="h-3.5 w-3.5" />}
                           onPress={() =>
-                            copyText(url(detail), "订阅链接已复制")
+                            copyText(url(detail), tr("订阅链接已复制"))
                           }
                         >
-                          复制订阅链接（自动识别客户端）
+                          {tr("复制订阅链接（自动识别客户端）")}
                         </Button>
                         <Button
                           isIconOnly
                           aria-expanded={qrFor === detail.id}
-                          aria-label="订阅二维码"
+                          aria-label={tr("订阅二维码")}
                           size="sm"
-                          title="订阅二维码"
+                          title={tr("订阅二维码")}
                           variant={qrFor === detail.id ? "flat" : "bordered"}
                           onPress={() =>
                             setQrFor((id) =>
@@ -1830,7 +1842,7 @@ export default function SubscriptionPage() {
                         <div className="flex flex-col items-center gap-2 py-2">
                           <QrImage text={url(detail)} />
                           <p className="text-xs text-default-400">
-                            用客户端扫码导入（自动识别客户端格式）
+                            {tr("用客户端扫码导入（自动识别客户端格式）")}
                           </p>
                         </div>
                       )}
@@ -1870,7 +1882,7 @@ export default function SubscriptionPage() {
                     variant="light"
                     onPress={() => setConfirm("delete")}
                   >
-                    删除
+                    {tr("删除")}
                   </Button>
                   <Button
                     color="warning"
@@ -1878,7 +1890,7 @@ export default function SubscriptionPage() {
                     variant="light"
                     onPress={() => setConfirm("reset")}
                   >
-                    重置链接和凭据
+                    {tr("重置链接和凭据")}
                   </Button>
                   <Button
                     color="primary"
@@ -1890,7 +1902,7 @@ export default function SubscriptionPage() {
                       setDraft(draftFrom(s));
                     }}
                   >
-                    编辑
+                    {tr("编辑")}
                   </Button>
                 </ModalFooter>
               </>
@@ -1971,26 +1983,28 @@ export default function SubscriptionPage() {
                 <h2
                   className={`text-lg font-bold ${confirm === "delete" ? "text-danger" : ""}`}
                 >
-                  {confirm === "reset" ? "重置链接" : "删除订阅"}
+                  {confirm === "reset" ? tr("重置链接") : tr("删除订阅")}
                 </h2>
               </ModalHeader>
               <ModalBody>
                 <p className="text-sm text-default-600">
                   {confirm === "reset"
-                    ? "旧链接和已导入的配置会立即失效，需要用新链接重新导入。"
-                    : "订阅链接立即失效，无法恢复。"}
+                    ? tr(
+                        "旧链接和已导入的配置会立即失效，需要用新链接重新导入。",
+                      )
+                    : tr("订阅链接立即失效，无法恢复。")}
                 </p>
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>
-                  取消
+                  {tr("取消")}
                 </Button>
                 <Button
                   color={confirm === "delete" ? "danger" : "warning"}
                   isLoading={saving}
                   onPress={runConfirm}
                 >
-                  {confirm === "delete" ? "删除" : "重置"}
+                  {confirm === "delete" ? tr("删除") : tr("重置")}
                 </Button>
               </ModalFooter>
             </>

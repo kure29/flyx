@@ -19,13 +19,15 @@ export function Provider({ children }: ProvidersProps) {
         <Toaster
           position="top-center"
           toastOptions={{
-            duration: 2000,
-            // Plain toasts; the icon carries success / error.
+            duration: 2400,
             style: {
               background: "var(--content1)",
               color: "var(--foreground)",
               border: "1px solid var(--divider)",
-              boxShadow: "none",
+              borderRadius: "10px",
+              padding: "10px 14px",
+              boxShadow:
+                "0 8px 24px -4px rgb(0 0 0 / 0.12), 0 2px 6px -1px rgb(0 0 0 / 0.06)",
               fontSize: "14px",
             },
           }}

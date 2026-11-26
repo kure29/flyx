@@ -41,6 +41,7 @@ import { LatencyTrendModal } from "@/components/lazy-charts";
 import { LatencyTargetsModal } from "@/pages/node/latency-targets-modal";
 import { PageLoadingState } from "@/components/page-state";
 import { ActionSheet } from "@/components/action-sheet";
+import { useI18n } from "@/i18n";
 import {
   EmptyHint,
   PageHeader,
@@ -140,6 +141,7 @@ export default function NodePage({
   /** Opens a node's history charts and service monitors. */
   onOpenMonitor?: (nodeId: number) => void;
 }) {
+  const { t: tr } = useI18n();
   // A revisit shows the last data at once and reloads in the background;
   // live metrics then arrive over the WebSocket as usual.
   const [nodeList, setNodeList] = useCachedState<Node[]>(PAGE, "nodes", []);
@@ -1491,16 +1493,24 @@ export default function NodePage({
     <PageShell embedded={embedded}>
       {!embedded && (
         <PageHeader
-          description="装了 agent 的机器：搭建节点和中转、看状态和监控"
-          primary={{ key: "add", label: "新建服务器", onPress: handleAdd }}
-          title="服务器"
+          description={tr("装了 agent 的机器：搭建节点和中转、看状态和监控")}
+          primary={{ key: "add", label: tr("新建服务器"), onPress: handleAdd }}
+          title={tr("服务器")}
         />
       )}
       {remoteNodes.length > 0 && (
         <PageTabs
           tabs={[
-            { key: "local", label: "本地服务器", badge: localNodes.length },
-            { key: "remote", label: "远程服务器", badge: remoteNodes.length },
+            {
+              key: "local",
+              label: tr("本地服务器"),
+              badge: localNodes.length,
+            },
+            {
+              key: "remote",
+              label: tr("远程服务器"),
+              badge: remoteNodes.length,
+            },
           ]}
           value={activeTab}
           onChange={setActiveTab}
@@ -1512,13 +1522,13 @@ export default function NodePage({
           actions={[
             {
               key: "upgrade",
-              label: "升级",
+              label: tr("升级"),
               disabled: !canBatchUpgrade || batchUpgradeLoading,
               onPress: () => openUpgradeModal("batch"),
             },
             {
               key: "targets",
-              label: "测试点",
+              label: tr("测试点"),
               disabled: !displayNodes.some(
                 (n) => selectedIds.has(n.id) && n.isRemote !== 1,
               ),
@@ -1531,7 +1541,7 @@ export default function NodePage({
             },
             {
               key: "delete",
-              label: "删除",
+              label: tr("删除"),
               danger: true,
               onPress: () => setBatchDeleteModalOpen(true),
             },
@@ -1555,17 +1565,19 @@ export default function NodePage({
           more={[
             {
               key: "batch",
-              label: "批量操作",
+              label: tr("批量操作"),
               disabled: displayNodes.length === 0,
               onPress: toggleSelectMode,
             },
           ]}
           placeholder={
-            activeTab === "remote" ? "搜索远程服务器名称或 IP" : "搜索名称或 IP"
+            activeTab === "remote"
+              ? tr("搜索远程服务器名称或 IP")
+              : tr("搜索名称或 IP")
           }
           primary={
             embedded
-              ? { key: "add", label: "新建服务器", onPress: handleAdd }
+              ? { key: "add", label: tr("新建服务器"), onPress: handleAdd }
               : undefined
           }
           search={currentSearchKeyword}
@@ -1576,7 +1588,7 @@ export default function NodePage({
               active={nodeFilterMode !== "all"}
               onPress={() => setIsFilterModalOpen(true)}
             >
-              {nodeFilterMode !== "all" ? "已筛选" : "筛选"}
+              {nodeFilterMode !== "all" ? tr("已筛选") : tr("筛选")}
             </ToolbarButton>
           )}
         </PageToolbar>
@@ -1584,9 +1596,12 @@ export default function NodePage({
 
       {activeTab === "local" && nodeGroups.length > 0 && (
         // The admin's 分组: pick one to list only its servers.
-        <nav aria-label="按分组筛选" className="mb-2 flex flex-wrap gap-1.5">
+        <nav
+          aria-label={tr("按分组筛选")}
+          className="mb-2 flex flex-wrap gap-1.5"
+        >
           {[
-            ["", "全部", localNodes.length] as const,
+            ["", tr("全部"), localNodes.length] as const,
             ...nodeGroups.map(
               (g) =>
                 [
@@ -1597,7 +1612,7 @@ export default function NodePage({
             ),
             [
               NO_GROUP,
-              "未分组",
+              tr("未分组"),
               localNodes.filter((n) => !n.group?.trim()).length,
             ] as const,
           ]
@@ -1628,10 +1643,10 @@ export default function NodePage({
           color="warning"
           description={
             wsConnecting
-              ? "监控连接中..."
+              ? tr("监控连接中...")
               : usingPollingFallback
-                ? "监控连接已断开，已切换为列表自动刷新兜底模式。"
-                : "监控连接已断开，正在重连..."
+                ? tr("监控连接已断开，已切换为列表自动刷新兜底模式。")
+                : tr("监控连接已断开，正在重连...")
           }
           variant="flat"
         />
@@ -1641,17 +1656,19 @@ export default function NodePage({
         <PageLoadingState message="正在加载..." />
       ) : nodeList.length === 0 ? (
         <EmptyHint
-          action={{ key: "add", label: "新建服务器", onPress: handleAdd }}
-          text="还没有服务器。新建后在服务器上运行安装命令，服务器就会连上面板"
+          action={{ key: "add", label: tr("新建服务器"), onPress: handleAdd }}
+          text={tr(
+            "还没有服务器。新建后在服务器上运行安装命令，服务器就会连上面板",
+          )}
         />
       ) : displayNodes.length === 0 ? (
         <EmptyHint
           text={
             isDisplayFiltered
-              ? "没有匹配的服务器"
+              ? tr("没有匹配的服务器")
               : activeTab === "remote"
-                ? "暂无远程服务器"
-                : "暂无本地服务器"
+                ? tr("暂无远程服务器")
+                : tr("暂无本地服务器")
           }
         />
       ) : (

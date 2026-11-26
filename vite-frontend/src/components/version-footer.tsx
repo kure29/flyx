@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { siteConfig } from "@/config/site";
+import { useI18n } from "@/i18n";
 import {
   UPDATE_CHANNEL_CHANGED_EVENT,
   type UpdateReleaseChannel,
@@ -26,6 +27,7 @@ export function VersionFooter({
   poweredClassName,
   updateBadgeClassName,
 }: VersionFooterProps) {
+  const { t } = useI18n();
   const [channel, setChannel] = useState<UpdateReleaseChannel>(
     getUpdateReleaseChannel(),
   );
@@ -92,9 +94,9 @@ export function VersionFooter({
           <span
             className={updateBadgeClassName}
             role="status"
-            title={`有新版本 ${latestUpdateVersion}`}
+            title={t("有新版本 {version}", { version: latestUpdateVersion })}
           >
-            可升级 {latestUpdateVersion}
+            {t("可升级 {version}", { version: latestUpdateVersion })}
           </span>
         )}
       </p>

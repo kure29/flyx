@@ -6,6 +6,7 @@ import {
   Fingerprint,
   Github,
   KeyRound,
+  Languages,
   LogOut,
   Settings,
   Share2,
@@ -23,6 +24,7 @@ import {
   useDisclosure,
 } from "@/shadcn-bridge/heroui/modal";
 import { Input } from "@/shadcn-bridge/heroui/input";
+import { useI18n } from "@/i18n";
 import { isAdmin } from "@/utils/auth";
 import { isWebViewFunc } from "@/utils/panel";
 import { siteConfig } from "@/config/site";
@@ -177,6 +179,7 @@ function writeLoginCache(patch: Partial<LoginCache>) {
 export default function ProfilePage() {
   const navigate = useNavigate();
   const isH5 = useH5Mode();
+  const { isEn, toggleLocale, t } = useI18n();
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
   const [username, setUsername] = useState("");
   const [passwordLoading, setPasswordLoading] = useState(false);
@@ -243,22 +246,22 @@ export default function ProfilePage() {
   const shortcuts: RowItem[] = [
     {
       key: "/user",
-      label: "用户管理",
-      description: "分配中转隧道与订阅",
+      label: t("用户管理"),
+      description: t("分配中转隧道与订阅"),
       icon: Users,
       onPress: go("/user"),
     },
     {
       key: "/panel-sharing",
-      label: "面板共享",
-      description: "与其他面板联邦共享",
+      label: t("面板共享"),
+      description: t("与其他面板联邦共享"),
       icon: Share2,
       onPress: go("/panel-sharing"),
     },
     {
       key: "/config",
-      label: "网站配置",
-      description: "站点、登录与备份",
+      label: t("网站配置"),
+      description: t("站点、登录与备份"),
       icon: Settings,
       onPress: go("/config"),
     },
@@ -272,32 +275,32 @@ export default function ProfilePage() {
   // 密码表单验证
   const validatePasswordForm = (): boolean => {
     if (!passwordForm.newUsername.trim()) {
-      toast.error("请输入新用户名");
+      toast.error(t("请输入新用户名"));
 
       return false;
     }
     if (passwordForm.newUsername.length < 3) {
-      toast.error("用户名长度至少3位");
+      toast.error(t("用户名长度至少3位"));
 
       return false;
     }
     if (!passwordForm.currentPassword) {
-      toast.error("请输入当前密码");
+      toast.error(t("请输入当前密码"));
 
       return false;
     }
     if (!passwordForm.newPassword) {
-      toast.error("请输入新密码");
+      toast.error(t("请输入新密码"));
 
       return false;
     }
     if (passwordForm.newPassword.length < 6) {
-      toast.error("新密码长度不能少于6位");
+      toast.error(t("新密码长度不能少于6位"));
 
       return false;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error("两次输入密码不一致");
+      toast.error(t("两次输入密码不一致"));
 
       return false;
     }
@@ -314,14 +317,14 @@ export default function ProfilePage() {
       const response = await updatePassword(passwordForm);
 
       if (response.code === 0) {
-        toast.success("密码修改成功，请重新登录");
+        toast.success(t("密码修改成功，请重新登录"));
         onOpenChange();
         handleLogout();
       } else {
-        toast.error(response.msg || "密码修改失败");
+        toast.error(response.msg || t("密码修改失败"));
       }
     } catch {
-      toast.error("修改密码时发生错误");
+      toast.error(t("修改密码时发生错误"));
     } finally {
       setPasswordLoading(false);
     }
@@ -337,11 +340,23 @@ export default function ProfilePage() {
     });
   };
 
+  const preferenceItems: RowItem[] = [
+    {
+      key: "language",
+      label: t("界面语言"),
+      description: t("切换面板显示语言，立即生效"),
+      status: isEn ? "English" : "简体中文",
+      active: true,
+      icon: Languages,
+      onPress: toggleLocale,
+    },
+  ];
+
   const securityItems: SecurityItem[] = [
     {
       key: "password",
-      label: "用户名与密码",
-      description: "修改登录用的用户名和密码，改完需要重新登录",
+      label: t("用户名与密码"),
+      description: t("修改登录用的用户名和密码，改完需要重新登录"),
       status: username,
       icon: KeyRound,
       onPress: onOpen,
@@ -350,9 +365,12 @@ export default function ProfilePage() {
       ? [
           {
             key: "passkey",
-            label: "通行证密钥",
-            description: "用指纹、面容或设备密码登录，不用输入密码",
-            status: passkeyCount > 0 ? `${passkeyCount} 个` : "未设置",
+            label: t("通行证密钥"),
+            description: t("用指纹、面容或设备密码登录，不用输入密码"),
+            status:
+              passkeyCount > 0
+                ? t("{count} 个", { count: passkeyCount })
+                : t("未设置"),
             active: passkeyCount > 0,
             icon: Fingerprint,
             onPress: () => setOpenLogin("passkey"),
@@ -365,9 +383,11 @@ export default function ProfilePage() {
       ? [
           {
             key: "github",
-            label: "GitHub 登录",
-            description: "在登录页用 GitHub 账号一键登录",
-            status: github.bound ? `已绑定 ${github.login}` : "未绑定",
+            label: t("GitHub 登录"),
+            description: t("在登录页用 GitHub 账号一键登录"),
+            status: github.bound
+              ? t("已绑定 {login}", { login: github.login ?? "" })
+              : t("未绑定"),
             active: github.bound,
             icon: Github,
             onPress: () => setOpenLogin("github"),
@@ -387,7 +407,7 @@ export default function ProfilePage() {
           {username}
         </span>
         <span className="block text-[13px] text-default-500">
-          {admin ? "管理员" : "普通用户"}
+          {admin ? t("管理员") : t("普通用户")}
         </span>
       </span>
     </div>
@@ -395,7 +415,7 @@ export default function ProfilePage() {
     <div className="flex items-baseline justify-between gap-3 border-b border-divider px-1 pb-3">
       <span className="truncate text-sm">{username}</span>
       <span className="shrink-0 text-xs text-default-400">
-        {admin ? "管理员" : "普通用户"}
+        {admin ? t("管理员") : t("普通用户")}
       </span>
     </div>
   );
@@ -406,7 +426,7 @@ export default function ProfilePage() {
       onClick={handleLogout}
     >
       {!isH5 && <LogOut className="h-4 w-4 shrink-0" strokeWidth={1.75} />}
-      退出登录
+      {t("退出登录")}
     </button>
   );
 
@@ -414,13 +434,24 @@ export default function ProfilePage() {
     <div className="flex min-h-full flex-col px-4 py-6 lg:px-10 lg:py-8">
       <div className="mx-auto w-full max-w-2xl flex-1">
         <PageHeader
-          description={isH5 ? undefined : "你的账户和登录方式"}
-          title={isH5 ? (admin ? "更多" : "我的") : "账户与登录"}
+          description={isH5 ? undefined : t("你的账户和登录方式")}
+          title={isH5 ? (admin ? t("更多") : t("我的")) : t("账户与登录")}
         />
         <div className={isH5 ? "space-y-6" : "space-y-8"}>
           {account}
-          {isH5 && admin && <RowGroup tiles items={shortcuts} title="管理" />}
-          <RowGroup items={securityItems} tiles={isH5} title="登录与安全" />
+          {isH5 && admin && (
+            <RowGroup tiles items={shortcuts} title={t("管理")} />
+          )}
+          <RowGroup
+            items={preferenceItems}
+            tiles={isH5}
+            title={t("偏好设置")}
+          />
+          <RowGroup
+            items={securityItems}
+            tiles={isH5}
+            title={t("登录与安全")}
+          />
           {logoutRow}
         </div>
       </div>
@@ -469,13 +500,13 @@ export default function ProfilePage() {
           {(onClose: () => void) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                修改密码
+                {t("修改密码")}
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
                   <Input
-                    label="新用户名"
-                    placeholder="请输入新用户名（至少3位）"
+                    label={t("新用户名")}
+                    placeholder={t("请输入新用户名（至少3位）")}
                     value={passwordForm.newUsername}
                     variant="bordered"
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -486,8 +517,8 @@ export default function ProfilePage() {
                     }
                   />
                   <Input
-                    label="当前密码"
-                    placeholder="请输入当前密码"
+                    label={t("当前密码")}
+                    placeholder={t("请输入当前密码")}
                     type="password"
                     value={passwordForm.currentPassword}
                     variant="bordered"
@@ -499,8 +530,8 @@ export default function ProfilePage() {
                     }
                   />
                   <Input
-                    label="新密码"
-                    placeholder="请输入新密码（至少6位）"
+                    label={t("新密码")}
+                    placeholder={t("请输入新密码（至少6位）")}
                     type="password"
                     value={passwordForm.newPassword}
                     variant="bordered"
@@ -512,8 +543,8 @@ export default function ProfilePage() {
                     }
                   />
                   <Input
-                    label="确认密码"
-                    placeholder="请再次输入新密码"
+                    label={t("确认密码")}
+                    placeholder={t("请再次输入新密码")}
                     type="password"
                     value={passwordForm.confirmPassword}
                     variant="bordered"
@@ -528,14 +559,14 @@ export default function ProfilePage() {
               </ModalBody>
               <ModalFooter>
                 <Button color="default" variant="light" onPress={onClose}>
-                  取消
+                  {t("取消")}
                 </Button>
                 <Button
                   color="primary"
                   isLoading={passwordLoading}
                   onPress={handlePasswordSubmit}
                 >
-                  修改密码
+                  {t("修改密码")}
                 </Button>
               </ModalFooter>
             </>

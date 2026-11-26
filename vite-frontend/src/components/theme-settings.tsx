@@ -14,6 +14,7 @@ import toast from "react-hot-toast";
 
 import { Card, CardBody } from "@/shadcn-bridge/heroui/card";
 import { Button } from "@/shadcn-bridge/heroui/button";
+import { useI18n } from "@/i18n";
 import { useThemeContext } from "@/themes/context";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -36,36 +37,38 @@ export const ThemeSettings: React.FC = () => {
     resetTheme,
     setMode,
   } = useThemeContext();
+  const { t } = useI18n();
 
   const handleModeChange = (m: ThemeMode) => {
     setMode(m);
-    const label = m === "light" ? "亮色" : m === "dark" ? "暗色" : "跟随系统";
+    const label =
+      m === "light" ? t("亮色") : m === "dark" ? t("暗色") : t("跟随系统");
 
-    toast.success(`已切换为${label}模式`);
+    toast.success(t("已切换为{label}模式", { label }));
   };
 
   const handleThemeSelect = (id: string) => {
     switchTheme(id);
-    const theme = themes.find((t) => t.id === id);
+    const theme = themes.find((th) => th.id === id);
 
-    toast.success(`已切换主题「${theme?.name ?? id}」`);
+    toast.success(t("已切换主题「{name}」", { name: theme?.name ?? id }));
   };
 
   const handleReset = () => {
     resetTheme();
-    toast.success("已恢复默认主题");
+    toast.success(t("已恢复默认主题"));
   };
 
   return (
     <Card>
       <CardBody className="p-6">
         <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-5">
-          主题设置
+          {t("主题设置")}
         </h2>
 
         {/* ── Mode toggle ────────────────────────────────────── */}
         <div className="mb-6">
-          <p className="mb-2 text-sm">外观模式</p>
+          <p className="mb-2 text-sm">{t("外观模式")}</p>
           <div className="inline-flex gap-1">
             {MODE_OPTIONS.map((opt) => (
               <button
@@ -78,7 +81,7 @@ export const ThemeSettings: React.FC = () => {
                 type="button"
                 onClick={() => handleModeChange(opt.value)}
               >
-                {opt.label}
+                {t(opt.label)}
               </button>
             ))}
           </div>
@@ -87,9 +90,9 @@ export const ThemeSettings: React.FC = () => {
         {/* ── Theme grid ─────────────────────────────────────── */}
         <div className="mb-4">
           <p className="mb-2 text-sm">
-            选择主题
+            {t("选择主题")}
             <span className="ml-2 text-xs text-default-400">
-              共 {themes.length} 个可用主题
+              {t("共 {count} 个可用主题", { count: themes.length })}
             </span>
           </p>
 
@@ -142,7 +145,7 @@ export const ThemeSettings: React.FC = () => {
                       </p>
                       {isActive && (
                         <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary">
-                          当前
+                          {t("当前")}
                         </span>
                       )}
                     </div>
@@ -175,7 +178,7 @@ export const ThemeSettings: React.FC = () => {
               variant="light"
               onPress={handleReset}
             >
-              ↩ 恢复默认主题
+              ↩ {t("恢复默认主题")}
             </Button>
           </div>
         )}

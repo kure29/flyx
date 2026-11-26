@@ -38,6 +38,7 @@ import {
   ModalHeader,
 } from "@/shadcn-bridge/heroui/modal";
 import { Switch } from "@/shadcn-bridge/heroui/switch";
+import { useI18n } from "@/i18n";
 import {
   formatTraffic,
   parseTrafficInput,
@@ -108,6 +109,7 @@ function userRowStatus(u: UserApiItem): RowStatus {
 }
 
 export default function UserPage() {
+  const { t } = useI18n();
   const [users, setUsers] = useState<UserApiItem[]>([]);
   const [tunnels, setTunnels] = useState<TunnelApiItem[]>([]);
   const [subs, setSubs] = useState<SubscriptionItem[]>([]);
@@ -137,11 +139,11 @@ export default function UserPage() {
         setSubs(sRes.data.items);
       }
     } catch {
-      toast.error("加载用户列表失败");
+      toast.error(t("加载用户列表失败"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void loadAll();
@@ -183,17 +185,17 @@ export default function UserPage() {
     const username = form.user.trim();
 
     if (!username) {
-      toast.error("请填写用户名");
+      toast.error(t("请填写用户名"));
 
       return;
     }
     if (!form.id && form.pwd.length < 6) {
-      toast.error("密码长度至少为 6 位");
+      toast.error(t("密码长度至少为 6 位"));
 
       return;
     }
     if (form.id && form.pwd && form.pwd.length < 6) {
-      toast.error("新密码长度至少为 6 位");
+      toast.error(t("新密码长度至少为 6 位"));
 
       return;
     }
@@ -205,7 +207,7 @@ export default function UserPage() {
       const parsed = parseTrafficInput(form.flowInput, form.flowUnit);
 
       if (parsed === null || parsed < 0) {
-        toast.error("流量上限格式不正确");
+        toast.error(t("流量上限格式不正确"));
 
         return;
       }
@@ -233,15 +235,15 @@ export default function UserPage() {
         : await createUser(payload);
 
       if (res.code !== 0) {
-        toast.error(res.msg || "保存失败");
+        toast.error(res.msg || t("保存失败"));
 
         return;
       }
-      toast.success(form.id ? "已保存" : "用户已创建");
+      toast.success(form.id ? t("已保存") : t("用户已创建"));
       setModalOpen(false);
       await loadAll();
     } catch {
-      toast.error("保存失败");
+      toast.error(t("保存失败"));
     } finally {
       setSaving(false);
     }
@@ -252,15 +254,15 @@ export default function UserPage() {
       const res = await resetUserFlow({ id: u.id });
 
       if (res.code !== 0) {
-        toast.error(res.msg || "重置流量失败");
+        toast.error(res.msg || t("重置流量失败"));
 
         return;
       }
-      toast.success("已重置中转流量，符合条件的转发已自动恢复");
+      toast.success(t("已重置中转流量，符合条件的转发已自动恢复"));
       setSheetUser(null);
       await loadAll();
     } catch {
-      toast.error("重置流量失败");
+      toast.error(t("重置流量失败"));
     }
   };
 
@@ -280,15 +282,15 @@ export default function UserPage() {
       });
 
       if (res.code !== 0) {
-        toast.error(res.msg || "操作失败");
+        toast.error(res.msg || t("操作失败"));
 
         return;
       }
-      toast.success(nextStatus === 1 ? "已启用" : "已停用并暂停其转发");
+      toast.success(nextStatus === 1 ? t("已启用") : t("已停用并暂停其转发"));
       setSheetUser(null);
       await loadAll();
     } catch {
-      toast.error("操作失败");
+      toast.error(t("操作失败"));
     }
   };
 
@@ -298,20 +300,20 @@ export default function UserPage() {
       const res = await deleteUser(deleteTarget.id);
 
       if (res.code !== 0) {
-        toast.error(res.msg || "删除失败");
+        toast.error(res.msg || t("删除失败"));
 
         return;
       }
-      toast.success("用户已删除");
+      toast.success(t("用户已删除"));
       setDeleteTarget(null);
       setSheetUser(null);
       await loadAll();
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
     }
   };
 
-  const tunnelNameById = new Map(tunnels.map((t) => [t.id, t.name]));
+  const tunnelNameById = new Map(tunnels.map((item) => [item.id, item.name]));
   const subNameById = new Map(subs.map((s) => [s.id, s.name]));
 
   if (loading && users.length === 0) {
@@ -325,39 +327,44 @@ export default function UserPage() {
   return (
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
       <PageHeader
-        description="为其他用户分配中转隧道额度与分享订阅"
+        description={t("为其他用户分配中转隧道额度与分享订阅")}
         primary={{
           key: "create-user",
-          label: "新建用户",
+          label: t("新建用户"),
           icon: <Plus className="w-4 h-4" />,
           onPress: openCreate,
         }}
-        title="用户"
+        title={t("用户")}
       />
 
       {users.length === 0 ? (
         <EmptyHint
           action={{
             key: "create-user",
-            label: "新建用户",
+            label: t("新建用户"),
             onPress: openCreate,
           }}
-          text="还没有普通用户，点击右上角新建用户并分配隧道或订阅。"
+          text={t("还没有普通用户，点击右上角新建用户并分配隧道或订阅。")}
         />
       ) : (
-        <ListGroup count={users.length} title="普通用户">
+        <ListGroup count={users.length} title={t("普通用户")}>
           {users.map((u) => {
             const used = u.inFlow + u.outFlow;
             const flowLabel =
               u.flowLimitBytes > 0
                 ? `${formatTraffic(used)} / ${formatTraffic(u.flowLimitBytes)}`
-                : `${formatTraffic(used)} / 不限`;
+                : `${formatTraffic(used)} / ${t("不限")}`;
             const ruleLabel =
               u.num > 0
-                ? `${u.forwardCount} / ${u.num} 条规则`
-                : `${u.forwardCount} 条规则`;
+                ? t("{count} / {max} 条规则", {
+                    count: u.forwardCount,
+                    max: u.num,
+                  })
+                : t("{count} 条规则", { count: u.forwardCount });
             const expLabel =
-              u.expTime > 0 ? `到期 ${formatDate(u.expTime)}` : "永不过期";
+              u.expTime > 0
+                ? t("到期 {date}", { date: formatDate(u.expTime) })
+                : t("永不过期");
 
             return (
               <ListRow
@@ -366,27 +373,33 @@ export default function UserPage() {
                   <div className="flex flex-wrap items-center gap-1">
                     {u.status === 0 && (
                       <Chip color="default" size="sm" variant="flat">
-                        已停用
+                        {t("已停用")}
                       </Chip>
                     )}
                     {u.expired && (
                       <Chip color="danger" size="sm" variant="flat">
-                        已到期
+                        {t("已到期")}
                       </Chip>
                     )}
                     {u.overQuota && (
                       <Chip color="warning" size="sm" variant="flat">
-                        中转超额
+                        {t("中转超额")}
                       </Chip>
                     )}
                   </div>
                 }
                 meta={
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-default-500">
-                    <span>中转 {flowLabel}</span>
+                    <span>{t("中转 {flow}", { flow: flowLabel })}</span>
                     <span>{ruleLabel}</span>
-                    <span>{u.tunnelIds.length} 条隧道</span>
-                    <span>{u.subscriptionIds.length} 个订阅</span>
+                    <span>
+                      {t("{count} 条隧道", { count: u.tunnelIds.length })}
+                    </span>
+                    <span>
+                      {t("{count} 个订阅", {
+                        count: u.subscriptionIds.length,
+                      })}
+                    </span>
                     <span>{expLabel}</span>
                   </div>
                 }
@@ -405,19 +418,19 @@ export default function UserPage() {
             ? [
                 {
                   key: "edit",
-                  label: "编辑用户与配额",
+                  label: t("编辑用户"),
                   onPress: () => openEdit(sheetUser),
                 },
                 {
                   key: "reset",
-                  label: "重置中转流量",
+                  label: t("重置流量"),
                   onPress: () => {
                     void handleResetFlow(sheetUser);
                   },
                 },
                 {
                   key: "toggle",
-                  label: sheetUser.status === 1 ? "停用账号" : "启用账号",
+                  label: sheetUser.status === 1 ? t("停用账号") : t("启用账号"),
                   color: sheetUser.status === 1 ? "warning" : "primary",
                   onPress: () => {
                     void handleToggleStatus(sheetUser);
@@ -425,7 +438,7 @@ export default function UserPage() {
                 },
                 {
                   key: "delete",
-                  label: "删除用户",
+                  label: t("删除用户"),
                   color: "danger",
                   onPress: () => setDeleteTarget(sheetUser),
                 },
@@ -439,41 +452,41 @@ export default function UserPage() {
         {sheetUser && (
           <div className="space-y-2 text-sm text-default-600">
             <div className="flex justify-between">
-              <span className="text-default-400">中转用量</span>
+              <span className="text-default-400">{t("中转用量")}</span>
               <span>
                 {formatTraffic(sheetUser.inFlow + sheetUser.outFlow)} /{" "}
                 {sheetUser.flowLimitBytes > 0
                   ? formatTraffic(sheetUser.flowLimitBytes)
-                  : "不限"}
+                  : t("不限")}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-default-400">每月重置</span>
+              <span className="text-default-400">{t("每月重置")}</span>
               <span>
                 {sheetUser.flowResetTime > 0
-                  ? `每月 ${sheetUser.flowResetTime} 号`
-                  : "不重置"}
+                  ? t("每月 {day} 号", { day: sheetUser.flowResetTime })
+                  : t("不重置")}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-default-400">转发规则</span>
+              <span className="text-default-400">{t("转发规则")}</span>
               <span>
                 {sheetUser.forwardCount} /{" "}
-                {sheetUser.num > 0 ? sheetUser.num : "不限"}
+                {sheetUser.num > 0 ? sheetUser.num : t("不限")}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-default-400">中转到期</span>
+              <span className="text-default-400">{t("中转到期")}</span>
               <span>
                 {sheetUser.expTime > 0
                   ? formatDate(sheetUser.expTime)
-                  : "永不过期"}
+                  : t("永不过期")}
               </span>
             </div>
             <div>
-              <div className="text-default-400 mb-1">授权隧道</div>
+              <div className="text-default-400 mb-1">{t("授权隧道")}</div>
               {sheetUser.tunnelIds.length === 0 ? (
-                <span className="text-xs text-default-400">未分配</span>
+                <span className="text-xs text-default-400">{t("未分配")}</span>
               ) : (
                 <div className="flex flex-wrap gap-1">
                   {sheetUser.tunnelIds.map((id) => (
@@ -485,9 +498,9 @@ export default function UserPage() {
               )}
             </div>
             <div>
-              <div className="text-default-400 mb-1">关联订阅</div>
+              <div className="text-default-400 mb-1">{t("关联订阅")}</div>
               {sheetUser.subscriptionIds.length === 0 ? (
-                <span className="text-xs text-default-400">未分配</span>
+                <span className="text-xs text-default-400">{t("未分配")}</span>
               ) : (
                 <div className="flex flex-wrap gap-1">
                   {sheetUser.subscriptionIds.map((id) => (
@@ -509,20 +522,20 @@ export default function UserPage() {
         onOpenChange={setModalOpen}
       >
         <ModalContent>
-          <ModalHeader>{form.id ? "编辑用户" : "新建用户"}</ModalHeader>
+          <ModalHeader>{form.id ? t("编辑用户") : t("新建用户")}</ModalHeader>
           <ModalBody className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 isRequired
-                label="用户名"
-                placeholder="输入用户名"
+                label={t("用户名")}
+                placeholder={t("输入用户名")}
                 value={form.user}
                 onChange={(e) => setForm({ ...form, user: e.target.value })}
               />
               <Input
                 isRequired={!form.id}
-                label={form.id ? "新密码（留空不改）" : "密码"}
-                placeholder={form.id ? "留空保持原密码" : "至少 6 位"}
+                label={form.id ? t("新密码（留空不改）") : t("密码")}
+                placeholder={form.id ? t("留空保持原密码") : t("至少 6 位")}
                 type="password"
                 value={form.pwd}
                 onChange={(e) => setForm({ ...form, pwd: e.target.value })}
@@ -530,7 +543,7 @@ export default function UserPage() {
             </div>
 
             <div className="flex items-center justify-between py-1">
-              <span className="text-sm font-medium">启用账号</span>
+              <span className="text-sm font-medium">{t("启用账号")}</span>
               <Switch
                 isSelected={form.enabled}
                 onValueChange={(v) => setForm({ ...form, enabled: v })}
@@ -539,11 +552,11 @@ export default function UserPage() {
 
             <div className="border-t border-divider pt-3 space-y-3">
               <div className="text-xs font-medium text-default-500">
-                中转配额（与订阅额度分开计算）
+                {t("中转配额（与订阅额度分开计算）")}
               </div>
               <TrafficLimitField
-                description="留空或 0 表示不限制中转流量"
-                label="中转流量上限"
+                description={t("留空或 0 表示不限制中转流量")}
+                label={t("中转流量上限")}
                 unit={form.flowUnit}
                 value={form.flowInput}
                 onChange={(v, u) =>
@@ -552,8 +565,8 @@ export default function UserPage() {
               />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Input
-                  description="0 表示不重置，1–28 为每月重置日"
-                  label="每月重置日"
+                  description={t("0 表示不重置，1–28 为每月重置日")}
+                  label={t("每月重置日")}
                   max={28}
                   min={0}
                   type="number"
@@ -563,16 +576,16 @@ export default function UserPage() {
                   }
                 />
                 <Input
-                  description="0 表示不限制规则数"
-                  label="最大规则数"
+                  description={t("0 表示不限制规则数")}
+                  label={t("最大规则数")}
                   min={0}
                   type="number"
                   value={form.num}
                   onChange={(e) => setForm({ ...form, num: e.target.value })}
                 />
                 <Input
-                  description="留空表示永不过期"
-                  label="中转到期日期"
+                  description={t("留空表示永不过期")}
+                  label={t("中转到期日期")}
                   type="date"
                   value={form.expDate}
                   onChange={(e) =>
@@ -583,18 +596,20 @@ export default function UserPage() {
 
               <div>
                 <div className="text-xs text-default-500 mb-1.5">
-                  授权隧道（勾选后用户可在这些隧道上创建转发）
+                  {t("授权隧道（勾选后用户可在这些隧道上创建转发）")}
                 </div>
                 {tunnels.length === 0 ? (
-                  <div className="text-xs text-default-400">暂无可用隧道</div>
+                  <div className="text-xs text-default-400">
+                    {t("暂无可用隧道")}
+                  </div>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
-                    {tunnels.map((t) => {
-                      const selected = form.tunnelIds.includes(t.id);
+                    {tunnels.map((item) => {
+                      const selected = form.tunnelIds.includes(item.id);
 
                       return (
                         <button
-                          key={t.id}
+                          key={item.id}
                           className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
                             selected
                               ? "bg-primary/15 border-primary text-primary font-medium"
@@ -604,11 +619,11 @@ export default function UserPage() {
                           onClick={() =>
                             setForm({
                               ...form,
-                              tunnelIds: toggleId(form.tunnelIds, t.id),
+                              tunnelIds: toggleId(form.tunnelIds, item.id),
                             })
                           }
                         >
-                          {t.name}
+                          {item.name}
                         </button>
                       );
                     })}
@@ -619,11 +634,11 @@ export default function UserPage() {
 
             <div className="border-t border-divider pt-3 space-y-2">
               <div className="text-xs font-medium text-default-500">
-                关联订阅（用户登录后可查看链接、用量与重置链接）
+                {t("关联订阅（用户登录后可查看链接、用量与重置链接）")}
               </div>
               {subs.length === 0 ? (
                 <div className="text-xs text-default-400">
-                  暂无订阅，请先在「订阅」页创建
+                  {t("暂无订阅，请先在「订阅」页创建")}
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
@@ -664,14 +679,14 @@ export default function UserPage() {
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={() => setModalOpen(false)}>
-              取消
+              {t("取消")}
             </Button>
             <Button
               color="primary"
               isLoading={saving}
               onPress={() => void handleSave()}
             >
-              保存
+              {t("保存")}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -685,19 +700,22 @@ export default function UserPage() {
         }}
       >
         <ModalContent>
-          <ModalHeader>删除用户</ModalHeader>
+          <ModalHeader>{t("删除用户")}</ModalHeader>
           <ModalBody>
             <p className="text-sm text-default-600">
-              确定删除用户 <strong>{deleteTarget?.user}</strong>
-              ？该用户的转发规则会被一并删除，关联的订阅会解除归属（不会删除订阅本身）。
+              {t("确定删除用户 ")}
+              <strong>{deleteTarget?.user}</strong>
+              {t(
+                "？该用户的转发规则会被一并删除，关联的订阅会解除归属（不会删除订阅本身）。",
+              )}
             </p>
           </ModalBody>
           <ModalFooter>
             <Button variant="flat" onPress={() => setDeleteTarget(null)}>
-              取消
+              {t("取消")}
             </Button>
             <Button color="danger" onPress={() => void handleDelete()}>
-              确认删除
+              {t("确认删除")}
             </Button>
           </ModalFooter>
         </ModalContent>

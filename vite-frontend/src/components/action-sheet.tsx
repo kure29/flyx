@@ -38,6 +38,15 @@ export function ActionSheet({
     ...actions.filter((a) => a.color === "danger"),
   ];
 
+  const gridCols =
+    ordered.length <= 1
+      ? "grid-cols-1"
+      : ordered.length === 2
+        ? "grid-cols-2"
+        : ordered.length === 3
+          ? "grid-cols-3"
+          : "grid-cols-2 sm:grid-cols-4";
+
   return (
     <Modal
       classNames={{ base: modalBase }}
@@ -58,18 +67,18 @@ export function ActionSheet({
         <ModalBody className="pb-0">
           {children}
           <div
-            className={`grid gap-2 border-t border-divider pt-4 ${
-              // Four or fewer fit on one row even on a phone.
-              ordered.length <= 4 ? "grid-cols-4" : "grid-cols-3 sm:grid-cols-4"
-            }`}
+            className={`grid gap-2 border-t border-divider pt-4 ${gridCols}`}
           >
             {ordered.map((a) => (
               <button
                 key={a.key}
-                className={`h-9 min-w-0 whitespace-nowrap rounded-md border border-divider px-1 text-sm transition-colors hover:border-default-400 hover:bg-default-50 disabled:pointer-events-none disabled:opacity-40 ${
-                  a.color === "danger" ? "text-danger" : "text-foreground"
+                className={`h-9 min-w-0 truncate rounded-lg border border-divider px-2.5 text-sm font-medium transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 ${
+                  a.color === "danger"
+                    ? "text-danger hover:border-danger/40 hover:bg-danger-50 dark:hover:bg-danger-900/20"
+                    : "text-foreground hover:border-default-400 hover:bg-default-100/70 dark:hover:bg-default-100/50"
                 }`}
                 disabled={a.disabled}
+                title={a.label}
                 type="button"
                 onClick={() => {
                   onClose();

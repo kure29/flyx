@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { MoreHorizontal, Search, X } from "lucide-react";
 
 import { AnimatedPage } from "@/components/animated-page";
+import { useI18n } from "@/i18n";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
 import {
@@ -46,14 +47,14 @@ export function PageHeader({
   return (
     <div className="mb-6 flex items-center justify-between gap-3">
       <div className="min-w-0">
-        {/* The help line stays as a tooltip: the page itself shows only
-            its title. */}
-        <h1
-          className="page-title text-xl font-semibold tracking-tight"
-          title={typeof description === "string" ? description : undefined}
-        >
+        <h1 className="page-title text-xl font-semibold tracking-tight">
           {title}
         </h1>
+        {description && (
+          <p className="mt-1 hidden truncate text-xs text-default-400 sm:block">
+            {description}
+          </p>
+        )}
       </div>
       {(primary || secondary) && (
         <div className="flex shrink-0 gap-2">
@@ -71,9 +72,11 @@ export function PageHeader({
           )}
           {primary && (
             <Button
+              className="gap-1.5"
               color="primary"
               isDisabled={primary.disabled}
               size="sm"
+              startContent={primary.icon}
               onPress={primary.onPress}
             >
               {primary.label}
@@ -191,7 +194,7 @@ export function PageTabs<T extends string>({
 export function PageToolbar({
   search,
   onSearch,
-  placeholder = "搜索",
+  placeholder,
   children,
   more,
   primary,
@@ -209,7 +212,9 @@ export function PageToolbar({
    */
   primary?: PageAction;
 }) {
+  const { t } = useI18n();
   const actions = (more ?? []).filter(Boolean);
+  const resolvedPlaceholder = placeholder ?? t("搜索");
 
   return (
     <div className="mb-2 flex flex-wrap items-center gap-2 sm:flex-nowrap">
@@ -217,21 +222,21 @@ export function PageToolbar({
         // With a main action too, the search gets a row of its own on a
         // phone instead of shrinking to its icon.
         <label
-          className={`page-search flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-divider px-2.5 transition-colors focus-within:border-default-400 sm:max-w-xs ${primary ? "basis-full sm:basis-auto" : ""}`}
+          className={`page-search flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-divider px-2.5 transition-[border-color,box-shadow] duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 sm:max-w-xs ${primary ? "basis-full sm:basis-auto" : ""}`}
         >
           <Search className="h-4 w-4 shrink-0 text-default-400" />
           <input
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-default-400"
             enterKeyHint="search"
-            placeholder={placeholder}
+            placeholder={resolvedPlaceholder}
             type="text"
             value={search ?? ""}
             onChange={(e) => onSearch(e.target.value)}
           />
           {search && (
             <button
-              aria-label="清除搜索"
-              className="text-default-400"
+              aria-label={t("清除搜索")}
+              className="text-default-400 transition-colors hover:text-foreground"
               type="button"
               onClick={() => onSearch("")}
             >
@@ -246,15 +251,15 @@ export function PageToolbar({
           <Dropdown placement="bottom-end">
             <DropdownTrigger>
               <button
-                aria-label="更多操作"
-                className="flex h-8 items-center gap-1 rounded-md px-2 text-sm text-default-500 transition-colors hover:bg-default-100 hover:text-foreground"
+                aria-label={t("更多操作")}
+                className="flex h-8 items-center gap-1 rounded-md px-2 text-sm text-default-500 transition-[color,background-color,transform] duration-150 hover:bg-default-100 hover:text-foreground active:scale-[0.97]"
                 type="button"
               >
                 <MoreHorizontal className="h-4 w-4" />
-                <span className="hidden sm:inline">更多</span>
+                <span className="hidden sm:inline">{t("更多")}</span>
               </button>
             </DropdownTrigger>
-            <DropdownMenu aria-label="更多操作">
+            <DropdownMenu aria-label={t("更多操作")}>
               {actions.map((a) => (
                 <DropdownItem
                   key={a.key}
@@ -270,10 +275,11 @@ export function PageToolbar({
         )}
         {primary && (
           <Button
-            className="shrink-0"
+            className="shrink-0 gap-1.5"
             color="primary"
             isDisabled={primary.disabled}
             size="sm"
+            startContent={primary.icon}
             onPress={primary.onPress}
           >
             {primary.label}
@@ -296,7 +302,7 @@ export function ToolbarButton({
 }) {
   return (
     <button
-      className={`flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-sm transition-colors ${
+      className={`flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-sm transition-[color,background-color,transform] duration-150 active:scale-[0.97] ${
         active
           ? "bg-default-100 font-medium text-foreground"
           : "text-default-500 hover:bg-default-100 hover:text-foreground"
@@ -323,12 +329,16 @@ export function SelectionBar({
   actions: PageAction[];
   onExit: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="phone-sticky-bar sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 border-b border-divider bg-background py-2">
-      <span className="text-sm text-default-600">已选 {count} 个</span>
+      <span className="text-sm text-default-600">
+        {t("已选 {count} 个", { count })}
+      </span>
       <div className="ml-auto flex flex-wrap justify-end gap-2">
         <Button size="sm" variant="flat" onPress={onToggleAll}>
-          {allSelected ? "取消全选" : "全选"}
+          {allSelected ? t("取消全选") : t("全选")}
         </Button>
         {actions.map((a) => (
           <Button
@@ -343,7 +353,7 @@ export function SelectionBar({
           </Button>
         ))}
         <Button size="sm" variant="light" onPress={onExit}>
-          完成
+          {t("完成")}
         </Button>
       </div>
     </div>
@@ -481,10 +491,16 @@ export function EmptyHint({
   action?: PageAction;
 }) {
   return (
-    <div className="phone-card phone-card-fill flex flex-col items-center gap-3 px-4 py-12 text-center text-sm text-default-400">
-      <p>{text}</p>
+    <div className="phone-card phone-card-fill flex flex-col items-center gap-3 rounded-xl border border-dashed border-divider bg-default-50/40 px-6 py-12 text-center text-sm text-default-400 dark:bg-default-50/20">
+      <p className="max-w-md leading-relaxed">{text}</p>
       {action && (
-        <Button color="primary" size="sm" onPress={action.onPress}>
+        <Button
+          className="gap-1.5"
+          color="primary"
+          size="sm"
+          startContent={action.icon}
+          onPress={action.onPress}
+        >
           {action.label}
         </Button>
       )}

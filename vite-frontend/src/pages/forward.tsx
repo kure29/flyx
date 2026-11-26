@@ -22,6 +22,7 @@ import {
 
 import { copyWithToast } from "@/utils/clipboard";
 import { ActionSheet } from "@/components/action-sheet";
+import { useI18n } from "@/i18n";
 import {
   EmptyHint,
   ListGroup,
@@ -161,6 +162,7 @@ export default function ForwardPage({
   /** Shown as a tab inside another page: no header or page padding. */
   embedded?: boolean;
 } = {}) {
+  const { t: tr } = useI18n();
   const tokenUserId = JwtUtil.getUserIdFromToken();
   const tokenRoleId = JwtUtil.getRoleIdFromToken();
   const isAdmin = tokenRoleId === 0;
@@ -2628,7 +2630,7 @@ export default function ForwardPage({
     setSelectedIds(new Set());
   };
 
-  const addAction = { key: "add", label: "新建规则", onPress: handleAdd };
+  const addAction = { key: "add", label: tr("新建规则"), onPress: handleAdd };
   const filterCount = activeFilterCount - (searchParams.name.trim() ? 1 : 0);
 
   const getForwardFlowText = (forward: Forward): string => {
@@ -2700,9 +2702,9 @@ export default function ForwardPage({
     <ForwardPageShell embedded={embedded}>
       {!embedded && (
         <PageHeader
-          description="把入口端口收到的流量经隧道转发到目标地址"
+          description={tr("把入口端口收到的流量经隧道转发到目标地址")}
           primary={addAction}
-          title="转发规则"
+          title={tr("转发规则")}
         />
       )}
 
@@ -2710,40 +2712,42 @@ export default function ForwardPage({
         <div className="mb-4 rounded-xl border border-divider bg-default-50/60 px-4 py-3 text-xs text-default-600 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>
-              中转流量：
+              {tr("中转流量：")}
               <strong className="text-foreground">
                 {formatTraffic(userQuota.inFlow + userQuota.outFlow)}
               </strong>{" "}
               /{" "}
               {userQuota.flowLimitBytes > 0
                 ? formatTraffic(userQuota.flowLimitBytes)
-                : "不限"}
+                : tr("不限")}
             </span>
             <span>
-              规则数：
+              {tr("规则数：")}
               <strong className="text-foreground">
                 {forwards.length}
-              </strong> / {userQuota.num > 0 ? userQuota.num : "不限"}
+              </strong> / {userQuota.num > 0 ? userQuota.num : tr("不限")}
             </span>
             <span>
-              到期：
+              {tr("到期：")}
               {userQuota.expTime > 0
                 ? formatDate(userQuota.expTime)
-                : "永不过期"}
+                : tr("永不过期")}
             </span>
             {userQuota.flowResetTime > 0 && (
-              <span>每月 {userQuota.flowResetTime} 号重置</span>
+              <span>
+                {tr("每月 {day} 号重置", { day: userQuota.flowResetTime })}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-1.5">
             {userQuota.expired && (
               <Chip color="danger" size="sm" variant="flat">
-                已到期
+                {tr("已到期")}
               </Chip>
             )}
             {userQuota.overQuota && (
               <Chip color="warning" size="sm" variant="flat">
-                流量已用完
+                {tr("流量已用完")}
               </Chip>
             )}
           </div>
@@ -2755,31 +2759,31 @@ export default function ForwardPage({
           actions={[
             {
               key: "enable",
-              label: "启用",
+              label: tr("启用"),
               disabled: batchLoading,
               onPress: () => handleBatchToggleService(true),
             },
             {
               key: "disable",
-              label: "停用",
+              label: tr("停用"),
               disabled: batchLoading,
               onPress: () => handleBatchToggleService(false),
             },
             {
               key: "redeploy",
-              label: "重新下发",
+              label: tr("重新下发"),
               disabled: batchLoading,
               onPress: handleBatchRedeploy,
             },
             {
               key: "tunnel",
-              label: "换隧道",
+              label: tr("换隧道"),
               disabled: batchLoading,
               onPress: () => setBatchChangeTunnelModalOpen(true),
             },
             {
               key: "delete",
-              label: "删除",
+              label: tr("删除"),
               danger: true,
               disabled: batchLoading,
               onPress: () => setBatchDeleteModalOpen(true),
@@ -2793,21 +2797,21 @@ export default function ForwardPage({
       ) : (
         <PageToolbar
           more={[
-            { key: "import", label: "导入", onPress: handleImport },
+            { key: "import", label: tr("导入"), onPress: handleImport },
             {
               key: "export",
-              label: "导出",
+              label: tr("导出"),
               disabled: exportLoading,
               onPress: handleExport,
             },
             {
               key: "batch",
-              label: "批量操作",
+              label: tr("批量操作"),
               disabled: sortedForwards.length === 0,
               onPress: () => setSelectMode(true),
             },
           ]}
-          placeholder="搜索规则名称"
+          placeholder={tr("搜索规则名称")}
           primary={embedded ? addAction : undefined}
           search={searchParams.name}
           onSearch={(name) => setSearchParams((prev) => ({ ...prev, name }))}
@@ -2819,7 +2823,9 @@ export default function ForwardPage({
             variant="flat"
             onPress={() => setIsSearchModalOpen(true)}
           >
-            {filterCount > 0 ? `筛选 · ${filterCount}` : "筛选"}
+            {filterCount > 0
+              ? tr("筛选 · {count}", { count: filterCount })
+              : tr("筛选")}
           </Button>
         </PageToolbar>
       )}
@@ -2844,16 +2850,16 @@ export default function ForwardPage({
       {forwards.length === 0 ? (
         <EmptyHint
           action={addAction}
-          text="还没有转发规则。新建一条，把入口端口的流量转发到目标地址"
+          text={tr("还没有转发规则。新建一条，把入口端口的流量转发到目标地址")}
         />
       ) : sortedForwards.length === 0 ? (
         <EmptyHint
           action={{
             key: "reset",
-            label: "清空条件",
+            label: tr("清空条件"),
             onPress: resetSearchParams,
           }}
-          text="没有匹配的规则"
+          text={tr("没有匹配的规则")}
         />
       ) : compactMode ? (
         <DndContext
@@ -2892,11 +2898,11 @@ export default function ForwardPage({
                     </span>
                     {isSelfGroup && (
                       <Chip size="sm" variant="flat">
-                        我的
+                        {tr("我的")}
                       </Chip>
                     )}
                     <span className="text-xs text-default-400">
-                      {groupForwardCount} 条规则
+                      {tr("{count} 条规则", { count: groupForwardCount })}
                     </span>
                   </div>
                 )}

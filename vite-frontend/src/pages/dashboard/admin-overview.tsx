@@ -25,6 +25,7 @@ import {
   pageCached,
   useCachedState,
 } from "@/hooks/use-cached-state";
+import { t as translateStatic, useI18n } from "@/i18n";
 import { formatTraffic } from "@/utils/traffic";
 
 const DAY = 86400000;
@@ -33,7 +34,9 @@ const SOON = 3 * DAY;
 function daysLeft(ms: number): string {
   const d = Math.ceil((ms - Date.now()) / DAY);
 
-  return d <= 0 ? "已到期" : `剩 ${d} 天`;
+  return d <= 0
+    ? translateStatic("已到期")
+    : translateStatic("剩 {days} 天", { days: d });
 }
 
 /** One problem; problems of the same kind are shown as one group. */
@@ -58,45 +61,45 @@ type IssueKind =
 
 const KINDS: Record<
   IssueKind,
-  { label: (n: number) => string; hint: string; path: string }
+  { labelKey: string; hint: string; path: string }
 > = {
   offline: {
-    label: (n) => `${n} 个服务器离线`,
+    labelKey: "{count} 个服务器离线",
     hint: "agent 没有连接面板，检查服务器上的 agent 是否在运行",
     path: "/node",
   },
   expired: {
-    label: (n) => `${n} 个服务器已到期`,
+    labelKey: "{count} 个服务器已到期",
     hint: "续费后在服务器里更新到期时间",
     path: "/node",
   },
   expiring: {
-    label: (n) => `${n} 个服务器即将到期`,
+    labelKey: "{count} 个服务器即将到期",
     hint: "3 天内到期",
     path: "/node",
   },
   kernel: {
-    label: (n) => `${n} 个内核出错`,
+    labelKey: "{count} 个内核出错",
     hint: "在服务器 → 内核里查看日志",
     path: "/node",
   },
   inbound: {
-    label: (n) => `${n} 个节点未运行`,
+    labelKey: "{count} 个节点未运行",
     hint: "内核已停止或等待下发，服务器上线后会自动补上",
     path: "/inbound",
   },
   probe: {
-    label: (n) => `${n} 个节点连不上`,
+    labelKey: "{count} 个节点连不上",
     hint: "从面板服务器检测",
     path: "/inbound",
   },
   subflow: {
-    label: (n) => `${n} 个分享订阅流量快用完`,
+    labelKey: "{count} 个分享订阅流量快用完",
     hint: "用到 90% 以上；用完后自动断开",
     path: "/subscription",
   },
   subexpire: {
-    label: (n) => `${n} 个分享订阅即将到期`,
+    labelKey: "{count} 个分享订阅即将到期",
     hint: "3 天内到期或已到期",
     path: "/subscription",
   },
@@ -124,12 +127,15 @@ function Metric({
 }) {
   return (
     <button
-      className="phone-card-fill bg-background px-4 py-4 text-left transition-colors hover:bg-default-50 active:bg-default-100 lg:px-5"
+      className="phone-card-fill group bg-background px-4 py-4 text-left transition-all duration-150 hover:bg-default-50 active:scale-[0.99] dark:hover:bg-default-100/40 lg:px-5"
       type="button"
       onClick={onPress}
     >
-      <div className="truncate text-sm text-default-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-sm text-default-500">{label}</span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-default-300 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+      </div>
+      <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight">
         {value}
         {total !== undefined && (
           <span className="ml-1 text-sm font-normal text-default-400">
@@ -182,13 +188,15 @@ function Panel({
 
 /** "全部 →" link in a panel's title row. */
 function MoreLink({ onPress }: { onPress: () => void }) {
+  const { t } = useI18n();
+
   return (
     <button
       className="flex items-center text-xs text-default-500 hover:text-foreground"
       type="button"
       onClick={onPress}
     >
-      全部
+      {t("全部")}
       <ChevronRight className="h-3.5 w-3.5" />
     </button>
   );
@@ -199,6 +207,7 @@ const PAGE = "admin-overview";
 /** The admin's overview: health of nodes → landings → relays → subscriptions. */
 export function AdminOverview() {
   const navigate = useNavigate();
+  const { locale, isEn, t } = useI18n();
   // A revisit shows the last data at once and reloads in the background.
   const [loading, setLoading] = useState(() => !pageCached(PAGE));
   const [nodes, setNodes] = useCachedState<NodeApiItem[]>(PAGE, "nodes", []);
@@ -283,7 +292,7 @@ export function AdminOverview() {
         kind: "offline",
         level: "danger",
         name: n.name,
-        detail: "agent 没有连接面板",
+        detail: t("agent 没有连接面板"),
       });
     }
     if (
@@ -307,7 +316,7 @@ export function AdminOverview() {
         kind: "kernel",
         level: "danger",
         name: `${k.nodeName} · ${k.kernelType}`,
-        detail: k.lastError || "查看内核日志",
+        detail: k.lastError || t("查看内核日志"),
       });
     }
   }
@@ -326,7 +335,7 @@ export function AdminOverview() {
         kind: "probe",
         level: "warning",
         name: i.name,
-        detail: i.probe?.error || "连不上",
+        detail: i.probe?.error || t("连不上"),
       });
     }
   }
@@ -363,8 +372,8 @@ export function AdminOverview() {
     .filter((g) => g.items.length > 0)
     .sort((a, b) => (a.level === b.level ? 0 : a.level === "danger" ? -1 : 1));
 
-  const up = inbounds.reduce((t, i) => t + i.uploadBytes, 0);
-  const down = inbounds.reduce((t, i) => t + i.downloadBytes, 0);
+  const up = inbounds.reduce((acc, i) => acc + i.uploadBytes, 0);
+  const down = inbounds.reduce((acc, i) => acc + i.downloadBytes, 0);
   const top = [...inbounds]
     .filter((i) => !i.external && i.uploadBytes + i.downloadBytes > 0)
     .sort(
@@ -384,7 +393,7 @@ export function AdminOverview() {
       )
       .map((n) => ({
         key: `n${n.id}`,
-        kind: "服务器",
+        kind: t("服务器"),
         name: n.name,
         at: n.expiryTime ?? 0,
         path: "/node",
@@ -395,7 +404,7 @@ export function AdminOverview() {
       )
       .map((s) => ({
         key: `s${s.id}`,
-        kind: "订阅",
+        kind: t("订阅"),
         name: s.name,
         at: s.expireTime,
         path: "/subscription",
@@ -410,15 +419,15 @@ export function AdminOverview() {
     <AnimatedPage className="space-y-8 px-4 py-6 lg:px-10 lg:py-8">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="page-title text-xl font-semibold tracking-tight">
-          概览
+          {t("概览")}
         </h1>
         <p className="text-xs text-default-400">
-          {new Date().toLocaleDateString("zh-CN", {
+          {new Date().toLocaleDateString(locale, {
             month: "long",
             day: "numeric",
             weekday: "long",
           })}
-          {" · 每 30 秒自动刷新"}
+          {` · ${t("每 30 秒自动刷新")}`}
         </p>
       </div>
 
@@ -426,10 +435,10 @@ export function AdminOverview() {
         <Metric
           foot={
             nodes.length === 0
-              ? "还没有服务器"
+              ? t("还没有服务器")
               : online === nodes.length
-                ? "全部在线"
-                : `${nodes.length - online} 个离线`
+                ? t("全部在线")
+                : t("{count} 个离线", { count: nodes.length - online })
           }
           footRight={
             nodes.length
@@ -443,7 +452,7 @@ export function AdminOverview() {
                 ? "success"
                 : undefined
           }
-          label="服务器在线"
+          label={t("服务器在线")}
           total={nodes.length}
           value={online}
           onPress={() => navigate("/node")}
@@ -452,15 +461,19 @@ export function AdminOverview() {
           foot={
             enabledInbounds.length === 0
               ? inbounds.length === 0
-                ? "还没有节点"
-                : "全部停用"
+                ? t("还没有节点")
+                : t("全部停用")
               : runningInbounds.length === enabledInbounds.length
-                ? "全部正常"
-                : `${enabledInbounds.length - runningInbounds.length} 个异常`
+                ? t("全部正常")
+                : t("{count} 个异常", {
+                    count: enabledInbounds.length - runningInbounds.length,
+                  })
           }
           footRight={
             inbounds.length > enabledInbounds.length
-              ? `${inbounds.length - enabledInbounds.length} 个停用`
+              ? t("{count} 个停用", {
+                  count: inbounds.length - enabledInbounds.length,
+                })
               : undefined
           }
           footTone={
@@ -470,7 +483,7 @@ export function AdminOverview() {
                 ? "success"
                 : undefined
           }
-          label="节点运行"
+          label={t("节点运行")}
           total={enabledInbounds.length}
           value={runningInbounds.length}
           onPress={() => navigate("/inbound")}
@@ -478,10 +491,12 @@ export function AdminOverview() {
         <Metric
           foot={
             relays.length === 0
-              ? "还没有中转"
+              ? t("还没有中转")
               : relaysUp.length === relays.length
-                ? "全部正常"
-                : `${relays.length - relaysUp.length} 条未启用`
+                ? t("全部正常")
+                : t("{count} 条未启用", {
+                    count: relays.length - relaysUp.length,
+                  })
           }
           footTone={
             relays.length > relaysUp.length
@@ -490,7 +505,7 @@ export function AdminOverview() {
                 ? "success"
                 : undefined
           }
-          label="中转线路"
+          label={t("中转线路")}
           total={relays.length || undefined}
           value={relaysUp.length}
           onPress={() => navigate("/relay")}
@@ -498,12 +513,18 @@ export function AdminOverview() {
         <Metric
           foot={
             subs.length === 0
-              ? "还没有订阅"
+              ? t("还没有订阅")
               : activeSubs.length === subs.length
-                ? "全部有效"
-                : `${subs.length - activeSubs.length} 个失效`
+                ? t("全部有效")
+                : t("{count} 个失效", {
+                    count: subs.length - activeSubs.length,
+                  })
           }
-          footRight={shares.length ? `分享 ${shares.length} 个` : undefined}
+          footRight={
+            shares.length
+              ? t("分享 {count} 个", { count: shares.length })
+              : undefined
+          }
           footTone={
             activeSubs.length < subs.length
               ? "warning"
@@ -511,7 +532,7 @@ export function AdminOverview() {
                 ? "success"
                 : undefined
           }
-          label="有效订阅"
+          label={t("有效订阅")}
           total={subs.length}
           value={activeSubs.length}
           onPress={() => navigate("/subscription")}
@@ -528,43 +549,46 @@ export function AdminOverview() {
                 </span>
               )
             }
-            title="需要处理"
+            title={t("需要处理")}
           >
             {groups.length === 0 ? (
-              <p className="list-row py-3 text-sm text-default-400">一切正常</p>
+              <p className="list-row py-3 text-sm text-default-400">
+                {t("一切正常")}
+              </p>
             ) : (
               <div className="divide-y divide-divider">
                 {groups.map((g) => {
                   const danger = g.level === "danger";
                   const meta = KINDS[g.kind];
+                  const translatedHint = t(meta.hint);
                   const hint =
                     g.kind === "probe" && g.items[0].detail
-                      ? `${meta.hint}：${g.items[0].detail}`
-                      : meta.hint;
+                      ? `${translatedHint}${isEn ? ": " : "："}${g.items[0].detail}`
+                      : translatedHint;
                   const names = g.items.slice(0, 3).map((it) => it.name);
 
                   return (
                     <button
                       key={g.kind}
-                      className="list-row flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-default-50"
+                      className="list-row group flex w-full items-center gap-3 px-2 py-3 text-left transition-colors hover:bg-default-100/60 dark:hover:bg-default-100/30"
                       title={hint}
                       type="button"
                       onClick={() => navigate(meta.path)}
                     >
                       <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${danger ? "bg-danger" : "bg-warning"}`}
+                        className={`h-2 w-2 shrink-0 rounded-full ${danger ? "bg-danger ring-[3px] ring-danger/20" : "bg-warning ring-[3px] ring-warning/20"}`}
                       />
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm">
-                          {meta.label(g.items.length)}
+                          {t(meta.labelKey, { count: g.items.length })}
                         </span>
                         <span className="block truncate text-xs text-default-400">
-                          {names.join("、")}
+                          {names.join(isEn ? ", " : "、")}
                           {g.items.length > names.length &&
-                            ` 等 ${g.items.length} 个`}
+                            ` ${t("等 {count} 个", { count: g.items.length })}`}
                         </span>
                       </span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-default-300" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-default-300 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
                     </button>
                   );
                 })}
@@ -575,7 +599,7 @@ export function AdminOverview() {
           {nodes.length > 0 && (
             <Panel
               action={<MoreLink onPress={() => navigate("/node")} />}
-              title="服务器"
+              title={t("服务器")}
             >
               <div className="divide-y divide-divider">
                 {shownNodes.map((n) => {
@@ -585,17 +609,17 @@ export function AdminOverview() {
                   return (
                     <button
                       key={n.id}
-                      className="list-row flex w-full items-center gap-3 py-2.5 text-left text-sm transition-colors hover:bg-default-50"
+                      className="list-row flex w-full items-center gap-3 px-2 py-2.5 text-left text-sm transition-colors hover:bg-default-100/60 dark:hover:bg-default-100/30"
                       type="button"
                       onClick={() => navigate("/node")}
                     >
                       <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${up ? "bg-success" : "bg-danger"}`}
-                        title={up ? "在线" : "离线"}
+                        className={`h-2 w-2 shrink-0 rounded-full ${up ? "bg-success ring-[3px] ring-success/20" : "bg-danger ring-[3px] ring-danger/20"}`}
+                        title={up ? t("在线") : t("离线")}
                       />
                       <span className="min-w-0 flex-1 truncate">{n.name}</span>
                       <span className="shrink-0 text-xs tabular-nums text-default-400">
-                        {up ? ip : "离线"}
+                        {up ? ip : t("离线")}
                       </span>
                     </button>
                   );
@@ -612,11 +636,11 @@ export function AdminOverview() {
                 ↑ {formatTraffic(up)} · ↓ {formatTraffic(down)}
               </span>
             }
-            title="节点流量"
+            title={t("节点流量")}
           >
             {top.length === 0 ? (
               <p className="list-row py-3 text-xs text-default-400">
-                还没有流量数据（导入的节点不统计流量）
+                {t("还没有流量数据（导入的节点不统计流量）")}
               </p>
             ) : (
               <div className="divide-y divide-divider">
@@ -647,7 +671,7 @@ export function AdminOverview() {
           </Panel>
 
           {expiring.length > 0 && (
-            <Panel title="即将到期">
+            <Panel title={t("即将到期")}>
               <div className="divide-y divide-divider">
                 {expiring.map((e) => {
                   const days = Math.ceil((e.at - now) / DAY);

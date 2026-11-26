@@ -33,6 +33,7 @@ import {
 } from "@/components/animated-page";
 import { PageLoadingState } from "@/components/page-state";
 import { PageHeader, PageTabs, PageToolbar } from "@/components/page-kit";
+import { useI18n } from "@/i18n";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import {
   markPageCached,
@@ -218,6 +219,7 @@ function groupRank(key: string): number {
 const PAGE = "inbound";
 
 export default function InboundPage() {
+  const { t: tr } = useI18n();
   // A revisit shows the last data at once and reloads in the background.
   const [loading, setLoading] = useState(() => !pageCached(PAGE));
   const [caps, setCaps] = useCachedState<KernelCapabilitiesApiData | null>(
@@ -840,10 +842,10 @@ export default function InboundPage() {
           onClick={(e) => e.stopPropagation()}
         >
           <Button size="sm" variant="light" onPress={() => setSharing(item)}>
-            分享
+            {tr("分享")}
           </Button>
           <Button size="sm" variant="light" onPress={() => setRelaying(item)}>
-            中转
+            {tr("中转")}
           </Button>
         </div>
         <div
@@ -869,12 +871,16 @@ export default function InboundPage() {
   const sheetItem = inbounds.find((i) => i.id === sheetFor) ?? null;
   const tabs: Array<{ key: PageTab; label: string; badge?: React.ReactNode }> =
     [
-      { key: "inbounds", label: "入站", badge: inbounds.length || undefined },
+      {
+        key: "inbounds",
+        label: tr("入站"),
+        badge: inbounds.length || undefined,
+      },
       {
         key: "sources",
-        label: "订阅源",
+        label: tr("订阅源"),
         badge: sources.some((s) => s.lastError) ? (
-          <span className="text-danger">异常</span>
+          <span className="text-danger">{tr("异常")}</span>
         ) : (
           sources.length || undefined
         ),
@@ -884,8 +890,10 @@ export default function InboundPage() {
   return (
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
       <PageHeader
-        description="客户端最终连上的节点：在自己的服务器上搭建，或导入现成的"
-        title="节点"
+        description={tr(
+          "客户端最终连上的节点：在自己的服务器上搭建，或导入现成的",
+        )}
+        title={tr("节点")}
       />
       <PageTabs tabs={tabs} value={tab} onChange={setTab} />
 
@@ -904,26 +912,26 @@ export default function InboundPage() {
               more={[
                 {
                   key: "probe",
-                  label: probing ? "检测中…" : "检测节点连通性",
+                  label: probing ? tr("检测中…") : tr("检测节点连通性"),
                   disabled: probing || inbounds.length === 0,
                   onPress: runProbe,
                 },
                 {
                   key: "import",
-                  label: "导入节点",
+                  label: tr("导入节点"),
                   onPress: () => setImportOpen(true),
                 },
                 {
                   key: "batch",
-                  label: "批量操作",
+                  label: tr("批量操作"),
                   disabled: inbounds.length === 0,
                   onPress: () => setSelectMode(true),
                 },
               ]}
-              placeholder="搜索名称、服务器、协议、端口、标签"
+              placeholder={tr("搜索名称、服务器、协议、端口、标签")}
               primary={{
                 key: "create",
-                label: "新建入站",
+                label: tr("新建入站"),
                 disabled: kernels.length === 0,
                 onPress: openCreate,
               }}
@@ -935,12 +943,12 @@ export default function InboundPage() {
                 // padding and stuck out of the pill.
                 <div className="relative max-w-[10rem] shrink-0">
                   <select
-                    aria-label="按服务器筛选"
+                    aria-label={tr("按服务器筛选")}
                     className="h-8 w-full appearance-none truncate rounded-md bg-transparent pl-2.5 pr-8 text-sm text-default-500 outline-none hover:bg-default-100 hover:text-foreground"
                     value={nodeFilter}
                     onChange={(e) => setNodeFilter(e.target.value)}
                   >
-                    <option value="">全部服务器</option>
+                    <option value="">{tr("全部服务器")}</option>
                     {nodeOptions.map(([id, name]) => (
                       <option key={id} value={id}>
                         {name}
@@ -953,12 +961,12 @@ export default function InboundPage() {
               {allTags.length > 0 && (
                 <div className="relative max-w-[8rem] shrink-0">
                   <select
-                    aria-label="按标签筛选"
+                    aria-label={tr("按标签筛选")}
                     className="h-8 w-full appearance-none truncate rounded-md bg-transparent pl-2.5 pr-8 text-sm text-default-500 outline-none hover:bg-default-100 hover:text-foreground"
                     value={activeTag}
                     onChange={(e) => setTagFilter(e.target.value)}
                   >
-                    <option value="">全部标签</option>
+                    <option value="">{tr("全部标签")}</option>
                     {allTags.map((t) => (
                       <option key={t} value={t}>
                         {t}
@@ -974,7 +982,7 @@ export default function InboundPage() {
           {selectMode && (
             <div className="phone-sticky-bar sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 border-b border-divider bg-background py-2">
               <span className="text-sm text-default-600">
-                已选 {selectedIds.size} 个
+                {tr("已选 {count} 个", { count: selectedIds.size })}
               </span>
               <div className="ml-auto flex flex-wrap justify-end gap-2">
                 <Button
@@ -984,7 +992,7 @@ export default function InboundPage() {
                   variant="flat"
                   onPress={toggleSelectAll}
                 >
-                  {allFilteredSelected ? "取消全选" : "全选"}
+                  {allFilteredSelected ? tr("取消全选") : tr("全选")}
                 </Button>
                 <Button
                   color="success"
@@ -993,7 +1001,7 @@ export default function InboundPage() {
                   variant="flat"
                   onPress={() => runBatchToggle(true)}
                 >
-                  启用
+                  {tr("启用")}
                 </Button>
                 <Button
                   color="warning"
@@ -1002,7 +1010,7 @@ export default function InboundPage() {
                   variant="flat"
                   onPress={() => runBatchToggle(false)}
                 >
-                  停用
+                  {tr("停用")}
                 </Button>
                 <Button
                   isDisabled={selectedIds.size === 0}
@@ -1020,11 +1028,11 @@ export default function InboundPage() {
                     setTagTarget({
                       ids: chosen.map((i) => i.id),
                       tags: shared,
-                      title: `已选 ${chosen.length} 个`,
+                      title: tr("已选 {count} 个", { count: chosen.length }),
                     });
                   }}
                 >
-                  标签
+                  {tr("标签")}
                 </Button>
                 <Button
                   color="danger"
@@ -1033,10 +1041,10 @@ export default function InboundPage() {
                   variant="flat"
                   onPress={() => setBatchDeleteOpen(true)}
                 >
-                  删除
+                  {tr("删除")}
                 </Button>
                 <Button size="sm" variant="light" onPress={exitSelectMode}>
-                  完成
+                  {tr("完成")}
                 </Button>
               </div>
             </div>
@@ -1046,14 +1054,18 @@ export default function InboundPage() {
             <Card className="shadow-sm bg-default-50/50">
               <CardBody className="text-center py-16 flex flex-col items-center justify-center gap-3">
                 <h3 className="text-lg font-medium">
-                  {inbounds.length === 0 ? "暂无入站" : "没有匹配的入站"}
+                  {inbounds.length === 0
+                    ? tr("暂无入站")
+                    : tr("没有匹配的入站")}
                 </h3>
                 <p className="text-default-500 text-sm max-w-sm">
                   {kernels.length === 0 && inbounds.length === 0
-                    ? "先在服务器上安装内核，然后在这里创建 VLESS-Reality、Shadowsocks 等入站；也可以点“导入”，导入别处搭好的 ss 节点用来对接中转。"
+                    ? tr(
+                        "先在服务器上安装内核，然后在这里创建 VLESS-Reality、Shadowsocks 等入站；也可以点“导入”，导入别处搭好的 ss 节点用来对接中转。",
+                      )
                     : inbounds.length === 0
-                      ? "点击“新建入站”，选择一个模板即可快速创建。"
-                      : "换个关键词、服务器或标签试试。"}
+                      ? tr("点击“新建入站”，选择一个模板即可快速创建。")
+                      : tr("换个关键词、服务器或标签试试。")}
                 </p>
                 {kernels.length === 0 && inbounds.length === 0 && (
                   <Button
@@ -1066,7 +1078,7 @@ export default function InboundPage() {
                       })
                     }
                   >
-                    去安装内核
+                    {tr("去安装内核")}
                   </Button>
                 )}
               </CardBody>
@@ -1092,12 +1104,12 @@ export default function InboundPage() {
                       extra={
                         off > 0 ? (
                           <Chip size="sm" variant="flat">
-                            {off} 个已停用
+                            {tr("{count} 个已停用", { count: off })}
                           </Chip>
                         ) : undefined
                       }
                       title={g.title}
-                      unit="个入站"
+                      unit={tr("个入站")}
                       onToggle={() => toggleCollapsed(id)}
                     />
                     {!folded && (
@@ -1119,34 +1131,34 @@ export default function InboundPage() {
             ? [
                 {
                   key: "share",
-                  label: "分享",
+                  label: tr("分享"),
                   color: "primary" as const,
                   onPress: () => setSharing(sheetItem),
                 },
                 {
                   key: "relay",
-                  label: "中转",
+                  label: tr("中转"),
                   color: "secondary" as const,
                   onPress: () => setRelaying(sheetItem),
                 },
                 {
                   key: "details",
-                  label: "参数",
+                  label: tr("参数"),
                   onPress: () => setDetails(sheetItem),
                 },
                 {
                   key: "edit",
-                  label: "编辑",
+                  label: tr("编辑"),
                   onPress: () => setExternalEdit(sheetItem),
                 },
                 {
                   key: "tags",
-                  label: "标签",
+                  label: tr("标签"),
                   onPress: () => openTags(sheetItem),
                 },
                 {
                   key: "delete",
-                  label: "删除",
+                  label: tr("删除"),
                   color: "danger" as const,
                   onPress: () =>
                     setConfirm({ action: "delete", item: sheetItem }),
@@ -1156,13 +1168,13 @@ export default function InboundPage() {
               ? [
                   {
                     key: "share",
-                    label: "分享",
+                    label: tr("分享"),
                     color: "primary" as const,
                     onPress: () => setSharing(sheetItem),
                   },
                   {
                     key: "relay",
-                    label: "中转",
+                    label: tr("中转"),
                     color: "secondary" as const,
                     onPress: () => setRelaying(sheetItem),
                   },
@@ -1171,29 +1183,29 @@ export default function InboundPage() {
                     : [
                         {
                           key: "split",
-                          label: "出站",
+                          label: tr("出站"),
                           color: "success" as const,
                           onPress: () => setSplitting(sheetItem),
                         },
                       ]),
                   {
                     key: "details",
-                    label: "参数",
+                    label: tr("参数"),
                     onPress: () => setDetails(sheetItem),
                   },
                   {
                     key: "edit",
-                    label: "编辑",
+                    label: tr("编辑"),
                     onPress: () => openEdit(sheetItem),
                   },
                   {
                     key: "tags",
-                    label: "标签",
+                    label: tr("标签"),
                     onPress: () => openTags(sheetItem),
                   },
                   {
                     key: "reset",
-                    label: "重置流量",
+                    label: tr("重置流量"),
                     onPress: () =>
                       setConfirm({ action: "reset", item: sheetItem }),
                   },

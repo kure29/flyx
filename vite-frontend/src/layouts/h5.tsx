@@ -14,6 +14,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { siteConfig } from "@/config/site";
 import { useRouteTransition } from "@/hooks/useRouteTransition";
 import { useScrollTopOnPathChange } from "@/hooks/useScrollTopOnPathChange";
+import { useI18n } from "@/i18n";
 import { isAdmin } from "@/utils/auth";
 
 interface TabItem {
@@ -79,6 +80,7 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const admin = isAdmin();
+  const { t } = useI18n();
   const tabItems = admin ? adminTabItems : userTabItems;
 
   useScrollTopOnPathChange();
@@ -135,7 +137,9 @@ export default function H5Layout({ children }: { children: React.ReactNode }) {
               onClick={() => navigate(item.path)}
             >
               <div className="mb-0.5 flex-shrink-0">{item.icon}</div>
-              <span className="text-[11px] font-medium">{item.label}</span>
+              <span className="max-w-full truncate px-1 text-[11px] font-medium">
+                {t(item.label)}
+              </span>
             </button>
           );
         })}

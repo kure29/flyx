@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useI18n } from "@/i18n";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Spinner } from "@/shadcn-bridge/heroui/spinner";
 
@@ -16,6 +17,7 @@ export const PageLoadingState = ({
   className = "h-64",
 }: BaseStateProps) => {
   const [slow, setSlow] = useState(false);
+  const { t } = useI18n();
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSlow(true), SLOW_LOAD_MS);
@@ -35,19 +37,19 @@ export const PageLoadingState = ({
       </div>
       <div className="flex items-center gap-2.5 text-sm">
         <Spinner size="sm" />
-        <span className="text-default-500">{message}</span>
+        <span className="text-default-500">{t(message)}</span>
       </div>
       {slow && (
         <div className="flex flex-col items-center gap-2 text-center">
           <span className="text-xs text-default-500">
-            加载时间比平时长，可能是网络不稳定或面板没有响应
+            {t("加载时间比平时长，可能是网络不稳定或面板没有响应")}
           </span>
           <Button
             size="sm"
             variant="flat"
             onPress={() => window.location.reload()}
           >
-            重新加载
+            {t("重新加载")}
           </Button>
         </div>
       )}

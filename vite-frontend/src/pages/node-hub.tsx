@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 import { AnimatedPage } from "@/components/animated-page";
 import { PageHeader, PageTabs } from "@/components/page-kit";
+import { useI18n } from "@/i18n";
 import NodePage from "@/pages/node";
 import { KernelsTab } from "@/pages/node/kernels-tab";
 import { NodeMonitorDetail } from "@/pages/monitor";
@@ -32,6 +33,7 @@ function readTab(): NodeTab {
 
 /** Servers and the kernels installed on them. */
 export default function NodeHubPage() {
+  const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const state = (location.state ?? {}) as NodeHubState;
@@ -44,11 +46,11 @@ export default function NodeHubPage() {
   // A node's 监控 replaces the list; the list stays mounted underneath.
   const [monitorNode, setMonitorNode] = useState<number | null>(null);
 
-  const setTab = (t: NodeTab) => {
-    setTabState(t);
+  const setTab = (next: NodeTab) => {
+    setTabState(next);
     setMonitorNode(null);
     try {
-      setStoredValue(localStorage, TAB_KEY, t);
+      setStoredValue(localStorage, TAB_KEY, next);
     } catch {
       // ignore
     }
@@ -64,15 +66,17 @@ export default function NodeHubPage() {
       <PageHeader
         description={
           tab === "kernels"
-            ? "服务器上安装的 Xray / sing-box / Snell 等内核，节点（入站）跑在内核上"
-            : "装了 agent 的服务器：实时状态、监控和管理都在这里"
+            ? t(
+                "服务器上安装的 Xray / sing-box / Snell 等内核，节点（入站）跑在内核上",
+              )
+            : t("装了 agent 的服务器：实时状态、监控和管理都在这里")
         }
-        title="服务器"
+        title={t("服务器")}
       />
       <PageTabs
         tabs={[
-          { key: "nodes", label: "服务器" },
-          { key: "kernels", label: "内核" },
+          { key: "nodes", label: t("服务器") },
+          { key: "kernels", label: t("内核") },
         ]}
         value={tab}
         onChange={setTab}

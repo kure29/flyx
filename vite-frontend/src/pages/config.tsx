@@ -43,7 +43,9 @@ import {
 } from "@/api";
 import { AnimatedPage } from "@/components/animated-page";
 import { PageHeader, PageTabs } from "@/components/page-kit";
+import { LanguageToggle } from "@/components/language-toggle";
 import { ThemeSettings } from "@/components/theme-settings";
+import { useI18n } from "@/i18n";
 import { useH5Mode } from "@/hooks/useH5Mode";
 import {
   consumeInAppBack,
@@ -465,6 +467,7 @@ function panelMirrorURL(ip: string): string {
 }
 
 export default function ConfigPage() {
+  const { t: tr } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const isH5 = useH5Mode();
@@ -1364,7 +1367,7 @@ export default function ConfigPage() {
         key={item.key}
         help={item.description}
         inline={item.type === "switch"}
-        label={item.label}
+        label={tr(item.label)}
       >
         {renderConfigItem(item)}
         {item.key === "github_proxy_url" && renderGithubProxyPresets()}
@@ -1517,10 +1520,10 @@ export default function ConfigPage() {
                 setTypes(allSelected ? [] : [...BACKUP_TYPE_VALUES])
               }
             >
-              {allSelected ? "取消全选" : "全选"}
+              {allSelected ? tr("取消全选") : tr("全选")}
             </Button>
             <Button size="sm" variant="light" onPress={() => setTypes([])}>
-              清空
+              {tr("清空")}
             </Button>
           </div>
         </div>
@@ -1557,7 +1560,7 @@ export default function ConfigPage() {
                         : "text-default-700 dark:text-default-500"
                     }`}
                   >
-                    {option.label}
+                    {tr(option.label)}
                   </span>
                 </div>
               </button>
@@ -1571,7 +1574,7 @@ export default function ConfigPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Spinner label="加载配置中..." size="lg" />
+        <Spinner label={tr("加载配置中...")} size="lg" />
       </div>
     );
   }
@@ -1589,7 +1592,7 @@ export default function ConfigPage() {
     changed: sectionChanged(key),
   });
 
-  const onOff = (key: string, on = "开", off = "关") =>
+  const onOff = (key: string, on = tr("开"), off = tr("关")) =>
     configs[key] === "true" ? on : off;
 
   const tunnelQualitySummary =
@@ -1602,39 +1605,39 @@ export default function ConfigPage() {
 
   const systemSummary = [
     systemUpgradeInfo?.currentVersion
-      ? `当前 ${systemUpgradeInfo.currentVersion}`
+      ? `v${systemUpgradeInfo.currentVersion}`
       : systemUpgradeLoading
-        ? "加载版本中"
-        : "未获取到版本",
+        ? tr("正在加载升级状态...")
+        : "",
     systemUpgradeInfo?.hasUpdate && systemUpgradeInfo.latestVersion
-      ? `可升级到 ${systemUpgradeInfo.latestVersion}`
+      ? tr("可升级 {version}", { version: systemUpgradeInfo.latestVersion })
       : "",
-    `数据库 ${storageSummary}`,
+    `${tr("数据库占用")} ${storageSummary}`,
   ]
     .filter(Boolean)
     .join(" · ");
 
   const summaries: Record<SectionKey, React.ReactNode> = {
-    basic: `${configs.app_name || "未设置名称"} · ${
-      configs.ip || "未填后端地址"
+    basic: `${configs.app_name || tr("未设置")} · ${
+      configs.ip || tr("未设置")
     }`,
-    appearance: `${describeBackground(configs.app_bg_image)} · 规则精简模式${onOff(
+    appearance: `${tr(describeBackground(configs.app_bg_image))} · ${tr("规则页面精简模式")} ${onOff(
       "forward_compact_mode",
     )}`,
-    security: `登录验证码${onOff("captcha_enabled")} · GitHub 登录${onOff(
+    security: `${tr("启用验证码")} ${onOff("captcha_enabled")} · ${tr("GitHub 登录")} ${onOff(
       "github_login_enabled",
-    )} · 拉取内网订阅${onOff("fetch_allow_local", "允许", "禁止")}`,
-    network: `${tunnelQualitySummary} · 监控保留 ${
+    )} · ${tr("拉取订阅可访问内网地址")} ${onOff("fetch_allow_local", tr("允许"), tr("禁止"))}`,
+    network: `${tunnelQualitySummary} · ${tr("监控数据保留天数")} ${
       configs.monitor_retention_days || 7
-    } 天 · GitHub 加速${onOff("github_proxy_enabled")}`,
+    } · ${tr("开启 GitHub 加速")} ${onOff("github_proxy_enabled")}`,
     latency: latencySummary(configs),
     notify: notifySummary(configs),
     statuspage: statusPageSummary(configs),
     backup: importing
-      ? "正在导入..."
+      ? tr("导入中...")
       : exporting
-        ? "正在导出..."
-        : "导出或导入 JSON 备份",
+        ? tr("导出中...")
+        : tr("导出或导入 JSON 备份"),
     system: systemSummary,
   };
 
@@ -1647,29 +1650,38 @@ export default function ConfigPage() {
             .flatMap((k) => {
               const item = CONFIG_ITEMS.find((i) => i.key === k);
 
-              return item ? [[key, item.label, item.description] as const] : [];
+              return item
+                ? [[key, tr(item.label), item.description] as const]
+                : [];
             })
             .map(([key, label, help]) => ({
               section: key,
-              sectionTitle: title,
+              sectionTitle: tr(title),
               icon: SECTION_ICONS[key],
               label,
               help,
             })),
         ),
+        {
+          section: "appearance",
+          sectionTitle: tr("外观"),
+          icon: SECTION_ICONS.appearance,
+          label: tr("界面语言"),
+          help: "中文 / English · Language",
+        },
         ...SEARCH_EXTRA.map(([key, label, help]) => ({
           section: key,
-          sectionTitle: SECTIONS.find(([k]) => k === key)?.[1] ?? key,
+          sectionTitle: tr(SECTIONS.find(([k]) => k === key)?.[1] ?? key),
           icon: SECTION_ICONS[key],
-          label,
+          label: tr(label),
           help,
         })),
         // A group's own name finds the group.
         ...SECTIONS.map(([key, title]) => ({
           section: key,
-          sectionTitle: "分组",
+          sectionTitle: tr("分组"),
           icon: SECTION_ICONS[key],
-          label: title,
+          label: tr(title),
           help: undefined,
         })),
       ].filter((hit) =>
@@ -1689,8 +1701,8 @@ export default function ConfigPage() {
     >
       {!(isH5 && shown) && (
         <PageHeader
-          description="面板名称、登录安全、通知、备份与升级"
-          title="网站配置"
+          description={tr("面板名称、登录安全、通知、备份与升级")}
+          title={tr("网站配置")}
         />
       )}
 
@@ -1707,7 +1719,7 @@ export default function ConfigPage() {
           <ConfigIndex
             items={SECTIONS.map(([key, title]) => ({
               id: key,
-              title,
+              title: tr(title),
               icon: SECTION_ICONS[key],
               summary: summaries[key],
               changed: sectionChanged(key),
@@ -1720,11 +1732,11 @@ export default function ConfigPage() {
           <PageTabs
             tabs={SECTIONS.map(([key, label]) => ({
               key,
-              label,
+              label: tr(label),
               badge: sectionChanged(key) ? (
                 <span
                   className="inline-block h-1.5 w-1.5 rounded-full bg-warning"
-                  title="未保存"
+                  title={tr("未保存")}
                 />
               ) : undefined,
             }))}
@@ -1736,7 +1748,7 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("basic")}
             summary={summaries.basic}
-            title="基本"
+            title={tr("基本")}
           >
             {renderItem("app_name")}
             {renderItem("ip")}
@@ -1749,20 +1761,28 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("appearance")}
             summary={summaries.appearance}
-            title="外观"
+            title={tr("外观")}
           >
-            {renderItem("app_bg_image")}
-            {renderItem("forward_compact_mode")}
-            <SubHeading>主题（点选即生效，不需要保存）</SubHeading>
+            <SubHeading>{tr("语言（切换即生效，不需要保存）")}</SubHeading>
+            <Field
+              inline
+              help={tr("切换面板显示语言，立即生效")}
+              label={tr("界面语言")}
+            >
+              <LanguageToggle variant="segmented" />
+            </Field>
+            <SubHeading>{tr("主题（点选即生效，不需要保存）")}</SubHeading>
             <div className="[&_[data-slot=card-content]]:p-0! [&_h2]:hidden [&>[data-slot=card]]:rounded-none! [&>[data-slot=card]]:border-0! [&>[data-slot=card]]:bg-none! [&>[data-slot=card]]:shadow-none! [&>[data-slot=card]]:backdrop-blur-none!">
               <ThemeSettings />
             </div>
+            {renderItem("app_bg_image")}
+            {renderItem("forward_compact_mode")}
           </ConfigSection>
 
           <ConfigSection
             {...sectionProps("security")}
             summary={summaries.security}
-            title="安全与登录"
+            title={tr("安全与登录")}
           >
             {renderItem("captcha_enabled")}
             {renderItem("cloudflare_site_key")}
@@ -1777,7 +1797,7 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("network")}
             summary={summaries.network}
-            title="服务器与监控"
+            title={tr("服务器与监控")}
           >
             {renderItem("monitor_tunnel_quality_enabled")}
             {renderItem(TUNNEL_QUALITY_INTERVAL_CONFIG_KEY)}
@@ -1789,7 +1809,7 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("latency")}
             summary={summaries.latency}
-            title="延迟测试点"
+            title={tr("延迟测试点")}
           >
             <LatencySettings configs={configs} onChange={handleConfigChange} />
           </ConfigSection>
@@ -1797,7 +1817,7 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("notify")}
             summary={summaries.notify}
-            title="通知"
+            title={tr("通知")}
           >
             <NotifySettings
               configs={configs}
@@ -1809,7 +1829,7 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("statuspage")}
             summary={summaries.statuspage}
-            title="状态页"
+            title={tr("状态页")}
           >
             <StatusPageSettings
               configs={configs}
@@ -1821,12 +1841,12 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("backup")}
             summary={summaries.backup}
-            title="备份与恢复"
+            title={tr("备份与恢复")}
           >
             <Field
               inline
-              help={`选择数据类型，导出为 JSON 文件；已选 ${exportTypes.length} / ${BACKUP_TYPE_VALUES.length}`}
-              label="导出数据"
+              help={`${exportTypes.length} / ${BACKUP_TYPE_VALUES.length}`}
+              label={tr("导出数据")}
             >
               <Button
                 isLoading={exporting}
@@ -1834,7 +1854,7 @@ export default function ConfigPage() {
                 variant="flat"
                 onPress={() => setExportSelectorOpen(true)}
               >
-                {exporting ? "导出中..." : "选择并导出"}
+                {exporting ? tr("导出中...") : tr("选择并导出")}
               </Button>
             </Field>
 
@@ -1849,10 +1869,10 @@ export default function ConfigPage() {
               inline
               help={
                 importFileName
-                  ? `已选择：${importFileName}`
-                  : `从备份文件恢复所选类型；已选 ${importTypes.length} / ${BACKUP_TYPE_VALUES.length}`
+                  ? importFileName
+                  : `${importTypes.length} / ${BACKUP_TYPE_VALUES.length}`
               }
-              label="导入数据"
+              label={tr("导入数据")}
             >
               <Button
                 isLoading={importing}
@@ -1860,7 +1880,7 @@ export default function ConfigPage() {
                 variant="flat"
                 onPress={() => setImportSelectorOpen(true)}
               >
-                {importing ? "导入中..." : "选择并导入"}
+                {importing ? tr("导入中...") : tr("选择并导入")}
               </Button>
             </Field>
 
@@ -1870,32 +1890,30 @@ export default function ConfigPage() {
           <ConfigSection
             {...sectionProps("system")}
             summary={summaries.system}
-            title="系统与升级"
+            title={tr("系统与升级")}
           >
             <Field
               inline
-              help="后端数据库占用空间，仅供参考"
-              label="数据库占用"
+              help={tr("后端数据库占用空间，仅供参考")}
+              label={tr("数据库占用")}
             >
               <span className="text-sm font-medium">{storageSummary}</span>
             </Field>
 
-            <SubHeading>面板自升级</SubHeading>
+            <SubHeading>{tr("面板自升级")}</SubHeading>
             {systemUpgradeLoading ? (
               <div className="flex items-center gap-2 text-sm text-default-500">
                 <Spinner size="sm" />
-                正在加载升级状态...
+                {tr("正在加载升级状态...")}
               </div>
             ) : (
               <>
                 <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-                  <dt className="text-default-500">当前版本</dt>
+                  <dt className="text-default-500">{tr("当前版本")}</dt>
+                  <dd>{systemUpgradeInfo?.currentVersion || tr("未知")}</dd>
+                  <dt className="text-default-500">{tr("最新版本")}</dt>
                   <dd>
-                    {systemUpgradeInfo?.currentVersion || "未获取到版本信息"}
-                  </dd>
-                  <dt className="text-default-500">最新版本</dt>
-                  <dd>
-                    {systemUpgradeInfo?.latestVersion || "未获取到可用版本"}
+                    {systemUpgradeInfo?.latestVersion || tr("未知")}
                     {!systemUpgradeInfo?.latestVersion &&
                       systemUpgradeInfo?.reason && (
                         <p className="break-all text-xs text-default-500">
@@ -1903,31 +1921,29 @@ export default function ConfigPage() {
                         </p>
                       )}
                   </dd>
-                  <dt className="text-default-500">升级能力</dt>
+                  <dt className="text-default-500">{tr("升级能力")}</dt>
                   <dd>
                     {systemUpgradeInfo?.capability.capable
-                      ? "可升级"
-                      : "当前不可升级"}
+                      ? tr("可升级")
+                      : tr("当前不可升级")}
                   </dd>
-                  <dt className="text-default-500">部署目录</dt>
+                  <dt className="text-default-500">{tr("部署目录")}</dt>
                   <dd className="break-all">
-                    {systemUpgradeInfo?.capability.deployDir ||
-                      "未获取到部署目录"}
+                    {systemUpgradeInfo?.capability.deployDir || "-"}
                   </dd>
-                  <dt className="text-default-500">后端容器</dt>
+                  <dt className="text-default-500">{tr("后端容器")}</dt>
                   <dd className="break-all">
-                    {systemUpgradeInfo?.capability.backendContainer ||
-                      "未获取到容器信息"}
+                    {systemUpgradeInfo?.capability.backendContainer || "-"}
                   </dd>
                 </dl>
 
                 {!systemUpgradeInfo?.capability.capable && (
                   <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-warning-800 dark:border-warning-900/40 dark:bg-warning-950/30 dark:text-warning-200">
-                    <p className="text-xs font-medium">当前无法升级</p>
+                    <p className="text-xs font-medium">{tr("当前无法升级")}</p>
                     <ul className="mt-1 list-disc space-y-1 pl-4 text-xs">
                       {(systemUpgradeInfo?.capability.reasons?.length
                         ? systemUpgradeInfo.capability.reasons
-                        : ["暂未获取到不可升级原因"]
+                        : [tr("当前不可升级")]
                       ).map((reason) => (
                         <li key={reason}>{reason}</li>
                       ))}
@@ -1935,9 +1951,12 @@ export default function ConfigPage() {
                   </div>
                 )}
 
-                <Field help="留空则升级到当前通道的最新版本" label="目标版本">
+                <Field
+                  help={tr("留空则升级到当前通道的最新版本")}
+                  label={tr("目标版本")}
+                >
                   <Select
-                    aria-label="目标版本"
+                    aria-label={tr("目标版本")}
                     isDisabled={
                       !systemUpgradeReleasesMatchChannel ||
                       systemUpgradeReleases.length === 0 ||
@@ -1946,8 +1965,8 @@ export default function ConfigPage() {
                     placeholder={
                       systemUpgradeReleasesMatchChannel &&
                       systemUpgradeReleases.length > 0
-                        ? "留空时自动选择最新版本"
-                        : "请先检查当前通道更新"
+                        ? tr("留空则升级到当前通道的最新版本")
+                        : tr("检查更新")
                     }
                     selectedKeys={
                       systemUpgradeSelectedVersion
@@ -1970,7 +1989,7 @@ export default function ConfigPage() {
                     ).map((release) => (
                       <SelectItem
                         key={release.version}
-                        description={release.publishedAt || "暂无发布时间"}
+                        description={release.publishedAt || "-"}
                       >
                         {release.name || release.version}
                       </SelectItem>
@@ -1987,7 +2006,7 @@ export default function ConfigPage() {
                 variant="flat"
                 onPress={handleCheckSystemUpgrade}
               >
-                检查更新
+                {tr("检查更新")}
               </Button>
               <Button
                 color="primary"
@@ -1996,7 +2015,7 @@ export default function ConfigPage() {
                 size="sm"
                 onPress={handleOpenSystemUpgradeModal}
               >
-                立即升级
+                {tr("立即升级")}
               </Button>
             </div>
           </ConfigSection>
@@ -2011,7 +2030,7 @@ export default function ConfigPage() {
           }`}
         >
           <span className="min-w-0 flex-1 truncate text-xs text-warning-700 dark:text-warning-300">
-            有修改尚未保存
+            {tr("有修改尚未保存")}
           </span>
           <Button
             className="shrink-0"
@@ -2020,7 +2039,7 @@ export default function ConfigPage() {
             size="sm"
             onPress={handleSave}
           >
-            {saving ? "保存中..." : "保存"}
+            {saving ? tr("保存中...") : tr("保存")}
           </Button>
         </div>
       )}
@@ -2035,20 +2054,24 @@ export default function ConfigPage() {
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader>选择导出内容</ModalHeader>
+              <ModalHeader>{tr("选择导出内容")}</ModalHeader>
               <ModalBody>
-                {renderTypeSelection("导出内容", exportTypes, setExportTypes)}
+                {renderTypeSelection(
+                  tr("导出内容"),
+                  exportTypes,
+                  setExportTypes,
+                )}
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>
-                  取消
+                  {tr("取消")}
                 </Button>
                 <Button
                   color="primary"
                   isLoading={exporting}
                   onPress={handleExport}
                 >
-                  {exporting ? "导出中..." : "导出"}
+                  {exporting ? tr("导出中...") : tr("导出")}
                 </Button>
               </ModalFooter>
             </>
@@ -2066,20 +2089,24 @@ export default function ConfigPage() {
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader>选择导入内容</ModalHeader>
+              <ModalHeader>{tr("选择导入内容")}</ModalHeader>
               <ModalBody>
-                {renderTypeSelection("导入内容", importTypes, setImportTypes)}
+                {renderTypeSelection(
+                  tr("导入内容"),
+                  importTypes,
+                  setImportTypes,
+                )}
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>
-                  取消
+                  {tr("取消")}
                 </Button>
                 <Button
                   color="primary"
                   isDisabled={importTypes.length === 0}
                   onPress={triggerImportFilePicker}
                 >
-                  下一步选择文件
+                  {tr("下一步选择文件")}
                 </Button>
               </ModalFooter>
             </>
@@ -2101,7 +2128,7 @@ export default function ConfigPage() {
         <ModalContent>
           {(onClose) => (
             <>
-              <ModalHeader>确认面板升级</ModalHeader>
+              <ModalHeader>{tr("确认面板升级")}</ModalHeader>
               <ModalBody>
                 <div className="space-y-3 text-sm text-default-700 dark:text-default-300">
                   <p>
@@ -2128,7 +2155,7 @@ export default function ConfigPage() {
                   variant="light"
                   onPress={onClose}
                 >
-                  取消
+                  {tr("取消")}
                 </Button>
                 <Button
                   color="primary"
@@ -2136,7 +2163,7 @@ export default function ConfigPage() {
                   isLoading={systemUpgradeExecuting}
                   onPress={handleConfirmSystemUpgrade}
                 >
-                  升级
+                  {tr("升级")}
                 </Button>
               </ModalFooter>
             </>

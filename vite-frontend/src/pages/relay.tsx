@@ -27,6 +27,7 @@ import ForwardPage from "@/pages/forward";
 import { RelayModal } from "@/pages/inbound/relay-modal";
 import TunnelPage from "@/pages/tunnel";
 import { TunnelMonitorView } from "@/components/lazy-charts";
+import { useI18n } from "@/i18n";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
 
 type RelayTab = "lines" | "tunnels" | "rules" | "quality";
@@ -57,8 +58,8 @@ const TABS: Array<{ key: RelayTab; label: string }> = [
  * A line's own part of its name: "腾讯成都-YT → TW | Seednet FH" is shown
  * under that landing, so only "腾讯成都-YT" is new.
  */
-function relayLabel(l: InboundRelayApiItem): string {
-  const full = l.name || l.tunnelName || "中转";
+function relayLabel(l: InboundRelayApiItem, fallback: string): string {
+  const full = l.name || l.tunnelName || fallback;
   const cut = full.lastIndexOf(" → ");
 
   return cut > 0 ? full.slice(0, cut) : full;
@@ -72,6 +73,8 @@ function RelayLines({
   lines: InboundRelayApiItem[];
   renderLatency: (l: InboundRelayApiItem) => React.ReactNode;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="divide-y divide-divider/70 rounded-xl bg-default-100/60">
       {lines.map((l) => {
@@ -85,13 +88,15 @@ function RelayLines({
           >
             <span
               className={`h-1.5 w-1.5 shrink-0 rounded-full ${ok ? "bg-success" : "bg-warning"}`}
-              title={ok ? "转发正常" : "转发已暂停或被删除，不会出现在订阅中"}
+              title={
+                ok ? t("转发正常") : t("转发已暂停或被删除，不会出现在订阅中")
+              }
             />
             <span
               className="min-w-0 flex-1 truncate text-sm text-default-700"
               title={l.name || l.tunnelName}
             >
-              {relayLabel(l)}
+              {relayLabel(l, t("中转"))}
             </span>
             <span className="shrink-0 text-xs">
               {renderLatency(l) ?? (
@@ -116,6 +121,7 @@ const LINES_PAGE = "relay-lines";
 
 /** Relay lines grouped by the landing they lead to. */
 function LinesView() {
+  const { t } = useI18n();
   // A revisit shows the last data at once and reloads in the background.
   const [loading, setLoading] = useState(() => !pageCached(LINES_PAGE));
   const [inbounds, setInbounds] = useCachedState<InboundApiItem[]>(
@@ -136,44 +142,47 @@ function LinesView() {
   // A reload asked for during a silent poll (after an edit) runs after it.
   const reloadRef = useRef(false);
 
-  const load = useCallback(async (silent = false): Promise<void> => {
-    if (loadingRef.current) {
-      if (!silent) reloadRef.current = true;
+  const load = useCallback(
+    async (silent = false): Promise<void> => {
+      if (loadingRef.current) {
+        if (!silent) reloadRef.current = true;
 
-      return;
-    }
-    loadingRef.current = true;
-    try {
-      const [inRes, relRes] = await Promise.all([
-        getInboundList(),
-        getInboundRelays(0),
-      ]);
-
-      if (inRes.code === 0) setInbounds(inRes.data ?? []);
-      if (relRes.code === 0) {
-        setRelays((prev) => {
-          const previous = new Map(prev.map((r) => [r.id, r]));
-
-          return (relRes.data ?? []).map((r) => ({
-            ...r,
-            latency: latestProbe(r.latency, previous.get(r.id)?.latency),
-          }));
-        });
+        return;
       }
-      if (inRes.code === 0 && relRes.code === 0) markPageCached(LINES_PAGE);
-      if (!silent && (inRes.code !== 0 || relRes.code !== 0))
-        toast.error(inRes.msg || relRes.msg || "加载失败");
-    } catch {
-      if (!silent) toast.error("加载失败");
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      if (reloadRef.current) {
-        reloadRef.current = false;
-        void load(true);
+      loadingRef.current = true;
+      try {
+        const [inRes, relRes] = await Promise.all([
+          getInboundList(),
+          getInboundRelays(0),
+        ]);
+
+        if (inRes.code === 0) setInbounds(inRes.data ?? []);
+        if (relRes.code === 0) {
+          setRelays((prev) => {
+            const previous = new Map(prev.map((r) => [r.id, r]));
+
+            return (relRes.data ?? []).map((r) => ({
+              ...r,
+              latency: latestProbe(r.latency, previous.get(r.id)?.latency),
+            }));
+          });
+        }
+        if (inRes.code === 0 && relRes.code === 0) markPageCached(LINES_PAGE);
+        if (!silent && (inRes.code !== 0 || relRes.code !== 0))
+          toast.error(inRes.msg || relRes.msg || t("加载失败"));
+      } catch {
+        if (!silent) toast.error(t("加载失败"));
+      } finally {
+        loadingRef.current = false;
+        setLoading(false);
+        if (reloadRef.current) {
+          reloadRef.current = false;
+          void load(true);
+        }
       }
-    }
-  }, []);
+    },
+    [t],
+  );
 
   useEffect(() => {
     load();
@@ -190,7 +199,7 @@ function LinesView() {
         const res = await probeInboundRelays(ids);
 
         if (res.code !== 0) {
-          toast.error(res.msg || "检测失败");
+          toast.error(res.msg || t("检测失败"));
 
           return;
         }
@@ -204,7 +213,7 @@ function LinesView() {
           ),
         );
       } catch {
-        toast.error("检测失败");
+        toast.error(t("检测失败"));
       } finally {
         setProbingIds((prev) => {
           const next = new Set(prev);
@@ -215,7 +224,7 @@ function LinesView() {
         });
       }
     },
-    [relays],
+    [relays, t],
   );
 
   const latencyOf = (l: InboundRelayApiItem) =>
@@ -249,7 +258,7 @@ function LinesView() {
   return (
     <div className="space-y-3">
       <PageToolbar
-        placeholder="搜索节点名称"
+        placeholder={t("搜索节点名称")}
         search={query}
         onSearch={setQuery}
       >
@@ -257,11 +266,11 @@ function LinesView() {
           active={onlyWithRelays}
           onPress={() => setOnlyWithRelays((v) => !v)}
         >
-          只看有中转的
+          {t("只看有中转的")}
         </ToolbarButton>
         {relays.length > 0 && (
           <ToolbarButton onPress={() => probe([])}>
-            {probingIds.size > 0 ? "测延迟中…" : "测延迟"}
+            {probingIds.size > 0 ? t("测延迟中…") : t("测延迟")}
           </ToolbarButton>
         )}
       </PageToolbar>
@@ -270,10 +279,10 @@ function LinesView() {
         <EmptyHint
           text={
             inbounds.length === 0
-              ? "还没有节点。先在“节点”里搭建或导入，再回来对接中转"
+              ? t("还没有节点。先在“节点”里搭建或导入，再回来对接中转")
               : query
-                ? "没有匹配的节点"
-                : "还没有中转线路"
+                ? t("没有匹配的节点")
+                : t("还没有中转线路")
           }
         />
       ) : (
@@ -283,11 +292,11 @@ function LinesView() {
             const broken = lines.some(
               (l) => !(l.forwardExists && l.forwardStatus === 1),
             );
-            const landing = i.external ? "导入的节点" : i.nodeName;
+            const landing = i.external ? t("导入的节点") : i.nodeName;
             const summary =
               lines.length === 0
-                ? `${landing} · 无中转，点击添加`
-                : `${landing} · ${lines.length} 条中转${broken ? " · 有暂停" : ""}`;
+                ? t("{landing} · 无中转，点击添加", { landing })
+                : `${t("{landing} · {count} 条中转", { landing, count: lines.length })}${broken ? t(" · 有暂停") : ""}`;
             const lineList = lines.length > 0 && (
               <RelayLines lines={lines} renderLatency={latencyOf} />
             );
@@ -298,7 +307,7 @@ function LinesView() {
                 badges={
                   i.relayOnly && (
                     <Chip className="shrink-0" size="sm" variant="flat">
-                      仅中转
+                      {t("仅中转")}
                     </Chip>
                   )
                 }
@@ -317,10 +326,10 @@ function LinesView() {
                 status={lines.length === 0 ? "off" : broken ? "warn" : "ok"}
                 statusTitle={
                   lines.length === 0
-                    ? "无中转"
+                    ? t("无中转")
                     : broken
-                      ? "有中转转发已暂停或被删除"
-                      : "中转正常"
+                      ? t("有中转转发已暂停或被删除")
+                      : t("中转正常")
                 }
                 title={i.name}
                 onPress={() => setEditing(i)}
@@ -341,11 +350,12 @@ function LinesView() {
 
 /** 中转: relay lines per landing, plus the tunnel and rule pages. */
 export default function RelayPage() {
+  const { t } = useI18n();
   const [tab, setTabState] = useState<RelayTab>(readTab);
-  const setTab = (t: RelayTab) => {
-    setTabState(t);
+  const setTab = (next: RelayTab) => {
+    setTabState(next);
     try {
-      setStoredValue(localStorage, TAB_KEY, t);
+      setStoredValue(localStorage, TAB_KEY, next);
     } catch {
       // ignore
     }
@@ -354,10 +364,16 @@ export default function RelayPage() {
   return (
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
       <PageHeader
-        description="让客户端先连中转再到节点：线路按节点管理，隧道和规则是底层的转发配置"
-        title="中转"
+        description={t(
+          "让客户端先连中转再到节点：线路按节点管理，隧道和规则是底层的转发配置",
+        )}
+        title={t("中转")}
       />
-      <PageTabs tabs={TABS} value={tab} onChange={setTab} />
+      <PageTabs
+        tabs={TABS.map((item) => ({ ...item, label: t(item.label) }))}
+        value={tab}
+        onChange={setTab}
+      />
       {tab === "lines" ? (
         <LinesView />
       ) : tab === "tunnels" ? (

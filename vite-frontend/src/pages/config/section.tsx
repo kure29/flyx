@@ -3,6 +3,8 @@ import type * as React from "react";
 import { createContext, useContext } from "react";
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 
+import { useI18n } from "@/i18n";
+
 /**
  * How the settings page shows its groups. "split" (desktop): tabs on top,
  * the active group below. "stack" (phone): the list of groups, or the one
@@ -31,11 +33,15 @@ export const ConfigLayoutContext = createContext<ConfigLayout>({
   back: () => {},
 });
 
-const Unsaved = () => (
-  <span className="rounded-full bg-warning-50 px-1.5 py-px text-[11px] font-normal text-warning-700 dark:bg-warning-950/40 dark:text-warning-300">
-    未保存
-  </span>
-);
+const Unsaved = () => {
+  const { t } = useI18n();
+
+  return (
+    <span className="rounded-full bg-warning-50 px-1.5 py-px text-[11px] font-normal text-warning-700 dark:bg-warning-950/40 dark:text-warning-300">
+      {t("未保存")}
+    </span>
+  );
+};
 
 /** A white rounded group on the phone's grey page (iOS-style inset list). */
 export const groupClass =
@@ -57,6 +63,7 @@ export function ConfigSection({
   changed?: boolean;
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   const { mode, active, visited, transition, onTransitionEnd, back } =
     useContext(ConfigLayoutContext);
   const shown = active === id;
@@ -86,7 +93,7 @@ export function ConfigSection({
         onClick={back}
       >
         <ChevronLeft className="h-5 w-5" />
-        设置
+        {t("设置")}
       </button>
       <div className="mb-4 px-1">
         <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
@@ -118,11 +125,12 @@ export function ConfigIndex({
   items: ConfigIndexItem[];
   onOpen: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const { transition, onTransitionEnd } = useContext(ConfigLayoutContext);
 
   return (
     <nav
-      aria-label="设置分组"
+      aria-label={t("设置分组")}
       className={`${groupClass} ${transition === "pop" ? "config-pane-pop" : ""}`}
       onAnimationEnd={onTransitionEnd}
     >
@@ -165,21 +173,23 @@ export function ConfigSearchBox({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="relative">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-default-400" />
       <input
-        aria-label="搜索设置"
+        aria-label={t("搜索设置")}
         className="h-10 w-full rounded-xl border border-divider bg-content1 pl-9 pr-9 text-[15px] outline-none placeholder:text-default-400 focus:border-default-400 dark:bg-default-50 sm:h-9 sm:text-sm [&::-webkit-search-cancel-button]:appearance-none"
         enterKeyHint="search"
-        placeholder="搜索设置"
+        placeholder={t("搜索设置")}
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
       {value && (
         <button
-          aria-label="清除搜索"
+          aria-label={t("清除搜索")}
           className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-default-400 active:bg-default-200"
           type="button"
           onClick={() => onChange("")}
@@ -207,10 +217,12 @@ export function ConfigSearchResults({
   hits: ConfigSearchHit[];
   onPick: (hit: ConfigSearchHit) => void;
 }) {
+  const { t } = useI18n();
+
   if (hits.length === 0) {
     return (
       <p className="py-10 text-center text-sm text-default-500">
-        没有找到相关设置
+        {t("没有找到相关设置")}
       </p>
     );
   }

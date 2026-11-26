@@ -85,7 +85,7 @@ function DropdownMenuSubContent({
   return (
     <DropdownMenuPrimitive.SubContent
       className={cn(
-        "z-50 min-w-32 overflow-y-auto rounded-md border border-default-200 bg-white p-1.5 text-foreground shadow-lg max-h-[--radix-dropdown-menu-content-available-height] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=top]:slide-in-from-bottom-2 data-[side=bottom]:slide-in-from-top-2 dark:bg-default-50",
+        "z-50 min-w-32 overflow-y-auto rounded-lg border border-divider bg-content1 p-1.5 text-foreground shadow-lg max-h-[--radix-dropdown-menu-content-available-height] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=top]:slide-in-from-bottom-2 data-[side=bottom]:slide-in-from-top-2",
         className,
       )}
       data-slot="dropdown-menu-sub-content"
@@ -103,7 +103,7 @@ function DropdownMenuContent({
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         className={cn(
-          "z-50 min-w-32 overflow-y-auto rounded-md border border-default-200 bg-white p-1.5 text-foreground shadow-md max-h-[--radix-dropdown-menu-content-available-height] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=top]:slide-in-from-bottom-2 data-[side=bottom]:slide-in-from-top-2 dark:bg-default-50",
+          "z-50 min-w-32 overflow-y-auto rounded-lg border border-divider bg-content1 p-1.5 text-foreground shadow-lg max-h-[--radix-dropdown-menu-content-available-height] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=top]:slide-in-from-bottom-2 data-[side=bottom]:slide-in-from-top-2",
           className,
         )}
         data-slot="dropdown-menu-content"
@@ -124,7 +124,7 @@ function DropdownMenuItem({
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-default-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors focus:bg-default-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         inset && "pl-8",
         className,
       )}

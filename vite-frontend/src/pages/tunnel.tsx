@@ -43,6 +43,7 @@ import {
   previewTunnelDelete,
 } from "@/api";
 import { PageLoadingState } from "@/components/page-state";
+import { useI18n } from "@/i18n";
 import {
   markPageCached,
   pageCached,
@@ -104,6 +105,7 @@ export default function TunnelPage({
 }: {
   embedded?: boolean;
 }) {
+  const { t: tr } = useI18n();
   const [loading, setLoading] = useState(true);
   const [tunnels, setTunnels] = useCachedState<Tunnel[]>(PAGE, "tunnels", []);
   const [tunnelOrder, setTunnelOrder] = useCachedState<number[]>(
@@ -1448,7 +1450,7 @@ export default function TunnelPage({
     ].join(" → ");
   };
   const isSearching = searchKeyword.trim() !== "";
-  const addAction = { key: "add", label: "新建隧道", onPress: handleAdd };
+  const addAction = { key: "add", label: tr("新建隧道"), onPress: handleAdd };
   const sheetTunnel = tunnels.find((t) => t.id === sheetTunnelId) ?? null;
 
   if (loading && !pageCached(PAGE)) {
@@ -1459,9 +1461,9 @@ export default function TunnelPage({
     <PageShell embedded={embedded}>
       {!embedded && (
         <PageHeader
-          description="入口到出口的转发线路，转发规则建在隧道上"
+          description={tr("入口到出口的转发线路，转发规则建在隧道上")}
           primary={addAction}
-          title="隧道"
+          title={tr("隧道")}
         />
       )}
 
@@ -1470,13 +1472,13 @@ export default function TunnelPage({
           actions={[
             {
               key: "redeploy",
-              label: "下发",
+              label: tr("下发"),
               disabled: batchLoading,
               onPress: handleBatchRedeploy,
             },
             {
               key: "delete",
-              label: "删除",
+              label: tr("删除"),
               danger: true,
               onPress: handleOpenBatchDeleteModal,
             },
@@ -1498,12 +1500,12 @@ export default function TunnelPage({
           more={[
             {
               key: "batch",
-              label: "批量操作",
+              label: tr("批量操作"),
               disabled: sortedTunnels.length === 0,
               onPress: toggleSelectMode,
             },
           ]}
-          placeholder="搜索隧道名称或 IP"
+          placeholder={tr("搜索隧道名称或 IP")}
           primary={embedded ? addAction : undefined}
           search={searchKeyword}
           onSearch={setSearchKeyword}
@@ -1530,10 +1532,12 @@ export default function TunnelPage({
       {tunnels.length === 0 ? (
         <EmptyHint
           action={addAction}
-          text="还没有隧道。新建一条，选好入口和出口服务器，就能在上面添加转发规则"
+          text={tr(
+            "还没有隧道。新建一条，选好入口和出口服务器，就能在上面添加转发规则",
+          )}
         />
       ) : sortedTunnels.length === 0 ? (
-        <EmptyHint text="没有匹配的隧道" />
+        <EmptyHint text={tr("没有匹配的隧道")} />
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
@@ -1581,7 +1585,7 @@ export default function TunnelPage({
                                 size="sm"
                                 variant="flat"
                               >
-                                最优出口
+                                {tr("最优出口")}
                               </Chip>
                             )}
                           </>
@@ -1591,7 +1595,7 @@ export default function TunnelPage({
                           !isSearching && (
                             <span
                               className="cursor-grab touch-none p-1 text-default-300 transition-opacity hover:text-default-500 active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
-                              title="拖动排序"
+                              title={tr("拖动排序")}
                               {...listeners}
                             >
                               <GripVertical className="h-4 w-4" />
@@ -1601,7 +1605,9 @@ export default function TunnelPage({
                         selectMode={selectMode}
                         selected={selectedIds.has(tunnel.id)}
                         status={tunnel.status === 1 ? "ok" : "bad"}
-                        statusTitle={tunnel.status === 1 ? "正常" : "不可用"}
+                        statusTitle={
+                          tunnel.status === 1 ? tr("正常") : tr("不可用")
+                        }
                         title={tunnel.name}
                         onPress={() => setSheetTunnelId(tunnel.id)}
                         onSelect={() => toggleSelect(tunnel.id)}
@@ -1621,18 +1627,18 @@ export default function TunnelPage({
             ? [
                 {
                   key: "edit",
-                  label: "编辑",
+                  label: tr("编辑"),
                   color: "primary" as const,
                   onPress: () => handleEdit(sheetTunnel),
                 },
                 {
                   key: "diagnose",
-                  label: "诊断",
+                  label: tr("诊断"),
                   onPress: () => handleDiagnose(sheetTunnel),
                 },
                 {
                   key: "delete",
-                  label: "删除",
+                  label: tr("删除"),
                   color: "danger" as const,
                   onPress: () => handleDelete(sheetTunnel),
                 },
@@ -1644,7 +1650,7 @@ export default function TunnelPage({
           sheetTunnel &&
           `${getTunnelTypeDisplay(sheetTunnel.type).text}${
             sheetTunnel.engine === "realm" ? " · realm" : ""
-          } · ${sheetTunnel.status === 1 ? "正常" : "不可用"}`
+          } · ${sheetTunnel.status === 1 ? tr("正常") : tr("不可用")}`
         }
         title={sheetTunnel?.name ?? ""}
         onClose={() => setSheetTunnelId(null)}

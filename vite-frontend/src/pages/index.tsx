@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Turnstile } from "@marsidev/react-turnstile";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Card, CardBody, CardHeader } from "@/shadcn-bridge/heroui/card";
 import { Input } from "@/shadcn-bridge/heroui/input";
@@ -9,6 +10,8 @@ import { Button } from "@/shadcn-bridge/heroui/button";
 import { siteConfig } from "@/config/site";
 import { VersionFooter } from "@/components/version-footer";
 import { BrandLogo } from "@/components/brand-logo";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useI18n } from "@/i18n";
 import {
   login,
   LoginData,
@@ -33,12 +36,14 @@ interface LoginForm {
 }
 
 export default function IndexPage() {
+  const { t } = useI18n();
   const [form, setForm] = useState<LoginForm>({
     username: "",
     password: "",
     captchaId: "",
   });
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Partial<LoginForm>>({});
   const [showCaptcha, setShowCaptcha] = useState(false);
   const [siteKey, setSiteKey] = useState("");
@@ -88,14 +93,14 @@ export default function IndexPage() {
       const res = await beginGithubLogin(githubCallbackUrl());
 
       if (res.code !== 0) {
-        toast.error(res.msg || "无法使用 GitHub 登录");
+        toast.error(res.msg || t("无法使用 GitHub 登录"));
         setLoading(false);
 
         return;
       }
       goToGithub("login", res.data.url);
     } catch {
-      toast.error("无法使用 GitHub 登录");
+      toast.error(t("无法使用 GitHub 登录"));
       setLoading(false);
     }
   };
@@ -117,7 +122,7 @@ export default function IndexPage() {
       const begin = await beginPasskeyLogin();
 
       if (begin.code !== 0) {
-        toast.error(begin.msg || "无法使用通行证密钥登录");
+        toast.error(begin.msg || t("无法使用通行证密钥登录"));
 
         return;
       }
@@ -125,17 +130,17 @@ export default function IndexPage() {
       const result = await finishPasskeyLogin(begin.data.sessionId, credential);
 
       if (result.code !== 0) {
-        toast.error(result.msg || "通行证密钥登录失败");
+        toast.error(result.msg || t("通行证密钥登录失败"));
 
         return;
       }
       writeLoginSession(result.data);
-      toast.success("登录成功");
+      toast.success(t("登录成功"));
       navigate(
         result.data.requirePasswordChange ? "/change-password" : "/dashboard",
       );
     } catch {
-      toast.error("通行证密钥登录已取消或失败");
+      toast.error(t("通行证密钥登录已取消或失败"));
     } finally {
       setLoading(false);
     }
@@ -146,13 +151,13 @@ export default function IndexPage() {
     const newErrors: Partial<LoginForm> = {};
 
     if (!form.username.trim()) {
-      newErrors.username = "请输入用户名";
+      newErrors.username = t("请输入用户名");
     }
 
     if (!form.password.trim()) {
-      newErrors.password = "请输入密码";
+      newErrors.password = t("请输入密码");
     } else if (form.password.length < 6) {
-      newErrors.password = "密码长度至少6位";
+      newErrors.password = t("密码长度至少6位");
     }
 
     setErrors(newErrors);
@@ -186,7 +191,7 @@ export default function IndexPage() {
       const response = await login(loginData);
 
       if (response.code !== 0) {
-        toast.error(response.msg || "登录失败");
+        toast.error(response.msg || t("登录失败"));
         if (showCaptcha) {
           setForm((prev) => ({ ...prev, captchaId: "" }));
         }
@@ -197,7 +202,7 @@ export default function IndexPage() {
       // 检查是否需要强制修改密码
       if (response.data.requirePasswordChange) {
         writeLoginSession(response.data);
-        toast.success("检测到默认密码，即将跳转到修改密码页面");
+        toast.success(t("检测到默认密码，即将跳转到修改密码页面"));
         navigate("/change-password");
 
         return;
@@ -207,10 +212,10 @@ export default function IndexPage() {
       writeLoginSession(response.data);
 
       // 登录成功
-      toast.success("登录成功");
+      toast.success(t("登录成功"));
       navigate(response.data.role_id === 0 ? "/dashboard" : "/forward");
     } catch {
-      toast.error("网络错误，请稍后重试");
+      toast.error(t("网络错误，请稍后重试"));
     } finally {
       setLoading(false);
     }
@@ -226,7 +231,7 @@ export default function IndexPage() {
       const checkResponse = await checkCaptcha();
 
       if (checkResponse.code !== 0) {
-        toast.error("检查验证码状态失败，请重试" + checkResponse.msg);
+        toast.error(t("检查验证码状态失败，请重试") + checkResponse.msg);
         setLoading(false);
 
         return;
@@ -242,12 +247,12 @@ export default function IndexPage() {
           setSiteKey(configResp.data.value);
           setShowCaptcha(true);
         } else {
-          toast.error("未配置Cloudflare Site Key，请联系管理员");
+          toast.error(t("未配置Cloudflare Site Key，请联系管理员"));
           setLoading(false);
         }
       }
     } catch (error) {
-      toast.error("网络错误，请稍后重试" + error);
+      toast.error(t("网络错误，请稍后重试") + error);
       setLoading(false);
     }
   };
@@ -260,33 +265,41 @@ export default function IndexPage() {
 
   return (
     <div className="relative flex flex-col min-h-screen bg-mesh-gradient overflow-hidden">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(120,120,120,0.08),transparent_60%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,0.05),transparent_55%)]"
+      />
+      <div className="fixed right-4 top-4 z-20 safe-top">
+        <LanguageToggle variant="pill" />
+      </div>
       <section className="flex flex-col items-center justify-center flex-1 w-full p-4 relative z-10">
-        <div className="w-full max-w-[380px] px-4 sm:px-0">
-          <Card className="w-full border-0 bg-transparent p-0">
-            <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
-              <BrandLogo className="w-10 h-10 mb-4" size={40} />
+        <div className="ui-fade-in w-full max-w-[392px] px-2 sm:px-0">
+          <Card className="w-full rounded-2xl border border-divider bg-content1/90 p-1 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.1)] backdrop-blur-md dark:bg-default-50/90 dark:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)]">
+            <CardHeader className="pb-1 pt-7 px-6 flex-col items-center">
+              <BrandLogo className="w-10 h-10 mb-3.5" size={40} />
               <h1 className="text-2xl font-bold tracking-tight text-foreground">
                 {siteConfig.name}
               </h1>
-              <p className="text-sm text-default-500 mt-2 font-medium">
-                Sign in to manage your networks
+              <p className="text-sm text-default-500 mt-1.5 text-center">
+                {t("登录以管理你的网络与订阅")}
               </p>
             </CardHeader>
-            <CardBody className="px-6 py-6 mt-2">
-              <div className="flex flex-col gap-5">
+            <CardBody className="px-6 py-6">
+              <div className="flex flex-col gap-4">
                 {(passwordAllowed || showUserPasswordForm) && (
                   <>
                     <Input
+                      autoComplete="username"
                       classNames={{
                         inputWrapper:
-                          "bg-background border border-input h-10 rounded-md",
-                        input: "text-base font-medium",
+                          "bg-background border border-input h-10 rounded-lg",
+                        input: "text-sm font-medium",
                       }}
                       errorMessage={errors.username}
                       isDisabled={loading}
                       isInvalid={!!errors.username}
-                      label="Username"
-                      placeholder="admin"
+                      label={t("用户名")}
+                      placeholder={t("请输入用户名")}
                       value={form.username}
                       variant="bordered"
                       onChange={(e) =>
@@ -296,16 +309,35 @@ export default function IndexPage() {
                     />
 
                     <Input
+                      autoComplete="current-password"
                       classNames={{
                         inputWrapper:
-                          "bg-background border border-input h-10 rounded-md",
-                        input: "text-base font-medium tracking-wider",
+                          "bg-background border border-input h-10 rounded-lg",
+                        input: "text-sm font-medium",
                       }}
+                      endContent={
+                        <button
+                          aria-label={
+                            showPassword ? t("隐藏密码") : t("显示密码")
+                          }
+                          className="text-default-400 transition-colors hover:text-foreground"
+                          tabIndex={-1}
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      }
+                      errorMessage={errors.password}
                       isDisabled={loading}
                       isInvalid={!!errors.password}
-                      label="Password"
-                      placeholder="••••••••"
-                      type="password"
+                      label={t("密码")}
+                      placeholder={t("请输入密码")}
+                      type={showPassword ? "text" : "password"}
                       value={form.password}
                       variant="bordered"
                       onChange={(e) =>
@@ -315,32 +347,32 @@ export default function IndexPage() {
                     />
 
                     <Button
-                      className="mt-2 h-10 rounded-md bg-primary text-primary-foreground font-medium"
+                      className="mt-1 h-10 rounded-lg bg-primary text-primary-foreground font-medium"
                       disabled={loading}
                       isLoading={loading}
                       onPress={handleLogin}
                     >
                       {loading
                         ? showCaptcha
-                          ? "Verifying..."
-                          : "Signing in..."
-                        : "Sign In"}
+                          ? t("验证中...")
+                          : t("登录中...")
+                        : t("登录")}
                     </Button>
                   </>
                 )}
                 {passkeyEnabled && (
                   <Button
-                    className="h-10 rounded-md"
+                    className="h-10 rounded-lg"
                     disabled={loading}
                     variant="bordered"
                     onPress={() => void handlePasskeyLogin()}
                   >
-                    选择通行证密钥登录
+                    {t("选择通行证密钥登录")}
                   </Button>
                 )}
                 {githubEnabled && (
                   <Button
-                    className={`h-10 rounded-md ${
+                    className={`h-10 rounded-lg ${
                       passwordAllowed === false
                         ? "bg-primary text-primary-foreground font-medium"
                         : ""
@@ -349,7 +381,7 @@ export default function IndexPage() {
                     variant={passwordAllowed === false ? "solid" : "bordered"}
                     onPress={() => void handleGithubLogin()}
                   >
-                    使用 GitHub 登录
+                    {t("使用 GitHub 登录")}
                   </Button>
                 )}
                 {passwordAllowed === false &&
@@ -360,7 +392,7 @@ export default function IndexPage() {
                       type="button"
                       onClick={() => setShowUserPasswordForm(true)}
                     >
-                      普通用户账号密码登录
+                      {t("普通用户账号密码登录")}
                     </button>
                   )}
                 {statusPageEnabled && (
@@ -370,7 +402,7 @@ export default function IndexPage() {
                     className="text-center text-sm text-default-500 transition-colors hover:text-foreground"
                     href="/status/"
                   >
-                    查看服务器状态 →
+                    {t("查看服务器状态 →")}
                   </a>
                 )}
               </div>
@@ -409,7 +441,7 @@ export default function IndexPage() {
             {/* 验证码容器 */}
             <div className="mb-4 relative z-50 bg-white dark:bg-zinc-900 p-6 rounded-lg shadow-xl">
               <div className="mb-4 text-center text-sm font-medium text-gray-700 dark:text-gray-200">
-                请完成安全验证
+                {t("请完成安全验证")}
               </div>
               <div className="flex justify-center">
                 <Turnstile
@@ -425,7 +457,7 @@ export default function IndexPage() {
                   }}
                   siteKey={siteKey}
                   onError={() => {
-                    toast.error("验证失败，请刷新重试");
+                    toast.error(t("验证失败，请刷新重试"));
                     setLoading(false);
                   }}
                   onExpire={() => {

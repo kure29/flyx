@@ -5,6 +5,7 @@ import { Button } from "@/shadcn-bridge/heroui/button";
 import { Input } from "@/shadcn-bridge/heroui/input";
 import { Card, CardBody, CardHeader } from "@/shadcn-bridge/heroui/card";
 import { updatePassword } from "@/api";
+import { useI18n } from "@/i18n";
 import DefaultLayout from "@/layouts/default";
 import { safeLogout } from "@/utils/logout";
 
@@ -16,6 +17,7 @@ interface PasswordForm {
 }
 
 export default function ChangePasswordPage() {
+  const { t } = useI18n();
   const [form, setForm] = useState<PasswordForm>({
     newUsername: "",
     currentPassword: "",
@@ -29,29 +31,29 @@ export default function ChangePasswordPage() {
     const newErrors: Partial<PasswordForm> = {};
 
     if (!form.newUsername.trim()) {
-      newErrors.newUsername = "请输入新用户名";
+      newErrors.newUsername = t("请输入新用户名");
     } else if (form.newUsername.length < 3) {
-      newErrors.newUsername = "用户名长度至少3位";
+      newErrors.newUsername = t("用户名长度至少3位");
     } else if (form.newUsername.length > 20) {
-      newErrors.newUsername = "用户名长度不能超过20位";
+      newErrors.newUsername = t("用户名长度不能超过20位");
     }
 
     if (!form.currentPassword.trim()) {
-      newErrors.currentPassword = "请输入当前密码";
+      newErrors.currentPassword = t("请输入当前密码");
     }
 
     if (!form.newPassword.trim()) {
-      newErrors.newPassword = "请输入新密码";
+      newErrors.newPassword = t("请输入新密码");
     } else if (form.newPassword.length < 6) {
-      newErrors.newPassword = "新密码长度不能少于6位";
+      newErrors.newPassword = t("新密码长度不能少于6位");
     } else if (form.newPassword.length > 20) {
-      newErrors.newPassword = "新密码长度不能超过20位";
+      newErrors.newPassword = t("新密码长度不能超过20位");
     }
 
     if (!form.confirmPassword.trim()) {
-      newErrors.confirmPassword = "请再次输入新密码";
+      newErrors.confirmPassword = t("请再次输入新密码");
     } else if (form.confirmPassword !== form.newPassword) {
-      newErrors.confirmPassword = "两次输入密码不一致";
+      newErrors.confirmPassword = t("两次输入密码不一致");
     }
 
     setErrors(newErrors);
@@ -74,20 +76,20 @@ export default function ChangePasswordPage() {
       const response = await updatePassword(form);
 
       if (response.code === 0) {
-        toast.success(response.msg || "账号密码修改成功");
+        toast.success(response.msg || t("账号密码修改成功"));
 
         // 使用 toast 确认对话框的替代方案
         setTimeout(() => {
-          toast.success("即将跳转到登陆页面，请重新登录");
+          toast.success(t("即将跳转到登陆页面，请重新登录"));
           setTimeout(() => {
             logout();
           }, 1000);
         }, 1000);
       } else {
-        toast.error(response.msg || "账号密码修改失败");
+        toast.error(response.msg || t("账号密码修改失败"));
       }
     } catch {
-      toast.error("修改账号密码时发生错误");
+      toast.error(t("修改账号密码时发生错误"));
     } finally {
       setLoading(false);
     }
@@ -124,9 +126,13 @@ export default function ChangePasswordPage() {
                 </svg>
               </div>
 
-              <h1 className="text-xl font-semibold tracking-tight">安全提醒</h1>
+              <h1 className="text-xl font-semibold tracking-tight">
+                {t("安全提醒")}
+              </h1>
               <p className="text-small text-default-500 mt-2 text-center">
-                检测到您使用的是默认账号密码，为了您的账户安全，请立即修改
+                {t(
+                  "检测到您使用的是默认账号密码，为了您的账户安全，请立即修改",
+                )}
               </p>
             </CardHeader>
 
@@ -136,8 +142,8 @@ export default function ChangePasswordPage() {
                   errorMessage={errors.newUsername}
                   isDisabled={loading}
                   isInvalid={!!errors.newUsername}
-                  label="新用户名"
-                  placeholder="请输入新用户名（至少3位）"
+                  label={t("新用户名")}
+                  placeholder={t("请输入新用户名（至少3位）")}
                   value={form.newUsername}
                   variant="bordered"
                   onChange={(e) =>
@@ -150,8 +156,8 @@ export default function ChangePasswordPage() {
                   errorMessage={errors.currentPassword}
                   isDisabled={loading}
                   isInvalid={!!errors.currentPassword}
-                  label="当前密码"
-                  placeholder="请输入当前密码"
+                  label={t("当前密码")}
+                  placeholder={t("请输入当前密码")}
                   type="password"
                   value={form.currentPassword}
                   variant="bordered"
@@ -165,8 +171,8 @@ export default function ChangePasswordPage() {
                   errorMessage={errors.newPassword}
                   isDisabled={loading}
                   isInvalid={!!errors.newPassword}
-                  label="新密码"
-                  placeholder="请输入新密码（至少6位）"
+                  label={t("新密码")}
+                  placeholder={t("请输入新密码（至少6位）")}
                   type="password"
                   value={form.newPassword}
                   variant="bordered"
@@ -180,8 +186,8 @@ export default function ChangePasswordPage() {
                   errorMessage={errors.confirmPassword}
                   isDisabled={loading}
                   isInvalid={!!errors.confirmPassword}
-                  label="确认新密码"
-                  placeholder="请再次输入新密码"
+                  label={t("确认新密码")}
+                  placeholder={t("请再次输入新密码")}
                   type="password"
                   value={form.confirmPassword}
                   variant="bordered"
@@ -199,11 +205,11 @@ export default function ChangePasswordPage() {
                   size="lg"
                   onPress={handleSubmit}
                 >
-                  {loading ? "修改中..." : "立即修改账号密码"}
+                  {loading ? t("修改中...") : t("立即修改账号密码")}
                 </Button>
 
                 <div className="bg-warning-50 border border-warning-200 text-warning-700 px-3 py-2 rounded-lg text-sm text-center">
-                  ⚠️ 注意：修改账号密码后需要重新登录
+                  ⚠️ {t("注意：修改账号密码后需要重新登录")}
                 </div>
               </div>
             </CardBody>

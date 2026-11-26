@@ -30,6 +30,7 @@ import {
   ModalFooter,
   ModalHeader,
 } from "@/shadcn-bridge/heroui/modal";
+import { useI18n } from "@/i18n";
 import { formatTraffic } from "@/utils/traffic";
 
 function subStatusRow(status: UserSubscription["status"]): RowStatus {
@@ -45,19 +46,22 @@ function subStatusRow(status: UserSubscription["status"]): RowStatus {
   }
 }
 
-function subStatusLabel(status: UserSubscription["status"]): {
+function subStatusLabel(
+  status: UserSubscription["status"],
+  t: (zh: string) => string,
+): {
   text: string;
   color: "success" | "warning" | "danger" | "default";
 } {
   switch (status) {
     case "ok":
-      return { text: "正常", color: "success" };
+      return { text: t("正常"), color: "success" };
     case "over_quota":
-      return { text: "流量已用完", color: "warning" };
+      return { text: t("流量已用完"), color: "warning" };
     case "expired":
-      return { text: "已过期", color: "danger" };
+      return { text: t("已过期"), color: "danger" };
     default:
-      return { text: "已停用", color: "default" };
+      return { text: t("已停用"), color: "default" };
   }
 }
 
@@ -68,6 +72,7 @@ function subLink(s: UserSubscription, format: string): string {
 }
 
 export default function MySubscriptionPage() {
+  const { t } = useI18n();
   const [items, setItems] = useState<UserSubscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<UserSubscription | null>(null);
@@ -87,11 +92,11 @@ export default function MySubscriptionPage() {
         );
       }
     } catch {
-      toast.error("加载订阅失败");
+      toast.error(t("加载订阅失败"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -103,11 +108,11 @@ export default function MySubscriptionPage() {
       const res = await resetUserSubscription(s.id);
 
       if (res.code !== 0) {
-        toast.error(res.msg || "重置失败");
+        toast.error(res.msg || t("重置失败"));
 
         return;
       }
-      toast.success("已重置链接与凭据，请在客户端重新导入订阅");
+      toast.success(t("已重置链接与凭据，请在客户端重新导入订阅"));
       if (res.data) {
         setItems((prev) =>
           prev.map((item) => (item.id === s.id ? res.data : item)),
@@ -117,7 +122,7 @@ export default function MySubscriptionPage() {
         await load();
       }
     } catch {
-      toast.error("重置失败");
+      toast.error(t("重置失败"));
     } finally {
       setResetting(false);
     }
@@ -134,25 +139,25 @@ export default function MySubscriptionPage() {
   return (
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
       <PageHeader
-        description="查看分配给你的订阅链接、流量与到期时间"
-        title="我的订阅"
+        description={t("查看分配给你的订阅链接、流量与到期时间")}
+        title={t("我的订阅")}
       />
 
       {items.length === 0 ? (
-        <EmptyHint text="管理员还没有给你分配订阅。" />
+        <EmptyHint text={t("管理员还没有给你分配订阅。")} />
       ) : (
-        <ListGroup count={items.length} title="订阅列表">
+        <ListGroup count={items.length} title={t("订阅列表")}>
           {items.map((s) => {
             const used = s.uploadBytes + s.downloadBytes;
-            const badge = subStatusLabel(s.status);
+            const badge = subStatusLabel(s.status, t);
             const flowText =
               s.trafficLimit > 0
                 ? `${formatTraffic(used)} / ${formatTraffic(s.trafficLimit)}`
-                : `${formatTraffic(used)} / 不限`;
+                : `${formatTraffic(used)} / ${t("不限")}`;
             const expText =
               s.expireTime > 0
-                ? `到期 ${formatDate(s.expireTime)}`
-                : "永不过期";
+                ? t("到期 {date}", { date: formatDate(s.expireTime) })
+                : t("永不过期");
 
             return (
               <ListRow
@@ -164,10 +169,12 @@ export default function MySubscriptionPage() {
                 }
                 meta={
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-default-500">
-                    <span>{s.nodeCount} 个节点</span>
-                    <span>流量 {flowText}</span>
+                    <span>{t("{count} 个节点", { count: s.nodeCount })}</span>
+                    <span>{t("流量 {flow}", { flow: flowText })}</span>
                     <span>{expText}</span>
-                    {s.resetDay > 0 && <span>每月 {s.resetDay} 号重置</span>}
+                    {s.resetDay > 0 && (
+                      <span>{t("每月 {day} 号重置", { day: s.resetDay })}</span>
+                    )}
                   </div>
                 }
                 status={subStatusRow(s.status)}
@@ -197,11 +204,11 @@ export default function MySubscriptionPage() {
               <ModalHeader className="flex items-center justify-between gap-2">
                 <span>{selected.name}</span>
                 <Chip
-                  color={subStatusLabel(selected.status).color}
+                  color={subStatusLabel(selected.status, t).color}
                   size="sm"
                   variant="flat"
                 >
-                  {subStatusLabel(selected.status).text}
+                  {subStatusLabel(selected.status, t).text}
                 </Chip>
               </ModalHeader>
               <ModalBody className="space-y-4">
@@ -219,12 +226,14 @@ export default function MySubscriptionPage() {
                           {formatTraffic(used)}
                           {selected.trafficLimit > 0
                             ? ` / ${formatTraffic(selected.trafficLimit)}`
-                            : "（不限流量）"}
+                            : t("（不限流量）")}
                         </span>
                         <span className="text-xs text-default-500">
                           {selected.expireTime > 0
-                            ? `到期 ${formatDate(selected.expireTime)}`
-                            : "永不过期"}
+                            ? t("到期 {date}", {
+                                date: formatDate(selected.expireTime),
+                              })
+                            : t("永不过期")}
                         </span>
                       </div>
                       {selected.trafficLimit > 0 && (
@@ -247,7 +256,11 @@ export default function MySubscriptionPage() {
                           {formatTraffic(selected.downloadBytes)}
                         </span>
                         {selected.resetDay > 0 && (
-                          <span>每月 {selected.resetDay} 号自动重置</span>
+                          <span>
+                            {t("每月 {day} 号自动重置", {
+                              day: selected.resetDay,
+                            })}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -256,8 +269,8 @@ export default function MySubscriptionPage() {
 
                 <Segmented
                   options={[
-                    ["import", "导入订阅"],
-                    ["traffic", "流量统计"],
+                    ["import", t("导入订阅")],
+                    ["traffic", t("流量统计")],
                   ]}
                   value={tab}
                   onChange={setTab}
@@ -271,10 +284,10 @@ export default function MySubscriptionPage() {
                         size="sm"
                         startContent={<Copy className="w-3.5 h-3.5" />}
                         onPress={() =>
-                          copyText(subLink(selected, ""), "订阅链接已复制")
+                          copyText(subLink(selected, ""), t("订阅链接已复制"))
                         }
                       >
-                        复制通用链接
+                        {t("复制通用链接")}
                       </Button>
                       <Button
                         size="sm"
@@ -282,7 +295,7 @@ export default function MySubscriptionPage() {
                         variant="flat"
                         onPress={() => setShowQr((v) => !v)}
                       >
-                        {showQr ? "隐藏二维码" : "二维码"}
+                        {showQr ? t("隐藏二维码") : t("二维码")}
                       </Button>
                       <Button
                         color="warning"
@@ -292,7 +305,7 @@ export default function MySubscriptionPage() {
                         variant="flat"
                         onPress={() => void handleReset(selected)}
                       >
-                        重置链接与凭据
+                        {t("重置链接与凭据")}
                       </Button>
                     </div>
 
@@ -315,7 +328,7 @@ export default function MySubscriptionPage() {
               </ModalBody>
               <ModalFooter>
                 <Button variant="flat" onPress={() => setSelected(null)}>
-                  关闭
+                  {t("关闭")}
                 </Button>
               </ModalFooter>
             </>

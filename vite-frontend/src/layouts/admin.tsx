@@ -19,7 +19,9 @@ import {
 } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { LanguageToggle } from "@/components/language-toggle";
 import { VersionFooter } from "@/components/version-footer";
+import { useI18n } from "@/i18n";
 import { useThemeContext } from "@/themes/context";
 import { isAdmin } from "@/utils/auth";
 import { safeLogout } from "@/utils/logout";
@@ -48,6 +50,7 @@ export default function AdminLayout({
   const isMobile = useMobileBreakpoint();
   const admin = isAdmin();
   const { effectiveMode, setMode } = useThemeContext();
+  const { t } = useI18n();
   const isDark = effectiveMode === "dark";
 
   // 菜单项按 线路 / 分发 / 系统 分组；普通用户只看到转发与我的订阅
@@ -55,57 +58,57 @@ export default function AdminLayout({
     ? [
         {
           path: "/dashboard",
-          label: "概览",
+          label: t("概览"),
           icon: <LayoutGrid className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/node",
-          section: "线路",
-          label: "服务器",
+          section: t("线路"),
+          label: t("服务器"),
           icon: <Server className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/inbound",
-          label: "节点",
+          label: t("节点"),
           icon: <Globe className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/relay",
-          label: "中转",
+          label: t("中转"),
           icon: <Link2 className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/subscription",
-          section: "分发",
-          label: "订阅",
+          section: t("分发"),
+          label: t("订阅"),
           icon: <Rss className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/user",
-          label: "用户",
+          label: t("用户"),
           icon: <Users className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/panel-sharing",
-          section: "系统",
-          label: "共享",
+          section: t("系统"),
+          label: t("共享"),
           icon: <Share2 className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/config",
-          label: "设置",
+          label: t("设置"),
           icon: <Settings className="h-4 w-4" strokeWidth={1.75} />,
         },
       ]
     : [
         {
           path: "/forward",
-          label: "转发",
+          label: t("转发"),
           icon: <Link2 className="h-4 w-4" strokeWidth={1.75} />,
         },
         {
           path: "/my-subscription",
-          label: "我的订阅",
+          label: t("我的订阅"),
           icon: <Rss className="h-4 w-4" strokeWidth={1.75} />,
         },
       ];
@@ -204,7 +207,7 @@ export default function AdminLayout({
       {/* 移动端遮罩层 */}
       {isMobile && mobileMenuVisible && (
         <button
-          aria-label="关闭菜单"
+          aria-label={t("关闭菜单")}
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] animate-in fade-in-0 duration-200"
           type="button"
           onClick={hideMobileMenu}
@@ -291,21 +294,21 @@ export default function AdminLayout({
           </ul>
         </nav>
 
-        {/* 底部：账号、退出、主题、版本和折叠 */}
+        {/* 底部：账号、退出、语言、主题、版本和折叠 */}
         <div className="mt-auto flex flex-shrink-0 flex-col gap-1 overflow-hidden whitespace-nowrap border-t border-divider/60 px-3 py-3">
           {!isMobile &&
             [
               // Password, passkeys and GitHub live on the account page.
               {
                 key: "account",
-                label: "账户与登录",
+                label: t("账户与登录"),
                 icon: UserRound,
                 active: location.pathname === "/profile",
                 onPress: () => navigate("/profile"),
               },
               {
                 key: "logout",
-                label: "退出登录",
+                label: t("退出登录"),
                 icon: LogOut,
                 active: false,
                 onPress: handleLogout,
@@ -339,10 +342,11 @@ export default function AdminLayout({
               />
             )}
             <div className="flex items-center gap-0.5">
+              <LanguageToggle variant="icon" />
               <button
-                aria-label={isDark ? "切换到浅色模式" : "切换到深色模式"}
+                aria-label={isDark ? t("切换到浅色模式") : t("切换到深色模式")}
                 className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-default-400 transition-[color,background-color,transform] duration-150 hover:bg-default-200/60 hover:text-foreground active:scale-90 dark:hover:bg-default-100"
-                title={isDark ? "切换到浅色模式" : "切换到深色模式"}
+                title={isDark ? t("切换到浅色模式") : t("切换到深色模式")}
                 type="button"
                 onClick={() => setMode(isDark ? "light" : "dark")}
               >
@@ -354,9 +358,9 @@ export default function AdminLayout({
               </button>
               {!isMobile && (
                 <button
-                  aria-label={isCollapsed ? "展开菜单" : "收起菜单"}
+                  aria-label={isCollapsed ? t("展开菜单") : t("收起菜单")}
                   className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-default-400 transition-[color,background-color,transform] duration-150 hover:bg-default-200/60 hover:text-foreground active:scale-90 dark:hover:bg-default-100"
-                  title={isCollapsed ? "展开菜单" : "收起菜单"}
+                  title={isCollapsed ? t("展开菜单") : t("收起菜单")}
                   type="button"
                   onClick={toggleCollapse}
                 >
@@ -379,7 +383,7 @@ export default function AdminLayout({
         {isMobile && (
           <header className="flex h-12 items-center gap-2 border-b border-divider px-3">
             <button
-              aria-label="打开菜单"
+              aria-label={t("打开菜单")}
               className="flex h-8 w-8 items-center justify-center rounded-md text-foreground hover:bg-default-100 active:scale-95 transition-transform"
               type="button"
               onClick={toggleMobileMenu}

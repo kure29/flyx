@@ -79,8 +79,13 @@ export function Input({
     >
       <div
         className={cn(
-          "relative flex items-center rounded-md",
-          variant === "bordered" ? "border border-input" : "",
+          "relative flex items-center rounded-md transition-[border-color,box-shadow] duration-150",
+          variant === "bordered"
+            ? "border border-input focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25"
+            : "",
+          isInvalid && variant === "bordered"
+            ? "border-danger focus-within:border-danger focus-within:ring-danger/20"
+            : "",
           classNames?.inputWrapper,
         )}
       >
@@ -91,7 +96,9 @@ export function Input({
           aria-invalid={isInvalid}
           className={cn(
             inputSizeClass(size),
-            variant === "bordered" ? "border-0 shadow-none" : "",
+            variant === "bordered"
+              ? "border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              : "",
             startContent ? "pl-2" : "",
             endContent ? "pr-2" : "",
             classNames?.input,

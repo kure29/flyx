@@ -18,6 +18,7 @@ import {
   saveNodeGroup,
 } from "@/api";
 import { EmptyHint } from "@/components/page-kit";
+import { useI18n } from "@/i18n";
 import { PROTOCOL_LABELS } from "@/pages/inbound/presets";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
@@ -174,9 +175,15 @@ export function NodeGroupList({
   onEdit: (g: NodeGroupItem) => void;
   onMove: (index: number, delta: -1 | 1) => void;
 }) {
+  const { t } = useI18n();
+
   if (groups.length === 0) {
     return (
-      <EmptyHint text="节点组把自建、导入的节点和订阅源筛选、改名后存成一份列表，多个订阅可以共用；新建订阅前先建一个" />
+      <EmptyHint
+        text={t(
+          "节点组把自建、导入的节点和订阅源筛选、改名后存成一份列表，多个订阅可以共用；新建订阅前先建一个",
+        )}
+      />
     );
   }
 
@@ -202,21 +209,22 @@ export function NodeGroupList({
               <span className="truncate">{g.name}</span>
               {g.subscriptions.length === 0 && (
                 <Chip size="sm" variant="flat">
-                  未使用
+                  {t("未使用")}
                 </Chip>
               )}
             </div>
             <div className="truncate text-xs text-default-400">
-              {g.nodeCount} 个节点 · {groupSourceText(g)}
+              {t("{count} 个节点", { count: g.nodeCount })} ·{" "}
+              {g.sourceAll ? t("全部节点") : groupSourceText(g)}
               {[filterSummary(g.options), namingSummary(g.options)]
                 .filter(Boolean)
                 .map((x) => ` · ${x}`)
                 .join("")}
-              {g.options.script ? " · 脚本" : ""}
+              {g.options.script ? ` · ${t("脚本")}` : ""}
             </div>
             {g.subscriptions.length > 0 && (
               <div className="mt-1 truncate text-xs text-default-400">
-                订阅：{g.subscriptions.map((s) => s.name).join("、")}
+                {t("订阅")}：{g.subscriptions.map((s) => s.name).join("、")}
               </div>
             )}
           </div>
@@ -227,7 +235,7 @@ export function NodeGroupList({
           >
             <Button
               isIconOnly
-              aria-label={`上移 ${g.name}`}
+              aria-label={`${t("上移")} ${g.name}`}
               isDisabled={i === 0}
               size="sm"
               variant="light"
@@ -237,7 +245,7 @@ export function NodeGroupList({
             </Button>
             <Button
               isIconOnly
-              aria-label={`下移 ${g.name}`}
+              aria-label={`${t("下移")} ${g.name}`}
               isDisabled={i === groups.length - 1}
               size="sm"
               variant="light"
@@ -275,6 +283,7 @@ export function NodeGroupEditor({
   onSaved: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [page, setPage] = useState<GroupPage>("source");
   const [preview, setPreview] = useState<NodeGroupPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -422,15 +431,15 @@ export function NodeGroupEditor({
       const res = await saveNodeGroup(draft);
 
       if (res.code !== 0) {
-        toast.error(res.msg || "保存失败");
+        toast.error(res.msg || t("保存失败"));
 
         return;
       }
       if (res.msg && res.msg !== "操作成功") toast(res.msg, { icon: "⚠️" });
-      else toast.success(draft.id ? "已保存" : "已创建");
+      else toast.success(draft.id ? t("已保存") : t("已创建"));
       onSaved();
     } catch {
-      toast.error("保存失败");
+      toast.error(t("保存失败"));
     } finally {
       setSaving(false);
     }
@@ -443,14 +452,14 @@ export function NodeGroupEditor({
       const res = await deleteNodeGroup(draft.id);
 
       if (res.code !== 0) {
-        toast.error(res.msg || "删除失败");
+        toast.error(res.msg || t("删除失败"));
 
         return;
       }
-      toast.success("已删除");
+      toast.success(t("已删除"));
       onSaved();
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
     } finally {
       setSaving(false);
       setConfirmDelete(false);
@@ -492,29 +501,31 @@ export function NodeGroupEditor({
                   <span className="text-sm">{i.name}</span>
                   {nodeRelays.length > 0 && (
                     <span className="ml-1.5 rounded bg-default-100 px-1.5 py-0.5 text-[11px] text-default-500">
-                      落地直连
+                      {t("落地直连")}
                     </span>
                   )}
                   {!i.enabled && (
                     <span className="ml-1 text-xs text-default-400">
-                      已停用
+                      {t("已停用")}
                     </span>
                   )}
                   {usesSharedCredentials(i) && (
-                    <span className="ml-1 text-xs text-warning">共用凭据</span>
+                    <span className="ml-1 text-xs text-warning">
+                      {t("共用凭据")}
+                    </span>
                   )}
                 </Checkbox>
               ) : (
                 <div className="flex items-center gap-1.5 pl-1 text-xs text-default-500">
                   <span>{i.name}</span>
                   <span className="rounded bg-default-100 px-1.5 py-0.5 text-[11px]">
-                    仅中转
+                    {t("仅中转")}
                   </span>
                   {!i.enabled && (
-                    <span className="text-default-400">已停用</span>
+                    <span className="text-default-400">{t("已停用")}</span>
                   )}
                   {usesSharedCredentials(i) && (
-                    <span className="text-warning">共用凭据</span>
+                    <span className="text-warning">{t("共用凭据")}</span>
                   )}
                 </div>
               )}
@@ -533,11 +544,11 @@ export function NodeGroupEditor({
                       >
                         <span className="text-sm">{rel.name}</span>
                         <span className="ml-1.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
-                          中转
+                          {t("中转")}
                         </span>
                         {inactive && (
                           <span className="ml-1 text-xs text-default-400">
-                            {rel.forwardExists ? "已暂停" : "转发已删"}
+                            {rel.forwardExists ? t("已暂停") : t("转发已删")}
                           </span>
                         )}
                       </Checkbox>
@@ -560,23 +571,25 @@ export function NodeGroupEditor({
     <>
       <ModalHeader>
         <h2 className="text-lg font-bold">
-          {draft.id ? "编辑节点组" : "新建节点组"}
+          {draft.id ? t("编辑节点组") : t("新建节点组")}
         </h2>
       </ModalHeader>
       <ModalBody className="min-h-[min(65vh,34rem)] space-y-4">
         <div className="sticky top-0 z-10">
           <EditorTabs
             tabs={[
-              { key: "source", label: "来源" },
+              { key: "source", label: t("来源") },
               {
                 key: "process",
-                label: "处理",
+                label: t("处理"),
                 badge:
-                  filterSummary(o) || namingSummary(o) || o.script ? "开" : "",
+                  filterSummary(o) || namingSummary(o) || o.script
+                    ? t("开")
+                    : "",
               },
               {
                 key: "preview",
-                label: "预览",
+                label: t("预览"),
                 badge: preview ? preview.items.length : "",
               },
             ]}
@@ -587,9 +600,9 @@ export function NodeGroupEditor({
 
         {page === "source" && (
           <div className="space-y-4">
-            <Section title="基本">
+            <Section title={t("基本")}>
               <Input
-                label="名称"
+                label={t("名称")}
                 placeholder="例如 香港专线 / 全部自建"
                 value={draft.name}
                 variant="bordered"
@@ -605,15 +618,17 @@ export function NodeGroupEditor({
             <Section
               hint={
                 draft.sourceAll
-                  ? "包含全部自建、导入节点与订阅源，下方可直接选择中转/直连策略"
-                  : "中转线路和落地直连可分别勾选，互不绑定"
+                  ? t(
+                      "包含全部自建、导入节点与订阅源，下方可直接选择中转/直连策略",
+                    )
+                  : t("中转线路和落地直连可分别勾选，互不绑定")
               }
-              title="来源"
+              title={t("来源")}
             >
               <Segmented
                 options={[
-                  ["all", "全部节点"],
-                  ["pick", "指定节点"],
+                  ["all", t("全部节点")],
+                  ["pick", t("指定节点")],
                 ]}
                 value={draft.sourceAll ? "all" : "pick"}
                 onChange={(v) => {

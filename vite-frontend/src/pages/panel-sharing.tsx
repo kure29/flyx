@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "react-hot-toast";
 
 import { copyWithToast } from "@/utils/clipboard";
+import { useI18n } from "@/i18n";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
 import { AnimatedPage } from "@/components/animated-page";
@@ -107,6 +108,7 @@ interface RemoteUsageNode {
 const MAX_SAFE_BANDWIDTH_MIB = Math.floor(Number.MAX_SAFE_INTEGER / MIB);
 
 export default function PanelSharingPage() {
+  const { t } = useI18n();
   const [selectedTab, setSelectedTab] = useState<"my-shares" | "remote-nodes">(
     "my-shares",
   );
@@ -437,10 +439,10 @@ export default function PanelSharingPage() {
     share.expiryTime > 0 && share.expiryTime < Date.now();
 
   const shareStatus = (share: PeerShare): [RowStatus, string] => {
-    if (share.isActive !== 1) return ["off", "已停用"];
-    if (isShareExpired(share)) return ["bad", "已过期"];
+    if (share.isActive !== 1) return ["off", t("已停用")];
+    if (isShareExpired(share)) return ["bad", t("已过期")];
 
-    return ["ok", "生效中"];
+    return ["ok", t("生效中")];
   };
 
   const formatSyncError = (syncError: string) =>
@@ -456,7 +458,7 @@ export default function PanelSharingPage() {
     start > 0 && end > 0 ? `${start}-${end}` : "-";
 
   const formatFlowUsage = (current: number, max: number) =>
-    `${formatFlowGB(current || 0)} / ${max > 0 ? formatFlowGB(max) : "不限"}`;
+    `${formatFlowGB(current || 0)} / ${max > 0 ? formatFlowGB(max) : t("不限")}`;
 
   const sheetShare = shares.find((item) => item.id === sheetShareId) ?? null;
   const sheetRemote =
@@ -478,26 +480,26 @@ export default function PanelSharingPage() {
   return (
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
       <PageHeader
-        description="分享本地服务器给其他面板，或导入别人的服务器"
+        description={t("分享本地服务器给其他面板，或导入别人的服务器")}
         primary={
           selectedTab === "my-shares"
             ? {
                 key: "create",
-                label: "新建分享",
+                label: t("新建分享"),
                 onPress: () => setCreateShareOpen(true),
               }
             : {
                 key: "import",
-                label: "导入远程服务器",
+                label: t("导入远程服务器"),
                 onPress: () => setImportNodeOpen(true),
               }
         }
-        title="面板共享"
+        title={t("面板共享")}
       />
       <PageTabs
         tabs={[
-          { key: "my-shares", label: "我分享的" },
-          { key: "remote-nodes", label: "远程服务器" },
+          { key: "my-shares", label: t("我分享的") },
+          { key: "remote-nodes", label: t("远程服务器") },
         ]}
         value={selectedTab}
         onChange={setSelectedTab}
@@ -507,7 +509,9 @@ export default function PanelSharingPage() {
         (loading ? (
           <PageLoadingState message="正在加载..." />
         ) : shares.length === 0 ? (
-          <EmptyHint text="还没有分享。新建一个分享，把本地服务器开放给其他面板使用" />
+          <EmptyHint
+            text={t("还没有分享。新建一个分享，把本地服务器开放给其他面板使用")}
+          />
         ) : (
           <ListGroup>
             {shares.map((share) => {
@@ -529,11 +533,13 @@ export default function PanelSharingPage() {
                     )
                   }
                   meta={[
-                    `端口 ${formatPortRange(share.portRangeStart, share.portRangeEnd)}`,
+                    `${t("端口范围")} ${formatPortRange(share.portRangeStart, share.portRangeEnd)}`,
                     formatFlowUsage(share.currentFlow, share.maxBandwidth),
                     share.expiryTime === 0
-                      ? "永久"
-                      : `${formatDate(share.expiryTime)} 到期`,
+                      ? t("永久")
+                      : t("到期 {date}", {
+                          date: formatDate(share.expiryTime),
+                        }),
                   ].join(" · ")}
                   status={status}
                   statusTitle={statusTitle}
@@ -549,20 +555,26 @@ export default function PanelSharingPage() {
         (remoteUsageLoading ? (
           <PageLoadingState message="正在加载..." />
         ) : remoteUsageNodes.length === 0 ? (
-          <EmptyHint text="还没有远程服务器。导入其他面板分享的服务器并创建隧道后，这里会显示端口占用" />
+          <EmptyHint
+            text={t(
+              "还没有远程服务器。导入其他面板分享的服务器并创建隧道后，这里会显示端口占用",
+            )}
+          />
         ) : (
           <ListGroup>
             {remoteUsageNodes.map((node) => (
               <ListRow
                 key={node.nodeId}
                 meta={[
-                  `绑定 ${node.activeBindingNum || 0} 条`,
-                  `端口 ${formatPortRange(node.portRangeStart, node.portRangeEnd)}`,
+                  `${node.activeBindingNum || 0}`,
+                  `${formatPortRange(node.portRangeStart, node.portRangeEnd)}`,
                   formatFlowUsage(node.currentFlow, node.maxBandwidth),
                 ].join(" · ")}
                 status={node.syncError ? "warn" : "ok"}
                 statusTitle={
-                  node.syncError ? formatSyncError(node.syncError) : "同步正常"
+                  node.syncError
+                    ? formatSyncError(node.syncError)
+                    : t("同步正常")
                 }
                 title={node.nodeName}
                 onPress={() => setSheetRemoteId(node.nodeId)}
@@ -577,23 +589,23 @@ export default function PanelSharingPage() {
             ? [
                 {
                   key: "copy",
-                  label: "复制 Token",
+                  label: t("复制 Token"),
                   color: "primary",
                   onPress: () => copyToken(sheetShare.token),
                 },
                 {
                   key: "edit",
-                  label: "编辑",
+                  label: t("编辑"),
                   onPress: () => openEditShare(sheetShare),
                 },
                 {
                   key: "reset",
-                  label: "重置流量",
+                  label: t("重置流量"),
                   onPress: () => handleResetShareFlow(sheetShare.id),
                 },
                 {
                   key: "delete",
-                  label: "删除",
+                  label: t("删除"),
                   color: "danger",
                   onPress: () => handleDeleteShare(sheetShare.id),
                 },
@@ -610,38 +622,38 @@ export default function PanelSharingPage() {
             {renderDetails([
               ["Token", sheetShare.token],
               [
-                "端口范围",
+                t("端口范围"),
                 formatPortRange(
                   sheetShare.portRangeStart,
                   sheetShare.portRangeEnd,
                 ),
               ],
               [
-                "流量",
+                t("流量"),
                 formatFlowUsage(
                   sheetShare.currentFlow,
                   sheetShare.maxBandwidth,
                 ),
               ],
               [
-                "到期",
+                t("到期"),
                 sheetShare.expiryTime === 0
-                  ? "永久"
+                  ? t("永久")
                   : formatDate(sheetShare.expiryTime, true),
               ],
               [
-                "已占用端口",
+                t("已占用端口"),
                 sheetShare.usedPorts && sheetShare.usedPorts.length > 0
                   ? sheetShare.usedPorts.join(", ")
-                  : "无",
+                  : t("无"),
               ],
               ...(sheetShare.allowedDomains
-                ? ([["允许域名", sheetShare.allowedDomains]] as Array<
+                ? ([[t("允许域名"), sheetShare.allowedDomains]] as Array<
                     [string, React.ReactNode]
                   >)
                 : []),
               ...(sheetShare.allowedIps
-                ? ([["允许 API IP", sheetShare.allowedIps]] as Array<
+                ? ([[t("允许 API IP"), sheetShare.allowedIps]] as Array<
                     [string, React.ReactNode]
                   >)
                 : []),
@@ -666,9 +678,9 @@ export default function PanelSharingPage() {
             ? [
                 {
                   key: "copy",
-                  label: "复制地址",
+                  label: t("复制地址"),
                   onPress: () =>
-                    void copyWithToast(sheetRemote.remoteUrl, "地址已复制"),
+                    void copyWithToast(sheetRemote.remoteUrl, t("地址已复制")),
                 },
               ]
             : []
@@ -676,7 +688,7 @@ export default function PanelSharingPage() {
         isOpen={Boolean(sheetRemote)}
         subtitle={
           sheetRemote &&
-          (sheetRemote.syncError ? "同步异常" : "远程服务器 · 同步正常")
+          (sheetRemote.syncError ? t("同步异常") : t("远程服务器 · 同步正常"))
         }
         title={sheetRemote?.nodeName ?? ""}
         onClose={() => setSheetRemoteId(null)}
@@ -689,27 +701,27 @@ export default function PanelSharingPage() {
               </p>
             )}
             {renderDetails([
-              ["远程地址", sheetRemote.remoteUrl || "-"],
-              ["分享 ID", sheetRemote.shareId || "-"],
+              [t("远程地址"), sheetRemote.remoteUrl || "-"],
+              [t("分享 ID"), sheetRemote.shareId || "-"],
               [
-                "端口范围",
+                t("端口范围"),
                 formatPortRange(
                   sheetRemote.portRangeStart,
                   sheetRemote.portRangeEnd,
                 ),
               ],
               [
-                "共享流量",
+                t("共享流量"),
                 formatFlowUsage(
                   sheetRemote.currentFlow,
                   sheetRemote.maxBandwidth,
                 ),
               ],
               [
-                "已占用端口",
+                t("已占用端口"),
                 sheetRemote.usedPorts && sheetRemote.usedPorts.length > 0
                   ? sheetRemote.usedPorts.join(", ")
-                  : "无",
+                  : t("无"),
               ],
             ])}
             {sheetRemote.bindings && sheetRemote.bindings.length > 0 && (
@@ -719,9 +731,9 @@ export default function PanelSharingPage() {
                     key={binding.bindingId}
                     className="text-xs text-default-600"
                   >
-                    隧道 {binding.tunnelName || `#${binding.tunnelId}`}
+                    {t("隧道")} {binding.tunnelName || `#${binding.tunnelId}`}
                     {" · "}
-                    端口 {binding.allocatedPort}
+                    {binding.allocatedPort}
                     {" · "}
                     {formatChainType(binding.chainType, binding.hopInx)}
                   </p>
@@ -742,19 +754,19 @@ export default function PanelSharingPage() {
         onClose={() => setCreateShareOpen(false)}
       >
         <ModalContent>
-          <ModalHeader>创建分享</ModalHeader>
+          <ModalHeader>{t("创建分享")}</ModalHeader>
           <ModalBody>
             <Input
-              label="名称"
-              placeholder="备注名称"
+              label={t("名称")}
+              placeholder={t("备注名称")}
               value={shareForm.name}
               onChange={(e) =>
                 setShareForm({ ...shareForm, name: e.target.value })
               }
             />
             <Select
-              label="选择服务器"
-              placeholder="选择要分享的本地服务器"
+              label={t("选择服务器")}
+              placeholder={t("选择要分享的本地服务器")}
               selectedKeys={shareForm.nodeId ? [shareForm.nodeId] : []}
               onChange={(e) =>
                 setShareForm({ ...shareForm, nodeId: e.target.value })
@@ -768,7 +780,7 @@ export default function PanelSharingPage() {
             </Select>
             <div className="flex gap-4">
               <Input
-                label="起始端口"
+                label={t("起始端口")}
                 type="number"
                 value={shareForm.portRangeStart.toString()}
                 onChange={(e) =>
@@ -779,7 +791,7 @@ export default function PanelSharingPage() {
                 }
               />
               <Input
-                label="结束端口"
+                label={t("结束端口")}
                 type="number"
                 value={shareForm.portRangeEnd.toString()}
                 onChange={(e) =>
@@ -791,8 +803,8 @@ export default function PanelSharingPage() {
               />
             </div>
             <Input
-              description="0 表示永久"
-              label="有效期 (天)"
+              description={t("0 表示永久")}
+              label={t("有效期 (天)")}
               type="number"
               value={shareForm.expiryDays.toString()}
               onChange={(e) =>
@@ -803,8 +815,8 @@ export default function PanelSharingPage() {
               }
             />
             <TrafficLimitField
-              description="0 表示不限流量"
-              label="流量上限"
+              description={t("0 表示不限流量")}
+              label={t("流量上限")}
               unit={shareUnit}
               value={shareForm.maxBandwidth.toString()}
               onChange={(value, unit) => {
@@ -817,7 +829,7 @@ export default function PanelSharingPage() {
             />
             <Input
               description="限制使用此Token的来源面板域名，多个域名用逗号分隔，留空不限制"
-              label="允许的域名 (可选)"
+              label={t("允许的域名 (可选)")}
               placeholder="example.com, panel.test.com"
               value={shareForm.allowedDomains}
               onChange={(e) =>
@@ -826,7 +838,7 @@ export default function PanelSharingPage() {
             />
             <Input
               description="仅白名单IP可导入此分享，支持IPv4/IPv6/CIDR，多个用逗号分隔"
-              label="允许的API IP (可选)"
+              label={t("允许的API IP (可选)")}
               placeholder="203.0.113.10, 2001:db8::10, 198.51.100.0/24"
               value={shareForm.allowedIps}
               onChange={(e) =>
@@ -836,10 +848,10 @@ export default function PanelSharingPage() {
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => setCreateShareOpen(false)}>
-              取消
+              {t("取消")}
             </Button>
             <Button color="primary" onPress={handleCreateShare}>
-              创建
+              {t("创建")}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -855,11 +867,11 @@ export default function PanelSharingPage() {
         onClose={() => setEditShareOpen(false)}
       >
         <ModalContent>
-          <ModalHeader>编辑分享</ModalHeader>
+          <ModalHeader>{t("编辑分享")}</ModalHeader>
           <ModalBody>
             <Input
-              label="名称"
-              placeholder="备注名称"
+              label={t("名称")}
+              placeholder={t("备注名称")}
               value={editForm.name}
               onChange={(e) =>
                 setEditForm({ ...editForm, name: e.target.value })
@@ -867,7 +879,7 @@ export default function PanelSharingPage() {
             />
             <div className="flex gap-4">
               <Input
-                label="起始端口"
+                label={t("起始端口")}
                 type="number"
                 value={editForm.portRangeStart.toString()}
                 onChange={(e) =>
@@ -878,7 +890,7 @@ export default function PanelSharingPage() {
                 }
               />
               <Input
-                label="结束端口"
+                label={t("结束端口")}
                 type="number"
                 value={editForm.portRangeEnd.toString()}
                 onChange={(e) =>
@@ -890,8 +902,8 @@ export default function PanelSharingPage() {
               />
             </div>
             <TrafficLimitField
-              description="0 表示不限流量"
-              label="流量上限"
+              description={t("0 表示不限流量")}
+              label={t("流量上限")}
               unit={editUnit}
               value={editForm.maxBandwidth.toString()}
               onChange={(value, unit) => {
@@ -904,8 +916,8 @@ export default function PanelSharingPage() {
               }}
             />
             <Input
-              description="留空或清除表示永久有效"
-              label="过期时间"
+              description={t("留空或清除表示永久有效")}
+              label={t("过期时间")}
               type="datetime-local"
               value={
                 editForm.expiryTime > 0
@@ -923,7 +935,7 @@ export default function PanelSharingPage() {
             />
             <Input
               description="限制使用此Token的来源面板域名，多个域名用逗号分隔，留空不限制"
-              label="允许的域名 (可选)"
+              label={t("允许的域名 (可选)")}
               placeholder="example.com, panel.test.com"
               value={editForm.allowedDomains}
               onChange={(e) =>
@@ -932,7 +944,7 @@ export default function PanelSharingPage() {
             />
             <Input
               description="仅白名单IP可导入此分享，支持IPv4/IPv6/CIDR，多个用逗号分隔"
-              label="允许的API IP (可选)"
+              label={t("允许的API IP (可选)")}
               placeholder="203.0.113.10, 2001:db8::10, 198.51.100.0/24"
               value={editForm.allowedIps}
               onChange={(e) =>
@@ -942,10 +954,10 @@ export default function PanelSharingPage() {
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => setEditShareOpen(false)}>
-              取消
+              {t("取消")}
             </Button>
             <Button color="primary" onPress={handleEditShare}>
-              保存
+              {t("保存")}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -960,10 +972,10 @@ export default function PanelSharingPage() {
         onClose={() => setImportNodeOpen(false)}
       >
         <ModalContent>
-          <ModalHeader>导入远程服务器</ModalHeader>
+          <ModalHeader>{t("导入远程服务器")}</ModalHeader>
           <ModalBody>
             <Input
-              label="远程面板地址"
+              label={t("远程面板地址")}
               placeholder="http://panel.example.com:8088"
               value={importForm.remoteUrl}
               onChange={(e) =>
@@ -972,7 +984,7 @@ export default function PanelSharingPage() {
             />
             <Input
               label="Token"
-              placeholder="对方面板分享的 Token"
+              placeholder={t("对方面板分享的 Token")}
               value={importForm.token}
               onChange={(e) =>
                 setImportForm({ ...importForm, token: e.target.value })
@@ -981,10 +993,10 @@ export default function PanelSharingPage() {
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => setImportNodeOpen(false)}>
-              取消
+              {t("取消")}
             </Button>
             <Button color="primary" onPress={handleImportNode}>
-              导入
+              {t("导入")}
             </Button>
           </ModalFooter>
         </ModalContent>
