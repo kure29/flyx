@@ -282,6 +282,9 @@ func (h *Handler) forwardUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	warnings = append(warnings, syncWarnings...)
+	if name != forward.Name {
+		_ = h.repo.UpdateManagedInboundRelayName(id, name)
+	}
 
 	// Best-effort cleanup for old entry nodes after a successful tunnel switch.
 	// Avoid cleaning nodes that are still used by the updated forward.

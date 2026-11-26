@@ -171,7 +171,7 @@ async function answer(config: InternalAxiosRequestConfig) {
   const role = getDemoRole();
 
   if (bare === "node/install") {
-    const version = "3.10.1";
+    const version = "3.10.2";
     const addr = "panel.demo.flyx.dev:6365";
     const secret = "demo8f2c4a9e1b7d3f6a0c5e2b8d4f1a";
     const makeDocker = (priv: boolean) =>

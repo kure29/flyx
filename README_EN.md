@@ -25,7 +25,7 @@ Manage servers, multi-kernel proxy nodes, relay tunnels, subscription distributi
 </div>
 
 <details>
-<summary>📸 More Screenshots (Overview Light / Nodes / Multi-User)</summary>
+<summary>📸 More Screenshots (Overview Light / Nodes / Subscriptions / Multi-User)</summary>
 
 <br />
 
@@ -34,6 +34,9 @@ Manage servers, multi-kernel proxy nodes, relay tunnels, subscription distributi
 
 **Nodes & Multi-Kernel Management**
 <img src="doc/public/screenshots/nodes.png" alt="Nodes" width="960" />
+
+**Grouped Subscriptions, Tags, Pinning & Batch Actions**
+<img src="doc/public/screenshots/subscriptions.png" alt="Subscriptions" width="960" />
 
 **Lightweight Multi-User Quotas**
 <img src="doc/public/screenshots/users.png" alt="Users" width="960" />
@@ -44,11 +47,11 @@ Manage servers, multi-kernel proxy nodes, relay tunnels, subscription distributi
 
 ## ✨ Key Features
 
-- **Multi-Kernel Node Deployment**: Install and manage **Xray**, **sing-box**, and **Snell v4 / v5** per server with one-click presets for VLESS Reality, Hysteria2 (port hopping), TUIC, AnyTLS, NaïveProxy, ShadowTLS, Shadowsocks / SS2022, and more.
+- **Multi-Kernel Node Deployment**: Install and manage **Xray**, **sing-box**, and **Snell v4 / v5** per server (two-column kernel cards, one-click dark terminal logs & restart, segmented agent install modal) with one-click presets for VLESS Reality, Hysteria2 (port hopping), TUIC, AnyTLS, NaïveProxy, ShadowTLS, Shadowsocks / SS2022, and more.
 - **Automated TLS Certificates**: Supports self-signed certs, existing server certs, or automatic ACME issuance & renewal via sing-box (HTTP, Cloudflare, and Aliyun DNS).
-- **Flexible Relay & Traffic Forwarding**: TCP / UDP port forwarding, encrypted tunnels, and multi-hop chains powered by GOST, realm, and nftables with real client IP passthrough, inbound allowlists, and per-rule traffic accounting.
+- **Flexible Relay & Traffic Forwarding**: TCP / UDP port forwarding, encrypted tunnels, and multi-hop chains powered by GOST, realm, and nftables with real client IP passthrough, inbound allowlists, bidirectional relay/rule rename sync, and per-rule traffic accounting.
 - **External Node & Source Import**: Paste share links, Clash / sing-box / Surge configs, or remote subscription URLs to attach relays and include them in subscriptions.
-- **Sub-Store-Style Subscriptions**: Bundle, filter, deduplicate, rename, and script nodes in reusable **Node Groups** with **independent direct vs. relay line selection**. Auto-detects client formats (Clash / Mihomo, sing-box, Surge, Shadowrocket, Loon, Quantumult X, Base64) and supports per-subscription credentials, quotas, and expiry (including per-subscription Xray Shadowsocks / SS2022 metering).
+- **Sub-Store-Style Subscriptions & Batch Management**: Bundle, filter, deduplicate, rename, and script nodes in reusable **Node Groups** with **independent direct vs. relay line selection**. Organize large deployments with **collapsible grouped views, custom tags, pinning, multi-dimensional filters & sorting, expiry warnings, drag-and-drop ordering, one-click cloning, and batch enable/disable/extend/reset/tag actions**. Auto-detects client formats (Clash / Mihomo, sing-box, Surge, Shadowrocket, Loon, Quantumult X, Base64) and supports per-subscription credentials, quotas, and expiry (including per-subscription Xray Shadowsocks / SS2022 metering).
 - **Lightweight Multi-User Support**: Create normal users with independent relay tunnel quotas (traffic cap, monthly reset day, max rules, expiry) and assigned subscriptions. Users see a clean self-service portal (`Forwards` & `My Subscriptions`); over-quota or expired rules pause automatically and resume on reset.
 - **Latency & Return-Route Monitoring**: Scheduled multi-ISP latency/loss probing, return route detection (CN2 GIA / 9929 / CMIN2), trend charts, and Telegram / Webhook alerts.
 - **Public Status Page & Panel Federation**: Built-in public status page (customizable themes, hides IPs and protocols) plus cross-panel federated server sharing.

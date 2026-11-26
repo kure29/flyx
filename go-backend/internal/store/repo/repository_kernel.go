@@ -450,13 +450,39 @@ func (r *Repository) CreateInboundRelay(rel *model.NodeInboundRelay) error {
 }
 
 // UpdateInboundRelay changes what a relay is called and the host it
-// shares; the forward behind it is untouched.
+// shares, and keeps a panel-managed forward rule's name in sync.
 func (r *Repository) UpdateInboundRelay(id int64, name, shareHost string) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
 	}
-	return r.db.Model(&model.NodeInboundRelay{}).Where("id = ?", id).
-		Updates(map[string]interface{}{"name": name, "share_host": shareHost}).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var rel model.NodeInboundRelay
+		if err := tx.Where("id = ?", id).First(&rel).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.NodeInboundRelay{}).Where("id = ?", id).
+			Updates(map[string]interface{}{"name": name, "share_host": shareHost}).Error; err != nil {
+			return err
+		}
+		if rel.Managed == 1 && rel.ForwardID > 0 {
+			if err := tx.Model(&model.Forward{}).Where("id = ?", rel.ForwardID).
+				Updates(map[string]interface{}{"name": name, "updated_time": unixMilliNow()}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// UpdateManagedInboundRelayName keeps a managed inbound relay's name in sync
+// when the underlying forward rule is renamed.
+func (r *Repository) UpdateManagedInboundRelayName(forwardID int64, name string) error {
+	if r == nil || r.db == nil || forwardID <= 0 {
+		return nil
+	}
+	return r.db.Model(&model.NodeInboundRelay{}).
+		Where("forward_id = ? AND managed = ?", forwardID, 1).
+		Update("name", name).Error
 }
 
 func (r *Repository) DeleteInboundRelay(id int64) error {

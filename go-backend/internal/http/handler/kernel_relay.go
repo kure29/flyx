@@ -392,8 +392,9 @@ func (h *Handler) removeForwardWithServices(forward *forwardRecord) error {
 	return nil
 }
 
-// inboundRelayUpdate renames a relay and changes its share host. Both only
-// feed share links and subscriptions, so nothing is pushed to the nodes.
+// inboundRelayUpdate renames a relay (and its managed forward rule) and
+// changes its share host. Neither changes node services, so nothing is pushed
+// to the nodes.
 func (h *Handler) inboundRelayUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		response.WriteJSON(w, response.ErrDefault("请求失败"))

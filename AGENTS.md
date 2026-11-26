@@ -54,6 +54,10 @@ FLYX — traffic forwarding panel: Go admin API + Vite/React UI + Go agent.
 ## Releases
 
 - Before triggering a release (`docker-build.yml`, input `version`), add a `## <version>` section to `doc/changelog.md` (Chinese, user-facing, date line under the heading, a **升级** line when node agents must be upgraded) and merge it: the release notes take that section, falling back to the commit list since the previous tag (`.github/scripts/release-notes.sh`).
+- **Sync docs, README, and online demo on every release**:
+  - **Docs (`doc/`)**: update `doc/changelog.md`, `doc/index.md`, and any affected guide pages in `doc/guide/` so user documentation reflects new or changed features; verify with `(cd doc && npm run build)`.
+  - **README (`README.md` & `README_EN.md`)**: keep both Chinese and English READMEs aligned with current features, screenshots (`doc/public/screenshots/` when major UI changes), and version notes.
+  - **Online Demo (`vite-frontend/src/demo/` & `vite-frontend/scripts/demo/check.mjs`)**: update demo version strings and mock fixtures (`fixtures.json`, `index.ts`) for any new endpoints or UI fields, verify with `VITE_DEMO=true VITE_BASE=/flyx/demo/ VITE_APP_VERSION=<version> pnpm exec vite build --outDir dist-demo --emptyOutDir && node scripts/demo/check.mjs dist-demo`, and make sure `deploy-docs.yml` publishes the updated docs and demo site to GitHub Pages.
 
 ## Anti-patterns
 

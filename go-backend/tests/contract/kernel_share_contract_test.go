@@ -231,8 +231,20 @@ func TestInboundShareAndSubscriptionContract(t *testing.T) {
 		if relay == nil || relay["name"] != "香港 IPLC" || !strings.Contains(relay["uri"].(string), "@hk.example.com:30005?") {
 			t.Fatalf("renamed relay entry: %v", relay)
 		}
+		if gotFwdName := mustQueryString(t, r, `SELECT name FROM forward WHERE id = ?`, forwardID); gotFwdName != "香港 IPLC" {
+			t.Fatalf("managed forward name must sync on relay rename: got %q, want %q", gotFwdName, "香港 IPLC")
+		}
+		if err := r.UpdateManagedInboundRelayName(forwardID, "规则改名同步"); err != nil {
+			t.Fatalf("sync relay name from forward: %v", err)
+		}
+		if gotRelayName := mustQueryString(t, r, `SELECT name FROM node_inbound_relay WHERE id = ?`, relayID); gotRelayName != "规则改名同步" {
+			t.Fatalf("managed relay name must sync on forward rename: got %q, want %q", gotRelayName, "规则改名同步")
+		}
 		kernelContractPost(t, router, admin, "/api/v1/inbound/relay/update",
 			`{"id":`+jsonInt64(relayID)+`,"name":"香港中转 → 东京","shareHost":""}`)
+		if gotFwdName := mustQueryString(t, r, `SELECT name FROM forward WHERE id = ?`, forwardID); gotFwdName != "香港中转 → 东京" {
+			t.Fatalf("restored forward name: got %q, want %q", gotFwdName, "香港中转 → 东京")
+		}
 	})
 
 	t.Run("relay list and forward deletion cascade", func(t *testing.T) {

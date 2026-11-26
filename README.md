@@ -25,12 +25,15 @@
 </div>
 
 <details>
-<summary>📸 查看更多界面截图（节点管理 / 轻量多用户 / 深色英文界面）</summary>
+<summary>📸 查看更多界面截图（节点管理 / 订阅分组与批量管理 / 轻量多用户 / 深色英文界面）</summary>
 
 <br />
 
 **节点与多内核管理**
 <img src="doc/public/screenshots/nodes.png" alt="节点管理" width="960" />
+
+**订阅分组、标签、置顶与批量管理**
+<img src="doc/public/screenshots/subscriptions.png" alt="订阅与节点组管理" width="960" />
 
 **轻量多用户（中转配额与订阅分发）**
 <img src="doc/public/screenshots/users.png" alt="用户管理" width="960" />
@@ -44,11 +47,11 @@
 
 ## ✨ 核心特性
 
-- **多内核一键建节点**：按服务器安装与管理 **Xray**、**sing-box**、**Snell v4 / v5**；内置 VLESS Reality、Hysteria2（端口跳跃）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022 等开箱即用模板
+- **多内核一键建节点**：按服务器安装与管理 **Xray**、**sing-box**、**Snell v4 / v5**（双列内核卡片、一键终端日志与重启、紧凑分段式 Agent 安装命令）；内置 VLESS Reality、Hysteria2（端口跳跃）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022 等开箱即用模板
 - **证书自动管理**：支持自签证书、本地证书文件，或由 sing-box 自动申请与续期（ACME HTTP / Cloudflare / 阿里云 DNS 验证）
-- **灵活中转与流量转发**：支持 TCP / UDP 端口转发、加密隧道转发与多跳链路（如 前置 → IX → 落地），内置 GOST / realm / nftables 转发引擎，支持入站白名单、Proxy Protocol 透传真实 IP 与按规则上下行统计
+- **灵活中转与流量转发**：支持 TCP / UDP 端口转发、加密隧道转发与多跳链路（如 前置 → IX → 落地），内置 GOST / realm / nftables 转发引擎，支持入站白名单、Proxy Protocol 透传真实 IP、中转与转发规则双向同步及按规则上下行统计
 - **外部节点与订阅源导入**：粘贴分享链接、Clash / sing-box / Surge 配置或远程订阅 URL，外部节点同样可对接中转、参与编排与分发
-- **Sub-Store 风格订阅系统**：通过「节点组」统一挑选、过滤、去重、改名、脚本加工，支持**独立勾选落地直连与中转线路**；多个订阅自由组合、按地区分组与链式代理；支持分享订阅（独立凭据、流量限额、到期自动断开，Xray Shadowsocks / SS2022 支持按订阅独立密码与计量）
+- **Sub-Store 风格订阅与批量管理**：通过「节点组」统一挑选、过滤、去重、改名、脚本加工，支持**独立勾选落地直连与中转线路**；订阅支持**按节点组折叠分组、自定义标签、置顶、多维筛选排序、到期分级预警、拖拽排序、一键克隆与批量启停 / 续期 / 重置流量 / 标签管理**；支持分享订阅（独立凭据、流量限额、到期自动断开，Xray Shadowsocks / SS2022 支持按订阅独立密码与计量）
 - **轻量多用户管理**：管理员可创建普通用户并分别分配中转隧道额度（流量上限、每月重置日、规则数上限、到期日）与关联订阅（中转与订阅额度分开计算）；普通用户登录后仅见精简门户（转发与我的订阅），超额/到期自动暂停、重置后自动恢复
 - **延迟监控与三网回程**：定时检测服务器至电信 / 联通 / 移动节点延迟与丢包，自动识别 CN2 GIA / 9929 / CMIN2 等回程路由，提供趋势图与 Telegram / Webhook 异常告警
 - **公开状态页与联邦共享**：内置免登录状态页（支持自定义主题，不暴露 IP 与协议细节）；支持跨面板联邦共享服务器端口与流量配额
