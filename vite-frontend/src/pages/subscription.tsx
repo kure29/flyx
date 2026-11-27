@@ -10,6 +10,7 @@ import type {
   SubRuleGroup,
   SubscriptionBatchAction,
   SubscriptionDraft,
+  SubscriptionIPAction,
   SubscriptionItem,
 } from "@/api";
 import type { InboundApiItem } from "@/api/types";
@@ -111,6 +112,7 @@ import {
   groupDraftFrom,
   groupSourceText,
 } from "@/pages/subscription/node-groups";
+import { SubIPActivity } from "@/pages/subscription/ip-activity";
 import {
   SubBatchBar,
   SubFilterBar,
@@ -120,6 +122,7 @@ import {
   SubUsageBar,
   TagEditorInput,
   isExpiringSoon,
+  isIPSuspended,
   isSubIssue,
   usagePercent,
   type SubSortBy,
@@ -249,6 +252,12 @@ interface Draft extends SubscriptionDraft {
   expire: string;
   /** Traffic limit typed in GB ("" = unlimited). */
   limitGB: string;
+  /** Max concurrent online IPs typed as text ("" = unlimited). */
+  maxOnlineText: string;
+  /** Temporary suspend duration in minutes typed as text. */
+  ipSuspendMinutesText: string;
+  /** Max distinct 24h pull IPs typed as text ("" = unlimited). */
+  maxPullText: string;
 }
 
 const GB = 1024 ** 3;
@@ -295,6 +304,13 @@ function draftFrom(
       trafficLimit: 0,
       limitGB: "",
       resetDay: 0,
+      maxOnlineIps: 0,
+      maxOnlineText: "",
+      ipAction: "alert",
+      ipSuspendMinutes: 10,
+      ipSuspendMinutesText: "10",
+      maxPullIps: 0,
+      maxPullText: "",
     };
   }
 
@@ -314,6 +330,13 @@ function draftFrom(
     trafficLimit: s.trafficLimit,
     limitGB: gbText(s.trafficLimit),
     resetDay: s.resetDay,
+    maxOnlineIps: s.maxOnlineIps ?? 0,
+    maxOnlineText: s.maxOnlineIps ? String(s.maxOnlineIps) : "",
+    ipAction: s.ipAction ?? "alert",
+    ipSuspendMinutes: s.ipSuspendMinutes || 10,
+    ipSuspendMinutesText: String(s.ipSuspendMinutes || 10),
+    maxPullIps: s.maxPullIps ?? 0,
+    maxPullText: s.maxPullIps ? String(s.maxPullIps) : "",
   };
 }
 
@@ -351,8 +374,18 @@ function cloneDraftFrom(s: SubscriptionItem): Draft {
 
 /** The API payload: the backend rejects unknown fields like `expire`. */
 function toPayload(d: Draft): SubscriptionDraft {
-  const { expire, limitGB, ...rest } = d;
+  const {
+    expire,
+    limitGB,
+    maxOnlineText,
+    ipSuspendMinutesText,
+    maxPullText,
+    ...rest
+  } = d;
   const gb = Number(limitGB);
+  const maxOnline = Number.parseInt(maxOnlineText, 10);
+  const suspendMins = Number.parseInt(ipSuspendMinutesText, 10);
+  const maxPull = Number.parseInt(maxPullText, 10);
 
   return {
     ...rest,
@@ -360,6 +393,17 @@ function toPayload(d: Draft): SubscriptionDraft {
     expireTime: fromDateInput(expire),
     trafficLimit: gb > 0 ? Math.round(gb * GB) : 0,
     resetDay: d.resetDay,
+    maxOnlineIps:
+      Number.isFinite(maxOnline) && maxOnline > 0
+        ? Math.min(1000, maxOnline)
+        : 0,
+    ipAction: d.ipAction ?? "alert",
+    ipSuspendMinutes:
+      Number.isFinite(suspendMins) && suspendMins > 0
+        ? Math.min(10080, suspendMins)
+        : 10,
+    maxPullIps:
+      Number.isFinite(maxPull) && maxPull > 0 ? Math.min(1000, maxPull) : 0,
   };
 }
 
@@ -388,6 +432,7 @@ function Editor({
   onSave: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [preview, setPreview] = useState<SubPreview | null>(null);
   const [previewKind, setPreviewKind] = useState<SubTemplateSlot | null>(null);
   // Nodes to pick the chain from; loaded when the chain page opens and kept
@@ -689,6 +734,171 @@ function Editor({
                 <p className="text-xs text-default-500">
                   上传 +
                   下载合计，用完自动断开；在服务器上按用户统计，仅支持多用户协议
+                </p>
+              </div>
+            </Section>
+            <Section
+              collapsible
+              defaultOpen={Boolean(draft.maxOnlineText || draft.maxPullText)}
+              summary={
+                [
+                  Number(draft.maxOnlineText) > 0
+                    ? t("在线 {n} IP", { n: Number(draft.maxOnlineText) })
+                    : "",
+                  Number(draft.maxOnlineText) > 0
+                    ? draft.ipAction === "suspend"
+                      ? t("暂停 {n} 分钟", {
+                          n: Number(draft.ipSuspendMinutesText) || 10,
+                        })
+                      : draft.ipAction === "disable"
+                        ? t("自动停用")
+                        : t("仅告警")
+                    : "",
+                  Number(draft.maxPullText) > 0
+                    ? t("24h 拉取 {n} IP", { n: Number(draft.maxPullText) })
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || t("不限")
+              }
+              title={t("IP 限制与防分享")}
+            >
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="sub-max-ip">
+                  {t("同时在线 IP 上限")}
+                </label>
+                <QuickPickRow
+                  picks={[
+                    ...[2, 3, 5].map((n) => ({
+                      label: `${n} IP`,
+                      onPick: () => set({ maxOnlineText: String(n) }),
+                    })),
+                    {
+                      label: t("不限"),
+                      onPick: () => set({ maxOnlineText: "" }),
+                    },
+                  ]}
+                >
+                  <input
+                    className="block h-10 w-full rounded-lg border border-divider bg-background px-2 pr-9 text-sm"
+                    id="sub-max-ip"
+                    inputMode="numeric"
+                    placeholder={t("不限")}
+                    value={draft.maxOnlineText}
+                    onChange={(e) =>
+                      set({
+                        maxOnlineText: e.target.value.replace(/[^\d]/g, ""),
+                      })
+                    }
+                  />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-default-500">
+                    IP
+                  </span>
+                </QuickPickRow>
+                <p className="text-xs text-default-500">
+                  {t(
+                    "跨所有服务器合并统计（IPv6 按 /64 合并），连续 2 个采集周期超限后触发处理，避免切换网络误杀",
+                  )}
+                </p>
+              </div>
+
+              {Number(draft.maxOnlineText) > 0 && (
+                <div className="space-y-2.5 rounded-lg border border-divider/80 bg-default-50/40 p-3 dark:bg-default-100/15">
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-foreground">
+                      {t("超限处理动作")}
+                    </span>
+                    <Segmented<SubscriptionIPAction>
+                      options={[
+                        ["alert", t("仅告警")],
+                        ["suspend", t("临时暂停")],
+                        ["disable", t("自动停用")],
+                      ]}
+                      value={draft.ipAction ?? "alert"}
+                      onChange={(ipAction) => set({ ipAction })}
+                    />
+                  </div>
+                  {(draft.ipAction ?? "alert") === "suspend" && (
+                    <div className="space-y-1">
+                      <label
+                        className="text-xs font-medium text-foreground"
+                        htmlFor="sub-suspend-min"
+                      >
+                        {t("暂停时长（分钟）")}
+                      </label>
+                      <QuickPickRow
+                        picks={[5, 10, 30, 60].map((m) => ({
+                          label: t("{n} 分", { n: m }),
+                          onPick: () =>
+                            set({ ipSuspendMinutesText: String(m) }),
+                        }))}
+                      >
+                        <input
+                          className="block h-9 w-full rounded-lg border border-divider bg-background px-2 pr-10 text-sm"
+                          id="sub-suspend-min"
+                          inputMode="numeric"
+                          placeholder="10"
+                          value={draft.ipSuspendMinutesText}
+                          onChange={(e) =>
+                            set({
+                              ipSuspendMinutesText: e.target.value.replace(
+                                /[^\d]/g,
+                                "",
+                              ),
+                            })
+                          }
+                        />
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-default-500">
+                          {t("分钟")}
+                        </span>
+                      </QuickPickRow>
+                      <p className="text-[11px] text-default-500">
+                        {t(
+                          "暂停期间从节点撤回凭据，到期自动恢复，也可手动立即恢复",
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label
+                  className="text-sm font-medium"
+                  htmlFor="sub-max-pull-ip"
+                >
+                  {t("24 小时拉取 IP 上限")}
+                </label>
+                <QuickPickRow
+                  picks={[
+                    ...[3, 5, 10].map((n) => ({
+                      label: `${n} IP`,
+                      onPick: () => set({ maxPullText: String(n) }),
+                    })),
+                    {
+                      label: t("不限"),
+                      onPick: () => set({ maxPullText: "" }),
+                    },
+                  ]}
+                >
+                  <input
+                    className="block h-10 w-full rounded-lg border border-divider bg-background px-2 pr-9 text-sm"
+                    id="sub-max-pull-ip"
+                    inputMode="numeric"
+                    placeholder={t("不限")}
+                    value={draft.maxPullText}
+                    onChange={(e) =>
+                      set({ maxPullText: e.target.value.replace(/[^\d]/g, "") })
+                    }
+                  />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-default-500">
+                    IP
+                  </span>
+                </QuickPickRow>
+                <p className="text-xs text-default-500">
+                  {t(
+                    "限制 24 小时内从不同 IP 拉取订阅链接的次数，超限时新 IP 将收到拦截提示节点（不影响已拉取 IP）",
+                  )}
                 </p>
               </div>
             </Section>
@@ -1464,7 +1674,9 @@ export default function SubscriptionPage() {
   const [saving, setSaving] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
   const detail = subs.find((item) => item.id === detailId) ?? null;
-  const [detailTab, setDetailTab] = useState<"import" | "traffic">("import");
+  const [detailTab, setDetailTab] = useState<"import" | "traffic" | "ip">(
+    "import",
+  );
   // The subscription whose QR code is open in the detail dialog.
   const [qrFor, setQrFor] = useState<number | null>(null);
 
@@ -1571,7 +1783,10 @@ export default function SubscriptionPage() {
               ...item,
               active: updated.active,
               downloadBytes: updated.downloadBytes,
+              ipSuspendedUntil: updated.ipSuspendedUntil,
+              onlineIpCount: updated.onlineIpCount,
               overQuota: updated.overQuota,
+              pullIpCount24h: updated.pullIpCount24h,
               trafficSince: updated.trafficSince,
               uploadBytes: updated.uploadBytes,
             };
@@ -1673,6 +1888,7 @@ export default function SubscriptionPage() {
       const msgMap: Record<SubscriptionBatchAction, string> = {
         enable: tr("已启用 {count} 个订阅", { count: ids.length }),
         disable: tr("已停用 {count} 个订阅", { count: ids.length }),
+        unsuspend: tr("已解除 {count} 个订阅的 IP 暂停", { count: ids.length }),
         "reset-traffic": tr("已重置 {count} 个订阅流量", { count: ids.length }),
         "extend-days": tr("已为 {count} 个订阅续期 {days} 天", {
           count: ids.length,
@@ -2338,31 +2554,47 @@ export default function SubscriptionPage() {
                       <SubUsageBar s={detail} track="bg-default-200" />
                     )}
                     <p
-                      className={`text-xs ${detail.overQuota ? "text-danger" : "text-default-500"}`}
+                      className={`text-xs ${
+                        detail.overQuota
+                          ? "text-danger"
+                          : isIPSuspended(detail)
+                            ? "text-warning"
+                            : "text-default-500"
+                      }`}
                     >
                       {detail.overQuota
                         ? tr("流量已用完，已从服务器上断开")
-                        : [
-                            `↑ ${formatTraffic(detail.uploadBytes)} ↓ ${formatTraffic(detail.downloadBytes)}`,
-                            `${new Date(detail.trafficSince).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })} 起`,
-                            detail.resetDay
-                              ? tr("每月 {day} 号重置", {
-                                  day: detail.resetDay,
-                                })
-                              : tr("不自动重置"),
-                          ].join(" · ")}
+                        : isIPSuspended(detail)
+                          ? tr(
+                              "在线 IP 超限，临时暂停中（可在「IP 与记录」立即恢复）",
+                            )
+                          : [
+                              `↑ ${formatTraffic(detail.uploadBytes)} ↓ ${formatTraffic(detail.downloadBytes)}`,
+                              `${new Date(detail.trafficSince).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })} 起`,
+                              detail.resetDay
+                                ? tr("每月 {day} 号重置", {
+                                    day: detail.resetDay,
+                                  })
+                                : tr("不自动重置"),
+                            ].join(" · ")}
                     </p>
                   </div>
                   <Segmented
                     options={[
                       ["import", tr("导入")],
                       ["traffic", tr("流量统计")],
+                      ["ip", tr("IP 与记录")],
                     ]}
                     value={detailTab}
                     onChange={setDetailTab}
                   />
                   {detailTab === "traffic" ? (
                     <SubTrafficStats id={detail.id} />
+                  ) : detailTab === "ip" ? (
+                    <SubIPActivity
+                      sub={detail}
+                      onUnsuspended={() => void load()}
+                    />
                   ) : (
                     <>
                       <div className="flex gap-2">

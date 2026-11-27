@@ -986,4 +986,57 @@ export const EN_DICT: Record<string, string> = {
   确定设置: "Apply",
   "搜索订阅名、分组、节点组、标签或备注":
     "Search name, group, node group, tag, or note",
+  "IP 超限暂停": "IP Limit Suspended",
+  "IP 与记录": "IP & Logs",
+  "IP 限制与防分享": "IP Limits & Anti-Sharing",
+  "同时在线 IP 上限": "Max Concurrent Online IPs",
+  "跨所有服务器合并统计（IPv6 按 /64 合并），连续 2 个采集周期超限后触发处理，避免切换网络误杀":
+    "Merged across all servers (IPv6 grouped by /64). Triggers after 2 consecutive over-limit checks to avoid network-switch false positives.",
+  超限处理动作: "Action on Limit Exceeded",
+  仅告警: "Alert Only",
+  临时暂停: "Temp Suspend",
+  自动停用: "Auto Disable",
+  "暂停时长（分钟）": "Suspend Duration (minutes)",
+  "{n} 分": "{n}m",
+  分钟: "min",
+  "暂停期间从节点撤回凭据，到期自动恢复，也可手动立即恢复":
+    "Credentials are revoked from nodes while suspended and restored automatically when time expires (or manually anytime).",
+  "24 小时拉取 IP 上限": "24h Max Pull IPs",
+  "限制 24 小时内从不同 IP 拉取订阅链接的次数，超限时新 IP 将收到拦截提示节点（不影响已拉取 IP）":
+    "Caps distinct IPs fetching the subscription URL in 24h. Extra IPs receive a notice node while already-allowed IPs keep working.",
+  "在线 {n} IP": "{n} online IP",
+  "暂停 {n} 分钟": "Suspend {n}m",
+  "24h 拉取 {n} IP": "24h pull {n} IP",
+  "24h 拉取 {used}/{max} IP": "24h pull {used}/{max} IP",
+  "在线 IP 超限，临时暂停中（可在「IP 与记录」立即恢复）":
+    "Suspended due to online IP limit (can resume immediately under IP & Logs)",
+  "在线 IP 超限暂停中，预计 {time} 自动恢复":
+    "Suspended due to online IP limit; auto-resumes around {time}",
+  立即恢复: "Resume Now",
+  已解除: "Cleared",
+  "已解除 IP 超限暂停": "IP suspension cleared",
+  恢复失败: "Failed to resume",
+  "加载 IP 记录失败": "Failed to load IP activity",
+  "当前在线 IP": "Online IPs",
+  "24 小时拉取 IP": "24h Pull IPs",
+  "超限暂停 {n} 分钟": "Suspend {n}m on exceed",
+  超限自动停用: "Auto-disable on exceed",
+  超限仅告警: "Alert on exceed",
+  "活跃连接 IP": "Active Connection IPs",
+  "最近 2 分钟": "Last 2 min",
+  "暂无在线 IP": "No active IPs",
+  "需节点 flyx-agent 升级至最新版本；中转场景请启用 PROXY Protocol":
+    "Requires updated flyx-agent on nodes; enable PROXY Protocol for relay setups.",
+  "Xray 节点默认统计；sing-box 节点设置在线 IP 上限后自动开启追踪":
+    "Tracked automatically on Xray; enabled on sing-box once an online IP limit is set.",
+  订阅拉取记录: "Subscription Pull Logs",
+  "24 小时限 {n} 个 IP": "Max {n} IPs / 24h",
+  暂无订阅拉取记录: "No pull logs yet",
+  已拦截: "Blocked",
+  刚刚: "Just now",
+  "{n} 秒前": "{n}s ago",
+  "{n} 分钟前": "{n}m ago",
+  "{n} 小时前": "{n}h ago",
+  "已解除 {count} 个订阅的 IP 暂停":
+    "Cleared IP suspension for {count} subscriptions",
 };

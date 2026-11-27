@@ -319,6 +319,9 @@ func (r *Repository) DeleteSubscription(id int64) error {
 		if err := tx.Where("subscription_id = ?", id).Delete(&model.SubscriptionTraffic{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("subscription_id = ?", id).Delete(&model.SubscriptionPullLog{}).Error; err != nil {
+			return err
+		}
 		return tx.Where("id = ?", id).Delete(&model.Subscription{}).Error
 	})
 }
@@ -460,4 +463,109 @@ func (r *Repository) MarkSubscriptionResetTime(id int64, at int64) error {
 		return errors.New("repository not initialized")
 	}
 	return r.db.Model(&model.Subscription{}).Where("id = ?", id).Update("traffic_reset_time", at).Error
+}
+
+// SetSubscriptionIPSuspendedUntil updates the temporary IP-overlimit suspension
+// deadline (unix ms; 0 clears suspension).
+func (r *Repository) SetSubscriptionIPSuspendedUntil(id int64, untilMs, now int64) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	return r.db.Model(&model.Subscription{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"ip_suspended_until": untilMs,
+		"updated_time":       now,
+	}).Error
+}
+
+// RecordSubscriptionPull inserts one pull log entry and prunes expired or excess rows.
+func (r *Repository) RecordSubscriptionPull(entry *model.SubscriptionPullLog, keepPerSub int, maxAgeMs int64) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	if entry == nil || entry.SubscriptionID <= 0 {
+		return nil
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(entry).Error; err != nil {
+			return err
+		}
+		if maxAgeMs > 0 && entry.CreatedTime > maxAgeMs {
+			cutoff := entry.CreatedTime - maxAgeMs
+			if err := tx.Where("subscription_id = ? AND created_time < ?", entry.SubscriptionID, cutoff).
+				Delete(&model.SubscriptionPullLog{}).Error; err != nil {
+				return err
+			}
+		}
+		if keepPerSub > 0 {
+			var dropIDs []int64
+			if err := tx.Model(&model.SubscriptionPullLog{}).
+				Where("subscription_id = ?", entry.SubscriptionID).
+				Order("created_time DESC, id DESC").
+				Offset(keepPerSub).
+				Limit(500).
+				Pluck("id", &dropIDs).Error; err != nil {
+				return err
+			}
+			if len(dropIDs) > 0 {
+				if err := tx.Where("id IN ?", dropIDs).Delete(&model.SubscriptionPullLog{}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// ListSubscriptionPullLogs returns the latest pull log entries for one subscription, newest first.
+func (r *Repository) ListSubscriptionPullLogs(subID int64, limit int) ([]model.SubscriptionPullLog, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	var out []model.SubscriptionPullLog
+	err := r.db.Where("subscription_id = ?", subID).
+		Order("created_time DESC, id DESC").
+		Limit(limit).
+		Find(&out).Error
+	return out, err
+}
+
+// ListRecentSubscriptionPullIPs returns distinct allowed client IPs that pulled
+// subID at or after sinceMs.
+func (r *Repository) ListRecentSubscriptionPullIPs(subID int64, sinceMs int64) ([]string, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var ips []string
+	err := r.db.Model(&model.SubscriptionPullLog{}).
+		Distinct("ip").
+		Where("subscription_id = ? AND blocked = 0 AND created_time >= ?", subID, sinceMs).
+		Pluck("ip", &ips).Error
+	return ips, err
+}
+
+// ListAllRecentSubscriptionPullIPs returns distinct allowed client IPs per
+// subscription at or after sinceMs (batch query for subscription list view).
+func (r *Repository) ListAllRecentSubscriptionPullIPs(sinceMs int64) (map[int64][]string, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var rows []struct {
+		SubscriptionID int64
+		IP             string
+	}
+	err := r.db.Model(&model.SubscriptionPullLog{}).
+		Select("DISTINCT subscription_id, ip").
+		Where("blocked = 0 AND created_time >= ?", sinceMs).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64][]string)
+	for _, row := range rows {
+		out[row.SubscriptionID] = append(out[row.SubscriptionID], row.IP)
+	}
+	return out, nil
 }

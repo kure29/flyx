@@ -1273,6 +1273,7 @@ type agentKernelStatus struct {
 	Kernels      []agentKernelState   `json:"kernels"`
 	Counters     []agentKernelCounter `json:"counters"`
 	Users        []agentUserCounter   `json:"users"`
+	UserIPs      []agentUserOnlineIP  `json:"userIps"`
 	Epoch        string               `json:"epoch"`
 	NftAvailable bool                 `json:"nftAvailable"`
 	NftError     string               `json:"nftError"`
@@ -1308,7 +1309,8 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	}
 	inbounds := make([]kernel.Inbound, 0, len(rows))
 	ports := make([]map[string]interface{}, 0, len(rows))
-	users := h.activeUsersByInbound(time.Now())
+	users, trackedInbounds := h.activeUsersByInboundWithTracking(time.Now())
+	trackOnlineIPs := false
 	node, _ := h.repo.GetNodeByID(k.NodeID)
 	for _, row := range rows {
 		if row.Enabled != 1 {
@@ -1323,6 +1325,9 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		}
 		if in.SupportsUsers() && !(in.Settings.SSSubscriptionUsers && node != nil && strings.TrimSpace(node.NftError) != "") {
 			in.Users = users[in.ID]
+			if len(in.Users) > 0 && trackedInbounds[in.ID] {
+				trackOnlineIPs = true
+			}
 		}
 		if in.Via, err = h.inboundVia(row); err != nil {
 			return nil, "", err
@@ -1358,6 +1363,7 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		SingboxSnell:       kernelCaps(k.Version).SingboxSnell,
 		SingboxPreferGoDNS: kernelCaps(k.Version).SingboxPreferGoDNS,
 		NoUserMarks:        node != nil && nftCannotMark(node.NftError),
+		TrackOnlineIPs:     trackOnlineIPs,
 	})
 	if err != nil {
 		return nil, "", err
@@ -1815,6 +1821,8 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 		}
 		_ = h.repo.UpdateNodeKernelFields(k.ID, fields)
 	}
+
+	h.applyNodeOnlineIPs(nodeID, status.UserIPs, time.UnixMilli(now))
 
 	if !status.NftAvailable {
 		return

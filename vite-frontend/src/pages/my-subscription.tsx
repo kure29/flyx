@@ -38,6 +38,7 @@ function subStatusRow(status: UserSubscription["status"]): RowStatus {
     case "ok":
       return "ok";
     case "over_quota":
+    case "ip_suspended":
       return "warn";
     case "expired":
       return "bad";
@@ -58,6 +59,8 @@ function subStatusLabel(
       return { text: t("正常"), color: "success" };
     case "over_quota":
       return { text: t("流量已用完"), color: "warning" };
+    case "ip_suspended":
+      return { text: t("IP 超限暂停"), color: "warning" };
     case "expired":
       return { text: t("已过期"), color: "danger" };
     default:

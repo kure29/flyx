@@ -59,7 +59,8 @@ type process struct {
 	args   []string
 	dir    string
 	logs   *logRing
-	prefix string // prepended to output lines when a kernel runs several processes
+	prefix string            // prepended to output lines when a kernel runs several processes
+	onLine func(string) bool // optional line observer; returns true to omit line from logs
 
 	mu        sync.Mutex
 	cmd       *exec.Cmd
@@ -151,6 +152,9 @@ func (p *process) runOnce() error {
 		sc.Buffer(make([]byte, 64*1024), 1024*1024)
 		for sc.Scan() {
 			if line := strings.TrimRight(sc.Text(), "\r"); line != "" {
+				if p.onLine != nil && p.onLine(line) {
+					continue
+				}
 				p.logs.add(p.prefix + line)
 			}
 		}

@@ -85,6 +85,7 @@ type Handler struct {
 	// regionNudge asks the region loop to look at the nodes again now.
 	regionNudge       chan struct{}
 	statusThemeChoice statusThemeChoiceCache
+	subOnlineIPs      *subOnlineIPStore
 }
 
 const monitorTunnelQualityEnabledConfigKey = "monitor_tunnel_quality_enabled"
@@ -155,6 +156,7 @@ func New(repo *repo.Repository, jwtSecret string) *Handler {
 		statusHistory:            &statusHistoryCache{},
 		statusThemes:             &statustheme.Store{},
 		regionNudge:              make(chan struct{}, 1),
+		subOnlineIPs:             newSubOnlineIPStore(),
 	}
 	h.healthCheck = health.NewChecker(repo, h.wsServer)
 	h.qualityProber = newTunnelQualityProber(h)
@@ -312,6 +314,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/subscription/reset", h.subscriptionReset)
 	mux.HandleFunc("/api/v1/subscription/reset-traffic", h.subscriptionResetTraffic)
 	mux.HandleFunc("/api/v1/subscription/traffic", h.subscriptionTraffic)
+	mux.HandleFunc("/api/v1/subscription/ip-activity", h.subscriptionIPActivity)
 	mux.HandleFunc("/api/v1/subscription/source/list", h.remoteSourceList)
 	mux.HandleFunc("/api/v1/subscription/source/save", h.remoteSourceSave)
 	mux.HandleFunc("/api/v1/subscription/source/refresh", h.remoteSourceRefresh)

@@ -29,8 +29,12 @@ func renderSingbox(inbounds []Inbound, opts RenderOptions) (string, error) {
 	if inboundList == nil {
 		inboundList = []interface{}{}
 	}
+	logLevel := "warn"
+	if opts.TrackOnlineIPs {
+		logLevel = "info"
+	}
 	cfg := obj{
-		"log":       obj{"level": "warn"},
+		"log":       obj{"level": logLevel},
 		"inbounds":  inboundList,
 		"outbounds": []interface{}{obj{"type": "direct", "tag": "direct"}},
 	}
