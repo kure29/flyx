@@ -37,6 +37,7 @@ type Manager struct {
 	restoreOnce sync.Once
 	instances   map[string]*instance
 	nft         *nftCounters
+	onlineIPs   *onlineIPTracker
 	// lastNftErr is the last nftables sync failure logged (guarded by mu).
 	lastNftErr string
 }
@@ -64,6 +65,7 @@ func NewManager(baseDir string) *Manager {
 		baseDir:   baseDir,
 		instances: make(map[string]*instance),
 		nft:       newNftCounters(baseDir),
+		onlineIPs: newOnlineIPTracker(),
 	}
 }
 
@@ -393,8 +395,9 @@ func (m *Manager) setErr(inst *instance, err error) {
 // startProcesses launches every process of the instance's current request.
 func (m *Manager) startProcesses(inst *instance) {
 	m.mu.Lock()
+	kernelType := inst.req.Type
 	specs := inst.req.processSpecs()
-	runDir := m.runDir(inst.req.Type)
+	runDir := m.runDir(kernelType)
 	bins := inst.bins
 	m.mu.Unlock()
 
@@ -407,6 +410,12 @@ func (m *Manager) startProcesses(inst *instance) {
 		}
 		p := newProcess(bin, expandArgs(spec.Args, runDir, filepath.Dir(bin)), runDir, inst.logs)
 		p.prefix = prefix
+		if m.onlineIPs != nil && (kernelType == "xray" || kernelType == "singbox") {
+			kt := kernelType
+			p.onLine = func(line string) bool {
+				return m.onlineIPs.ObserveLine(kt, line, time.Now())
+			}
+		}
 		procs = append(procs, p)
 	}
 	m.mu.Lock()
@@ -532,7 +541,10 @@ func (m *Manager) Status(logsFor string) Status {
 	m.mu.Unlock()
 	sort.Strings(types)
 
-	out := Status{Kernels: make([]State, 0, len(types))}
+	out := Status{
+		Kernels: make([]State, 0, len(types)),
+		UserIPs: m.onlineIPs.Snapshot(time.Now()),
+	}
 	for _, t := range types {
 		out.Kernels = append(out.Kernels, m.state(t, t == logsFor))
 	}

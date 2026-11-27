@@ -63,6 +63,10 @@ export function isExpiringSoon(s: SubscriptionItem): boolean {
   return days !== null && days > 0 && days <= EXPIRING_SOON_DAYS;
 }
 
+export function isIPSuspended(s: SubscriptionItem): boolean {
+  return Boolean(s.ipSuspendedUntil && s.ipSuspendedUntil > Date.now());
+}
+
 export function isSubIssue(s: SubscriptionItem): boolean {
   return s.enabled && !s.active;
 }
@@ -726,6 +730,11 @@ export function SubRowItem({
     days <= EXPIRING_SOON_DAYS;
   const urgentExpiry = days !== null && days <= EXPIRING_URGENT_DAYS;
   const tags = sub.tags ?? [];
+  const ipSuspended = isIPSuspended(sub);
+  const onlineIpCount = sub.onlineIpCount ?? 0;
+  const maxOnlineIps = sub.maxOnlineIps ?? 0;
+  const showIpPill = maxOnlineIps > 0 || onlineIpCount > 0;
+  const overIpLimit = maxOnlineIps > 0 && onlineIpCount > maxOnlineIps;
 
   const expiryText = !sub.expireTime
     ? ""
@@ -779,7 +788,9 @@ export function SubRowItem({
             sub.active
               ? "bg-emerald-500"
               : sub.enabled
-                ? "bg-rose-500"
+                ? ipSuspended
+                  ? "bg-amber-500"
+                  : "bg-rose-500"
                 : "bg-default-300"
           }`}
         />
@@ -808,13 +819,32 @@ export function SubRowItem({
               !sub.active && (
                 <Chip
                   className="h-5 text-[11px]"
-                  color="danger"
+                  color={ipSuspended ? "warning" : "danger"}
                   size="sm"
                   variant="flat"
                 >
-                  {sub.overQuota ? t("流量用完") : t("已过期")}
+                  {ipSuspended
+                    ? t("IP 超限暂停")
+                    : sub.overQuota
+                      ? t("流量用完")
+                      : t("已过期")}
                 </Chip>
               )
+            )}
+            {showIpPill && (
+              <span
+                className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
+                  overIpLimit
+                    ? "bg-rose-500/12 text-rose-600 dark:text-rose-400"
+                    : onlineIpCount > 0
+                      ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
+                      : "bg-default-100 text-default-500 dark:bg-default-100/60"
+                }`}
+              >
+                {maxOnlineIps > 0
+                  ? `${onlineIpCount}/${maxOnlineIps} IP`
+                  : `${onlineIpCount} IP`}
+              </span>
             )}
             {showExpiryPill && (
               <span
@@ -852,6 +882,12 @@ export function SubRowItem({
               t("{count} 个节点", { count: sub.nodeCount }),
               sourceText,
               expiryText,
+              sub.maxPullIps && sub.maxPullIps > 0
+                ? t("24h 拉取 {used}/{max} IP", {
+                    used: sub.pullIpCount24h ?? 0,
+                    max: sub.maxPullIps,
+                  })
+                : "",
               sub.userName ? `@${sub.userName}` : "",
               sub.remark,
             ]

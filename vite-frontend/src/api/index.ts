@@ -1011,6 +1011,7 @@ export interface SubRuleGroup {
   key: string;
   name: string;
 }
+export type SubscriptionIPAction = "alert" | "suspend" | "disable";
 export interface SubscriptionItem {
   id: number;
   name: string;
@@ -1038,6 +1039,16 @@ export interface SubscriptionItem {
   overQuota: boolean;
   /** When the used traffic started counting: creation or the last reset (ms). */
   trafficSince: number;
+  /** Max concurrent online IPs across nodes; 0 = unlimited. */
+  maxOnlineIps?: number;
+  ipAction?: SubscriptionIPAction;
+  ipSuspendMinutes?: number;
+  /** Unix ms when temporary IP-overlimit suspension ends; 0 = not suspended. */
+  ipSuspendedUntil?: number;
+  /** Max distinct client IPs pulling the subscription link in 24h; 0 = unlimited. */
+  maxPullIps?: number;
+  onlineIpCount?: number;
+  pullIpCount24h?: number;
   /** Panel user it is assigned to; 0 = none. */
   userId: number;
   userName?: string;
@@ -1056,10 +1067,15 @@ export interface SubscriptionDraft {
   tags?: string[];
   trafficLimit: number;
   resetDay: number;
+  maxOnlineIps?: number;
+  ipAction?: SubscriptionIPAction;
+  ipSuspendMinutes?: number;
+  maxPullIps?: number;
 }
 export type SubscriptionBatchAction =
   | "enable"
   | "disable"
+  | "unsuspend"
   | "reset-traffic"
   | "extend-days"
   | "set-group"
@@ -1107,7 +1123,8 @@ export interface UserSubscription {
   id: number;
   name: string;
   path: string;
-  status: "ok" | "disabled" | "expired" | "over_quota";
+  status: "ok" | "disabled" | "expired" | "over_quota" | "ip_suspended";
+  ipSuspendedUntil?: number;
   expireTime: number;
   nodeCount: number;
   uploadBytes: number;
@@ -1146,6 +1163,35 @@ const trafficQuery = (id: number, range: SubTrafficRange) => ({
 
 export const getSubscriptionTraffic = (id: number, range: SubTrafficRange) =>
   Network.post<SubTraffic>("/subscription/traffic", trafficQuery(id, range));
+
+export interface SubscriptionOnlineIP {
+  ip: string;
+  country?: string;
+  nodeIds: number[];
+  nodeNames: string[];
+  lastSeen: number;
+}
+export interface SubscriptionPullLog {
+  id: number;
+  ip: string;
+  country?: string;
+  userAgent: string;
+  format: string;
+  blocked: boolean;
+  createdTime: number;
+}
+export interface SubscriptionIPActivity {
+  onlineIps: SubscriptionOnlineIP[];
+  pullLogs: SubscriptionPullLog[];
+  pullIpCount24h: number;
+  maxOnlineIps: number;
+  ipAction: SubscriptionIPAction;
+  ipSuspendMinutes: number;
+  ipSuspendedUntil: number;
+  maxPullIps: number;
+}
+export const getSubscriptionIPActivity = (id: number) =>
+  Network.post<SubscriptionIPActivity>("/subscription/ip-activity", { id });
 /** What a source's nodes are for in a chain: plain nodes, relays (前置) or landing nodes. */
 export type RemoteSourceRole = "" | "relay" | "landing";
 export interface RemoteSourceItem {

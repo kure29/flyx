@@ -669,11 +669,20 @@ func (h *Handler) openSubscription(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	pullBlocked := false
+	if r.Method == http.MethodGet {
+		pullBlocked = h.checkAndRecordSubscriptionPull(sub, r, format, now)
+	}
+
 	// A link that stopped working still answers with a profile: one node
 	// named after the reason. An error would leave the client on its old
 	// profile with no hint why.
 	var body, contentType string
-	if reason := subInactiveReason(sub, now); reason != "" {
+	reason := subInactiveReason(sub, now)
+	if reason == "" && pullBlocked {
+		reason = "⚠️ 订阅拉取 IP 数量超限，请联系管理员"
+	}
+	if reason != "" {
 		body, contentType, err = kernel.Subscription(format, nil, kernel.SubOptions{Notices: []string{reason}})
 	} else {
 		p := parsePipeline(sub.Options)
