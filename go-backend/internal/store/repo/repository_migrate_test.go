@@ -558,3 +558,105 @@ func TestOpenAddsMissingNodeColumnsSoNodesCanBeCreated(t *testing.T) {
 		t.Fatalf("create node: %v", err)
 	}
 }
+
+func TestMigrateSchemaV7SyncsDivergedManagedRelayForwardNames(t *testing.T) {
+	r, err := Open(filepath.Join(t.TempDir(), "relay-sync.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	db := r.DB()
+	if err := db.Exec(`UPDATE schema_version SET version = 6`).Error; err != nil {
+		t.Fatalf("reset schema version: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO forward(id, user_id, user_name, name, tunnel_id, remote_addr, strategy, created_time, updated_time, status, inx) VALUES
+		(10, 1, 'admin', 'SG·Akari/KKIX', 1, '1.2.3.4:443', 'fifo', 100, 100, 1, 0),
+		(11, 1, 'admin', 'Original Unmanaged', 1, '1.2.3.5:443', 'fifo', 100, 100, 1, 1)`).Error; err != nil {
+		t.Fatalf("seed forwards: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO node_inbound_relay(id, inbound_id, forward_id, name, share_host, managed, created_time) VALUES
+		(1, 1, 10, 'SG·Akari | GD·IX', '', 1, 100),
+		(2, 1, 11, 'Manual Label', '', 0, 100)`).Error; err != nil {
+		t.Fatalf("seed relays: %v", err)
+	}
+
+	if err := migrateSchema(db); err != nil {
+		t.Fatalf("migrateSchema: %v", err)
+	}
+
+	var managedName, unmanagedName string
+	if err := db.Raw(`SELECT name FROM forward WHERE id = 10`).Scan(&managedName).Error; err != nil {
+		t.Fatalf("query managed forward: %v", err)
+	}
+	if managedName != "SG·Akari | GD·IX" {
+		t.Fatalf("expected managed forward name to sync, got %q", managedName)
+	}
+	if err := db.Raw(`SELECT name FROM forward WHERE id = 11`).Scan(&unmanagedName).Error; err != nil {
+		t.Fatalf("query unmanaged forward: %v", err)
+	}
+	if unmanagedName != "Original Unmanaged" {
+		t.Fatalf("unmanaged forward name must stay untouched, got %q", unmanagedName)
+	}
+	if got := getSchemaVersion(db); got != currentSchemaVersion {
+		t.Fatalf("expected schema version %d, got %d", currentSchemaVersion, got)
+	}
+}
+
+func TestRestoreInboundBackupSyncsManagedRelayForwardNames(t *testing.T) {
+	r, err := Open(filepath.Join(t.TempDir(), "backup-sync.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	if err := r.DB().Exec(`INSERT INTO forward(id, user_id, user_name, name, tunnel_id, remote_addr, strategy, created_time, updated_time, status, inx)
+		VALUES(20, 1, 'admin', 'Stale Forward Name', 1, '1.2.3.4:443', 'fifo', 100, 100, 1, 0)`).Error; err != nil {
+		t.Fatalf("seed forward: %v", err)
+	}
+
+	backup := &model.InboundsBackup{
+		Relays: []model.InboundRelayBackup{
+			{ID: 1, InboundID: 1, ForwardID: 20, Name: "Restored Relay Name", Managed: 1, CreatedTime: 100},
+		},
+	}
+	if _, err := importInbounds(r.DB(), backup, 200); err != nil {
+		t.Fatalf("importInbounds: %v", err)
+	}
+
+	var got string
+	if err := r.DB().Raw(`SELECT name FROM forward WHERE id = 20`).Scan(&got).Error; err != nil {
+		t.Fatalf("query forward name: %v", err)
+	}
+	if got != "Restored Relay Name" {
+		t.Fatalf("expected restored managed relay name to sync onto forward, got %q", got)
+	}
+}
+
+func TestGetUsedPortsOnNodeAsMapIncludesNodeInbounds(t *testing.T) {
+	r, err := Open(filepath.Join(t.TempDir(), "used-ports.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	if err := r.DB().Exec(`INSERT INTO forward_port(forward_id, node_id, port) VALUES(1, 9, 44322)`).Error; err != nil {
+		t.Fatalf("seed forward_port: %v", err)
+	}
+	if err := r.DB().Exec(`INSERT INTO chain_tunnel(tunnel_id, chain_type, node_id, port, protocol, strategy) VALUES(1, '2', 9, 44323, 'tls', 'round')`).Error; err != nil {
+		t.Fatalf("seed chain_tunnel: %v", err)
+	}
+	if err := r.DB().Exec(`INSERT INTO node_inbound(kernel_id, node_id, name, protocol, listen, port, enabled, created_time, updated_time) VALUES(1, 9, 'in1', 'vless', '::', 44321, 1, 100, 100)`).Error; err != nil {
+		t.Fatalf("seed node_inbound: %v", err)
+	}
+
+	used, err := r.GetUsedPortsOnNodeAsMap(9)
+	if err != nil {
+		t.Fatalf("GetUsedPortsOnNodeAsMap: %v", err)
+	}
+	for _, p := range []int{44321, 44322, 44323} {
+		if !used[p] {
+			t.Fatalf("expected port %d to be marked used, map=%v", p, used)
+		}
+	}
+}

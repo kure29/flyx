@@ -714,3 +714,27 @@ func TestValidatePortsSpeedLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessStopRightAfterStartDoesNotWaitStopGrace(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses /bin/sleep")
+	}
+	sleepBin, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep not found")
+	}
+	dir := t.TempDir()
+	for i := 0; i < 10; i++ {
+		p := newProcess(sleepBin, []string{"30"}, dir, &logRing{})
+		p.start()
+		// Exercise immediate stop and slightly staggered stop across the cmd.Start window.
+		if i%2 == 1 {
+			time.Sleep(time.Duration(i) * time.Millisecond)
+		}
+		start := time.Now()
+		p.stop()
+		if elapsed := time.Since(start); elapsed >= 2*time.Second {
+			t.Fatalf("iter %d: stop() stalled for %v (missed SIGTERM during start)", i, elapsed)
+		}
+	}
+}

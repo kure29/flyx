@@ -17,6 +17,20 @@ export function clearPageCache(): void {
   loaded.clear();
 }
 
+/** Forgets specific pages' cached data after a cross-page mutation. */
+export function invalidatePageCache(...pages: string[]): void {
+  for (const page of pages) {
+    loaded.delete(page);
+    const prefix = `${page}/`;
+
+    for (const key of Array.from(store.keys())) {
+      if (key.startsWith(prefix)) {
+        store.delete(key);
+      }
+    }
+  }
+}
+
 /** Whether the page has loaded before, so its cached state can be shown. */
 export function pageCached(page: string): boolean {
   return loaded.has(page);

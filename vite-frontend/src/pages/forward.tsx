@@ -91,10 +91,17 @@ import {
 import { buildForwardOrder, FORWARD_ORDER_KEY } from "@/pages/forward/order";
 import { PageLoadingState } from "@/components/page-state";
 import {
+  invalidatePageCache,
   markPageCached,
   pageCached,
   useCachedState,
 } from "@/hooks/use-cached-state";
+import {
+  FORWARD_CREATE_DROP_NOTICE,
+  FORWARD_UPDATE_DROP_NOTICE,
+  forwardCreatedDespiteDrop,
+  forwardUpdatedDespiteDrop,
+} from "@/pages/forward/save-recovery";
 // import { useMobileBreakpoint } from "@/hooks/useMobileBreakpoint";
 import { saveOrder } from "@/utils/order-storage";
 import { JwtUtil } from "@/utils/jwt";
@@ -323,6 +330,7 @@ export default function ForwardPage({
   const [diagnosisModalOpen, setDiagnosisModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const submittingRef = useRef(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [resetFlowLoading, setResetFlowLoading] = useState(false);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
@@ -1052,10 +1060,12 @@ export default function ForwardPage({
   const validateForm = (): boolean => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!form.name.trim()) {
+    const trimmedName = form.name.trim();
+
+    if (!trimmedName) {
       newErrors.name = "请输入规则名称";
-    } else if (form.name.length < 2 || form.name.length > 50) {
-      newErrors.name = "规则名称长度应在2-50个字符之间";
+    } else if (trimmedName.length > 100) {
+      newErrors.name = "规则名称长度不能超过100个字符";
     }
 
     if (!form.tunnelId) {
@@ -1208,6 +1218,7 @@ export default function ForwardPage({
       const res = await deleteForward(forwardToDelete.id);
 
       if (res.code === 0) {
+        invalidatePageCache("relay-lines", "inbound", "admin-overview");
         toast.success("删除成功");
         setDeleteModalOpen(false);
         setForwardToDelete(null);
@@ -1238,6 +1249,7 @@ export default function ForwardPage({
           const forceRes = await forceDeleteForward(forwardToDelete.id);
 
           if (forceRes.code === 0) {
+            invalidatePageCache("relay-lines", "inbound", "admin-overview");
             toast.success("强制删除成功");
             setDeleteModalOpen(false);
             setForwardToDelete(null);
@@ -1290,10 +1302,13 @@ export default function ForwardPage({
 
   // 提交表单
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     if (!validateForm()) return;
 
+    submittingRef.current = true;
     setSubmitLoading(true);
     try {
+      const trimmedName = form.name.trim();
       const processedRemoteAddr = form.remoteAddr
         .split("\n")
         .map((addr) => addr.trim())
@@ -1301,13 +1316,17 @@ export default function ForwardPage({
         .join(",");
 
       const addressCount = processedRemoteAddr.split(",").length;
+      const prevMaxId = forwards.reduce((max, f) => Math.max(max, f.id), 0);
+      const prevUpdated = isEdit
+        ? forwards.find((f) => f.id === form.id)?.updatedTime
+        : undefined;
 
       let res: { code: number; msg: string };
 
       if (isEdit) {
         const updateData = {
           id: form.id,
-          name: form.name,
+          name: trimmedName,
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           ...(inIpTouched ? { inIp: form.inIp || "" } : {}),
@@ -1321,7 +1340,7 @@ export default function ForwardPage({
         res = await updateForward(updateData);
       } else {
         const createData = {
-          name: form.name,
+          name: trimmedName,
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           inIp: form.inIp || undefined,
@@ -1349,15 +1368,37 @@ export default function ForwardPage({
             duration: 5000,
           });
         });
+        invalidatePageCache("relay-lines", "inbound", "admin-overview");
         toast.success(isEdit ? "修改成功" : "创建成功");
         setModalOpen(false);
         await refreshForwardList(false);
       } else {
-        toast.error(res.msg || "操作失败");
+        const recovered = isEdit
+          ? await forwardUpdatedDespiteDrop(res, form.id, prevUpdated)
+          : form.tunnelId !== null &&
+            (await forwardCreatedDespiteDrop(res, prevMaxId, {
+              tunnelId: form.tunnelId,
+              name: trimmedName,
+              remoteAddr: processedRemoteAddr,
+              inPort: form.inPort,
+            }));
+
+        if (recovered) {
+          invalidatePageCache("relay-lines", "inbound", "admin-overview");
+          toast.success(
+            isEdit ? FORWARD_UPDATE_DROP_NOTICE : FORWARD_CREATE_DROP_NOTICE,
+            { duration: 6000 },
+          );
+          setModalOpen(false);
+          await refreshForwardList(false);
+        } else {
+          toast.error(res.msg || "操作失败");
+        }
       }
     } catch {
       toast.error("操作失败");
     } finally {
+      submittingRef.current = false;
       setSubmitLoading(false);
     }
   };
@@ -1389,6 +1430,7 @@ export default function ForwardPage({
       }
 
       if (res.code === 0) {
+        invalidatePageCache("relay-lines", "inbound", "admin-overview");
         toast.success(targetState ? "服务已启动" : "服务已暂停");
         // 更新规则状态
         setForwards((prev) =>
@@ -2173,6 +2215,7 @@ export default function ForwardPage({
       presentBatchOutcome(outcome);
 
       if (outcome.shouldRefresh) {
+        invalidatePageCache("relay-lines", "inbound", "admin-overview");
         setBatchProgress({
           active: true,
           label: outcome.progressLabel || "正在刷新规则列表...",
@@ -2212,6 +2255,7 @@ export default function ForwardPage({
       }
 
       if (outcome.shouldRefresh) {
+        invalidatePageCache("relay-lines", "inbound", "admin-overview");
         setBatchProgress({
           active: true,
           label: outcome.progressLabel || "正在刷新规则列表...",
@@ -2283,6 +2327,7 @@ export default function ForwardPage({
       }
 
       if (outcome.shouldRefresh) {
+        invalidatePageCache("relay-lines", "inbound", "admin-overview");
         setBatchProgress({
           active: true,
           label: outcome.progressLabel || "正在刷新规则列表...",

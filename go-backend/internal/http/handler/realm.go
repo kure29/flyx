@@ -176,7 +176,15 @@ func (h *Handler) ensureRealmKernel(nodeID int64, create bool) (*model.NodeKerne
 			NodeID: nodeID, KernelType: kernel.TypeRealm, Version: kernel.RealmVersion,
 			Status: kernelStatusPending, Enabled: 1, CreatedTime: now, UpdatedTime: now,
 		}
-		return k, h.repo.CreateNodeKernel(k)
+		if err := h.repo.CreateNodeKernel(k); err != nil {
+			// Another concurrent create may have registered realm for this node first.
+			existing, lookupErr := h.repo.GetNodeKernelByType(nodeID, kernel.TypeRealm)
+			if lookupErr == nil && existing != nil {
+				return existing, nil
+			}
+			return nil, err
+		}
+		return k, nil
 	}
 	if k.Version != kernel.RealmVersion {
 		// A panel upgrade moved to a newer realm.
@@ -258,6 +266,9 @@ func (h *Handler) switchTunnelEngine(tunnelID int64, fromRealm bool, oldEntryNod
 		if _, err := h.syncRealmNodes(nodes, nil); err != nil {
 			log.Printf("realm engine switch tunnel_id=%d err=%v", tunnelID, err)
 		}
+		if len(forwards) > 0 {
+			time.Sleep(tunnelServiceBindRetryDelay)
+		}
 		for i := range forwards {
 			_ = h.syncForwardServices(&forwards[i], "UpdateService", true)
 		}
@@ -267,6 +278,9 @@ func (h *Handler) switchTunnelEngine(tunnelID int64, fromRealm bool, oldEntryNod
 		for _, nodeID := range uniqueInt64s(nodes) {
 			_ = h.deleteForwardServicesOnNode(&forwards[i], nodeID)
 		}
+	}
+	if len(forwards) > 0 {
+		time.Sleep(tunnelServiceBindRetryDelay)
 	}
 	if _, err := h.syncRealmNodes(nodes, nil); err != nil {
 		log.Printf("realm engine switch tunnel_id=%d err=%v", tunnelID, err)
