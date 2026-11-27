@@ -42,7 +42,7 @@ import {
   runSystemUpgrade,
 } from "@/api";
 import { AnimatedPage } from "@/components/animated-page";
-import { PageHeader, PageTabs } from "@/components/page-kit";
+import { PageHeader } from "@/components/page-kit";
 import { LanguageToggle } from "@/components/language-toggle";
 import { ThemeSettings } from "@/components/theme-settings";
 import { useI18n } from "@/i18n";
@@ -65,13 +65,15 @@ import {
 } from "@/pages/config/latency-card";
 import {
   type ConfigSearchHit,
+  ConfigCard,
+  ConfigCardGrid,
   ConfigIndex,
   ConfigLayoutContext,
   ConfigSearchBox,
   ConfigSearchResults,
   ConfigSection,
+  ConfigTopNav,
   Field,
-  SubHeading,
 } from "@/pages/config/section";
 import { GistBackup } from "@/pages/config/gist-backup";
 import { isAdmin } from "@/utils/auth";
@@ -1690,80 +1692,70 @@ export default function ConfigPage() {
           .includes(searchText),
       );
 
-  return (
-    <AnimatedPage
-      className={
-        isH5
-          ? // The phone layout supplies the grey page.
-            "overflow-x-clip px-4 pb-6 pt-2"
-          : "mx-auto max-w-4xl px-4 py-6 lg:px-10 lg:py-8"
-      }
-    >
-      {!(isH5 && shown) && (
-        <PageHeader
-          description={tr("面板名称、登录安全、通知、备份与升级")}
-          title={tr("网站配置")}
-        />
-      )}
+  const sectionCategory: Record<SectionKey, string> = {
+    basic: tr("常规"),
+    appearance: tr("常规"),
+    security: tr("安全与网络"),
+    network: tr("安全与网络"),
+    latency: tr("安全与网络"),
+    notify: tr("通知与展示"),
+    statuspage: tr("通知与展示"),
+    backup: tr("运维"),
+    system: tr("运维"),
+  };
 
-      <ConfigLayoutContext.Provider value={layout}>
-        {!(isH5 && shown) && (
-          <div className="mb-4 sm:max-w-sm">
-            <ConfigSearchBox value={query} onChange={setQuery} />
-          </div>
-        )}
-        {searchText && (
-          <ConfigSearchResults hits={searchHits} onPick={pickSearchHit} />
-        )}
-        {isH5 && shown === null && !searchText && (
-          <ConfigIndex
-            items={SECTIONS.map(([key, title]) => ({
-              id: key,
-              title: tr(title),
-              icon: SECTION_ICONS[key],
-              summary: summaries[key],
-              changed: sectionChanged(key),
-            }))}
-            onOpen={(id) => openSection(id as SectionKey)}
-          />
-        )}
-        {!isH5 && !searchText && (
-          // Same tabs as the other pages; a dot marks unsaved edits.
-          <PageTabs
-            tabs={SECTIONS.map(([key, label]) => ({
-              key,
-              label: tr(label),
-              badge: sectionChanged(key) ? (
-                <span
-                  className="inline-block h-1.5 w-1.5 rounded-full bg-warning"
-                  title={tr("未保存")}
-                />
-              ) : undefined,
-            }))}
-            value={shown ?? "basic"}
-            onChange={(key) => openSection(key, true)}
-          />
-        )}
-        <div hidden={!!searchText}>
-          <ConfigSection
-            {...sectionProps("basic")}
-            summary={summaries.basic}
-            title={tr("基本")}
-          >
+  const navItems = SECTIONS.map(([key, title]) => ({
+    id: key,
+    title: tr(title),
+    icon: SECTION_ICONS[key],
+    summary: summaries[key],
+    changed: sectionChanged(key),
+    category: sectionCategory[key],
+  }));
+
+  const changedCount = Object.keys({ ...configs, ...originalConfigs }).filter(
+    (k) => configs[k] !== originalConfigs[k],
+  ).length;
+
+  const handleDiscard = () => {
+    setConfigs({ ...originalConfigs });
+    setHasChanges(false);
+    toast(tr("已放弃未保存的修改"));
+  };
+
+  const sectionsBody = (
+    <div hidden={!!searchText}>
+      <ConfigSection
+        {...sectionProps("basic")}
+        summary={summaries.basic}
+        title={tr("基本")}
+      >
+        <ConfigCardGrid>
+          <ConfigCard title={tr("面板信息")}>
             {renderItem("app_name")}
             {renderItem("ip")}
             {renderItem("panel_domain")}
+          </ConfigCard>
+          <ConfigCard title={tr("品牌与图标")}>
             {renderItem("app_logo")}
             {renderItem("app_favicon")}
-            {renderItem("hide_footer_brand")}
-          </ConfigSection>
+            <div className="border-t border-divider/70 pt-3">
+              {renderItem("hide_footer_brand")}
+            </div>
+          </ConfigCard>
+        </ConfigCardGrid>
+      </ConfigSection>
 
-          <ConfigSection
-            {...sectionProps("appearance")}
-            summary={summaries.appearance}
-            title={tr("外观")}
+      <ConfigSection
+        {...sectionProps("appearance")}
+        summary={summaries.appearance}
+        title={tr("外观")}
+      >
+        <ConfigCardGrid>
+          <ConfigCard
+            description={tr("切换即生效，不需要保存")}
+            title={tr("语言与主题")}
           >
-            <SubHeading>{tr("语言（切换即生效，不需要保存）")}</SubHeading>
             <Field
               inline
               help={tr("切换面板显示语言，立即生效")}
@@ -1771,78 +1763,105 @@ export default function ConfigPage() {
             >
               <LanguageToggle variant="segmented" />
             </Field>
-            <SubHeading>{tr("主题（点选即生效，不需要保存）")}</SubHeading>
-            <div className="[&_[data-slot=card-content]]:p-0! [&_h2]:hidden [&>[data-slot=card]]:rounded-none! [&>[data-slot=card]]:border-0! [&>[data-slot=card]]:bg-none! [&>[data-slot=card]]:shadow-none! [&>[data-slot=card]]:backdrop-blur-none!">
+            <div className="border-t border-divider/70 pt-3 [&_[data-slot=card-content]]:p-0! [&_h2]:hidden [&>[data-slot=card]]:rounded-none! [&>[data-slot=card]]:border-0! [&>[data-slot=card]]:bg-none! [&>[data-slot=card]]:shadow-none! [&>[data-slot=card]]:backdrop-blur-none!">
               <ThemeSettings />
             </div>
+          </ConfigCard>
+          <ConfigCard title={tr("背景与界面偏好")}>
             {renderItem("app_bg_image")}
-            {renderItem("forward_compact_mode")}
-          </ConfigSection>
+            <div className="border-t border-divider/70 pt-3">
+              {renderItem("forward_compact_mode")}
+            </div>
+          </ConfigCard>
+        </ConfigCardGrid>
+      </ConfigSection>
 
-          <ConfigSection
-            {...sectionProps("security")}
-            summary={summaries.security}
-            title={tr("安全与登录")}
-          >
-            {renderItem("captcha_enabled")}
-            {renderItem("cloudflare_site_key")}
-            {renderItem("cloudflare_secret_key")}
+      <ConfigSection
+        {...sectionProps("security")}
+        summary={summaries.security}
+        title={tr("安全与登录")}
+      >
+        <ConfigCardGrid>
+          <ConfigCard title={tr("登录方式与访问限制")}>
             {renderItem("github_login_enabled")}
             {renderItem("github_oauth_client_id")}
             {renderItem("github_oauth_secret")}
             {renderItem("admin_password_login_disabled")}
-            {renderItem("fetch_allow_local")}
-          </ConfigSection>
+            <div className="border-t border-divider/70 pt-3">
+              {renderItem("fetch_allow_local")}
+            </div>
+          </ConfigCard>
+          <ConfigCard title={tr("人机验证")}>
+            {renderItem("captcha_enabled")}
+            {renderItem("cloudflare_site_key")}
+            {renderItem("cloudflare_secret_key")}
+          </ConfigCard>
+        </ConfigCardGrid>
+      </ConfigSection>
 
-          <ConfigSection
-            {...sectionProps("network")}
-            summary={summaries.network}
-            title={tr("服务器与监控")}
-          >
+      <ConfigSection
+        {...sectionProps("network")}
+        summary={summaries.network}
+        title={tr("服务器与监控")}
+      >
+        <ConfigCardGrid>
+          <ConfigCard title={tr("监控采集")}>
             {renderItem("monitor_tunnel_quality_enabled")}
             {renderItem(TUNNEL_QUALITY_INTERVAL_CONFIG_KEY)}
             {renderItem("monitor_retention_days")}
+          </ConfigCard>
+          <ConfigCard title={tr("下载与更新加速")}>
             {renderItem("github_proxy_enabled")}
             {renderItem("github_proxy_url")}
-          </ConfigSection>
+          </ConfigCard>
+        </ConfigCardGrid>
+      </ConfigSection>
 
-          <ConfigSection
-            {...sectionProps("latency")}
-            summary={summaries.latency}
-            title={tr("延迟测试点")}
-          >
-            <LatencySettings configs={configs} onChange={handleConfigChange} />
-          </ConfigSection>
+      <ConfigSection
+        {...sectionProps("latency")}
+        summary={summaries.latency}
+        title={tr("延迟测试点")}
+      >
+        <ConfigCard description={summaries.latency} title={tr("延迟测试点")}>
+          <LatencySettings configs={configs} onChange={handleConfigChange} />
+        </ConfigCard>
+      </ConfigSection>
 
-          <ConfigSection
-            {...sectionProps("notify")}
-            summary={summaries.notify}
-            title={tr("通知")}
-          >
-            <NotifySettings
-              configs={configs}
-              originalConfigs={originalConfigs}
-              onChange={handleConfigChange}
-            />
-          </ConfigSection>
+      <ConfigSection
+        {...sectionProps("notify")}
+        summary={summaries.notify}
+        title={tr("通知")}
+      >
+        <ConfigCard description={summaries.notify} title={tr("通知")}>
+          <NotifySettings
+            configs={configs}
+            originalConfigs={originalConfigs}
+            onChange={handleConfigChange}
+          />
+        </ConfigCard>
+      </ConfigSection>
 
-          <ConfigSection
-            {...sectionProps("statuspage")}
-            summary={summaries.statuspage}
-            title={tr("状态页")}
-          >
-            <StatusPageSettings
-              configs={configs}
-              originalConfigs={originalConfigs}
-              onChange={handleConfigChange}
-            />
-          </ConfigSection>
+      <ConfigSection
+        {...sectionProps("statuspage")}
+        summary={summaries.statuspage}
+        title={tr("状态页")}
+      >
+        <ConfigCard description={summaries.statuspage} title={tr("状态页")}>
+          <StatusPageSettings
+            configs={configs}
+            originalConfigs={originalConfigs}
+            onChange={handleConfigChange}
+          />
+        </ConfigCard>
+      </ConfigSection>
 
-          <ConfigSection
-            {...sectionProps("backup")}
-            summary={summaries.backup}
-            title={tr("备份与恢复")}
-          >
+      <ConfigSection
+        {...sectionProps("backup")}
+        summary={summaries.backup}
+        title={tr("备份与恢复")}
+      >
+        <ConfigCardGrid>
+          <ConfigCard title={tr("本地 JSON 备份")}>
             <Field
               inline
               help={`${exportTypes.length} / ${BACKUP_TYPE_VALUES.length}`}
@@ -1865,42 +1884,90 @@ export default function ConfigPage() {
               type="file"
               onChange={handleFileChange}
             />
-            <Field
-              inline
-              help={
-                importFileName
-                  ? importFileName
-                  : `${importTypes.length} / ${BACKUP_TYPE_VALUES.length}`
-              }
-              label={tr("导入数据")}
-            >
-              <Button
-                isLoading={importing}
-                size="sm"
-                variant="flat"
-                onPress={() => setImportSelectorOpen(true)}
+            <div className="border-t border-divider/70 pt-3">
+              <Field
+                inline
+                help={
+                  importFileName
+                    ? importFileName
+                    : `${importTypes.length} / ${BACKUP_TYPE_VALUES.length}`
+                }
+                label={tr("导入数据")}
               >
-                {importing ? tr("导入中...") : tr("选择并导入")}
-              </Button>
-            </Field>
+                <Button
+                  isLoading={importing}
+                  size="sm"
+                  variant="flat"
+                  onPress={() => setImportSelectorOpen(true)}
+                >
+                  {importing ? tr("导入中...") : tr("选择并导入")}
+                </Button>
+              </Field>
+            </div>
+          </ConfigCard>
+          <ConfigCard title={tr("上传到 GitHub Gist")}>
+            <GistBackup hideHeading />
+          </ConfigCard>
+        </ConfigCardGrid>
+      </ConfigSection>
 
-            <GistBackup />
-          </ConfigSection>
-
-          <ConfigSection
-            {...sectionProps("system")}
-            summary={summaries.system}
-            title={tr("系统与升级")}
-          >
+      <ConfigSection
+        {...sectionProps("system")}
+        summary={summaries.system}
+        title={tr("系统与升级")}
+      >
+        <ConfigCardGrid>
+          <ConfigCard title={tr("存储与版本信息")}>
             <Field
               inline
               help={tr("后端数据库占用空间，仅供参考")}
               label={tr("数据库占用")}
             >
-              <span className="text-sm font-medium">{storageSummary}</span>
+              <span className="text-sm font-medium tabular-nums">
+                {storageSummary}
+              </span>
             </Field>
 
-            <SubHeading>{tr("面板自升级")}</SubHeading>
+            {systemUpgradeLoading ? (
+              <div className="flex items-center gap-2 text-sm text-default-500">
+                <Spinner size="sm" />
+                {tr("正在加载升级状态...")}
+              </div>
+            ) : (
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg bg-default-50/80 p-3.5 text-sm dark:bg-default-100/30">
+                <dt className="text-default-500">{tr("当前版本")}</dt>
+                <dd className="font-mono">
+                  {systemUpgradeInfo?.currentVersion || tr("未知")}
+                </dd>
+                <dt className="text-default-500">{tr("最新版本")}</dt>
+                <dd className="font-mono">
+                  {systemUpgradeInfo?.latestVersion || tr("未知")}
+                  {!systemUpgradeInfo?.latestVersion &&
+                    systemUpgradeInfo?.reason && (
+                      <p className="break-all font-sans text-xs text-default-500">
+                        {systemUpgradeInfo.reason}
+                      </p>
+                    )}
+                </dd>
+                <dt className="text-default-500">{tr("升级能力")}</dt>
+                <dd>
+                  {systemUpgradeInfo?.capability.capable
+                    ? tr("可升级")
+                    : tr("当前不可升级")}
+                </dd>
+                <dt className="text-default-500">{tr("部署目录")}</dt>
+                <dd className="break-all font-mono text-xs leading-5">
+                  {systemUpgradeInfo?.capability.deployDir || "-"}
+                </dd>
+                <dt className="text-default-500">{tr("后端容器")}</dt>
+                <dd className="break-all font-mono text-xs leading-5">
+                  {systemUpgradeInfo?.capability.backendContainer || "-"}
+                </dd>
+              </dl>
+            )}
+          </ConfigCard>
+
+          <ConfigCard title={tr("面板自升级")}>
             {systemUpgradeLoading ? (
               <div className="flex items-center gap-2 text-sm text-default-500">
                 <Spinner size="sm" />
@@ -1908,35 +1975,6 @@ export default function ConfigPage() {
               </div>
             ) : (
               <>
-                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-                  <dt className="text-default-500">{tr("当前版本")}</dt>
-                  <dd>{systemUpgradeInfo?.currentVersion || tr("未知")}</dd>
-                  <dt className="text-default-500">{tr("最新版本")}</dt>
-                  <dd>
-                    {systemUpgradeInfo?.latestVersion || tr("未知")}
-                    {!systemUpgradeInfo?.latestVersion &&
-                      systemUpgradeInfo?.reason && (
-                        <p className="break-all text-xs text-default-500">
-                          {systemUpgradeInfo.reason}
-                        </p>
-                      )}
-                  </dd>
-                  <dt className="text-default-500">{tr("升级能力")}</dt>
-                  <dd>
-                    {systemUpgradeInfo?.capability.capable
-                      ? tr("可升级")
-                      : tr("当前不可升级")}
-                  </dd>
-                  <dt className="text-default-500">{tr("部署目录")}</dt>
-                  <dd className="break-all">
-                    {systemUpgradeInfo?.capability.deployDir || "-"}
-                  </dd>
-                  <dt className="text-default-500">{tr("后端容器")}</dt>
-                  <dd className="break-all">
-                    {systemUpgradeInfo?.capability.backendContainer || "-"}
-                  </dd>
-                </dl>
-
                 {!systemUpgradeInfo?.capability.capable && (
                   <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-warning-800 dark:border-warning-900/40 dark:bg-warning-950/30 dark:text-warning-200">
                     <p className="text-xs font-medium">{tr("当前无法升级")}</p>
@@ -1999,7 +2037,7 @@ export default function ConfigPage() {
               </>
             )}
 
-            <div className="flex justify-end gap-2 border-t border-divider pt-3">
+            <div className="flex justify-end gap-2 border-t border-divider/70 pt-3">
               <Button
                 isLoading={systemUpgradeChecking}
                 size="sm"
@@ -2018,31 +2056,116 @@ export default function ConfigPage() {
                 {tr("立即升级")}
               </Button>
             </div>
-          </ConfigSection>
-        </div>
-      </ConfigLayoutContext.Provider>
+          </ConfigCard>
+        </ConfigCardGrid>
+      </ConfigSection>
+    </div>
+  );
 
-      {/* 配置统一保存（公告除外），有修改时出现 */}
-      {hasChanges && (
-        <div
-          className={`sticky z-20 mt-4 flex items-center gap-3 rounded-lg border border-divider bg-background px-3 py-2 shadow-sm ${
-            isH5 ? "bottom-[calc(5rem+var(--safe-area-bottom))]" : "bottom-4"
-          }`}
-        >
-          <span className="min-w-0 flex-1 truncate text-xs text-warning-700 dark:text-warning-300">
-            {tr("有修改尚未保存")}
-          </span>
-          <Button
-            className="shrink-0"
-            color="primary"
-            isLoading={saving}
-            size="sm"
-            onPress={handleSave}
-          >
-            {saving ? tr("保存中...") : tr("保存")}
-          </Button>
+  const unsavedBar = hasChanges && (
+    <div
+      className={`sticky z-20 mt-4 flex items-center gap-2 rounded-xl border border-warning-200 bg-background/95 px-3.5 py-2.5 shadow-sm backdrop-blur dark:border-warning-900/50 ${
+        isH5 ? "bottom-[calc(5rem+var(--safe-area-bottom))]" : "bottom-4"
+      }`}
+    >
+      <span className="min-w-0 flex-1 truncate text-xs font-medium text-warning-700 dark:text-warning-300">
+        {tr("有 {count} 项修改尚未保存", { count: Math.max(1, changedCount) })}
+      </span>
+      <Button
+        className="shrink-0"
+        isDisabled={saving}
+        size="sm"
+        variant="light"
+        onPress={handleDiscard}
+      >
+        {tr("放弃")}
+      </Button>
+      <Button
+        className="shrink-0"
+        color="primary"
+        isLoading={saving}
+        size="sm"
+        onPress={handleSave}
+      >
+        {saving ? tr("保存中...") : tr("保存")}
+      </Button>
+    </div>
+  );
+
+  return (
+    <AnimatedPage
+      className={
+        isH5
+          ? // The phone layout supplies the grey page.
+            "overflow-x-clip px-4 pb-6 pt-2"
+          : "px-4 py-6 lg:px-10 lg:py-8"
+      }
+    >
+      {isH5 ? (
+        !shown && (
+          <PageHeader
+            description={tr("面板名称、登录安全、通知、备份与升级")}
+            title={tr("网站配置")}
+          />
+        )
+      ) : (
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="page-title text-xl font-semibold tracking-tight">
+              {tr("网站配置")}
+            </h1>
+            <p className="mt-1 truncate text-xs text-default-400">
+              {tr("面板名称、登录安全、通知、备份与升级")}
+            </p>
+          </div>
+          <div className="w-full sm:w-64">
+            <ConfigSearchBox value={query} onChange={setQuery} />
+          </div>
         </div>
       )}
+
+      <ConfigLayoutContext.Provider value={layout}>
+        {isH5 ? (
+          <>
+            {!shown && (
+              <div className="mb-4">
+                <ConfigSearchBox value={query} onChange={setQuery} />
+              </div>
+            )}
+            {searchText && (
+              <ConfigSearchResults hits={searchHits} onPick={pickSearchHit} />
+            )}
+            {shown === null && !searchText && (
+              <ConfigIndex
+                items={navItems}
+                onOpen={(id) => openSection(id as SectionKey)}
+              />
+            )}
+            {sectionsBody}
+            {unsavedBar}
+          </>
+        ) : (
+          <div>
+            {!searchText && (
+              <ConfigTopNav
+                active={shown ?? "basic"}
+                items={navItems}
+                onOpen={(id) => {
+                  setQuery("");
+                  openSection(id as SectionKey, true);
+                }}
+              />
+            )}
+            {searchText && (
+              <div className="overflow-hidden rounded-xl border border-divider bg-content1">
+                <ConfigSearchResults hits={searchHits} onPick={pickSearchHit} />
+              </div>
+            )}
+            {sectionsBody}
+            {unsavedBar}
+          </div>
+        )}
+      </ConfigLayoutContext.Provider>
 
       <Modal
         classNames={{

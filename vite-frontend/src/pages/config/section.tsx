@@ -47,7 +47,7 @@ const Unsaved = () => {
 export const groupClass =
   "overflow-hidden rounded-2xl bg-content1 dark:bg-default-50";
 
-/** One group of settings: its fields, under a title on the phone. */
+/** One group of settings: clean card container on desktop, iOS-style slide pane on phone. */
 export function ConfigSection({
   id,
   title,
@@ -57,7 +57,7 @@ export function ConfigSection({
 }: {
   id: string;
   title: string;
-  /** Current values, shown under the title. */
+  /** Current values, shown under the title on phone. */
   summary?: React.ReactNode;
   /** Has edits that are not saved yet. */
   changed?: boolean;
@@ -72,10 +72,8 @@ export function ConfigSection({
 
   if (mode === "split") {
     return (
-      <section hidden={!shown} id={`config-${id}`}>
-        {/* The tab names the group; only its current values go on top. */}
-        {summary && <p className="text-xs text-default-400">{summary}</p>}
-        <div className="space-y-4 pt-5">{children}</div>
+      <section className="space-y-4" hidden={!shown} id={`config-${id}`}>
+        {children}
       </section>
     );
   }
@@ -109,12 +107,130 @@ export function ConfigSection({
   );
 }
 
+/** 2-column balanced grid on desktop; flat stack inside the phone's inset group. */
+export function ConfigCardGrid({ children }: { children: React.ReactNode }) {
+  const { mode } = useContext(ConfigLayoutContext);
+
+  if (mode === "stack") {
+    return <div className="space-y-4">{children}</div>;
+  }
+
+  return (
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      {children}
+    </div>
+  );
+}
+
+/** Independent functional card on desktop; subtle titled group on phone. */
+export function ConfigCard({
+  title,
+  description,
+  fullWidth,
+  children,
+}: {
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  fullWidth?: boolean;
+  children: React.ReactNode;
+}) {
+  const { mode } = useContext(ConfigLayoutContext);
+
+  if (mode === "stack") {
+    return (
+      <div className="space-y-4 border-t border-divider/80 pt-4 first:border-t-0 first:pt-0">
+        {title && (
+          <div>
+            <p className="text-xs font-semibold text-default-400">{title}</p>
+            {description && (
+              <p className="mt-0.5 text-xs text-default-400">{description}</p>
+            )}
+          </div>
+        )}
+        <div className="space-y-4">{children}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`rounded-xl border border-divider/80 bg-content1 p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] ${
+        fullWidth ? "lg:col-span-2" : ""
+      }`}
+    >
+      {title && (
+        <div className="mb-4 border-b border-divider/70 pb-3">
+          <h3 className="text-sm font-semibold tracking-tight text-foreground">
+            {title}
+          </h3>
+          {description && (
+            <p className="mt-0.5 truncate text-xs text-default-400">
+              {description}
+            </p>
+          )}
+        </div>
+      )}
+      <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
+
 export interface ConfigIndexItem {
   id: string;
   title: string;
   icon: React.ReactNode;
   summary?: React.ReactNode;
   changed?: boolean;
+  category?: string;
+}
+
+/** Desktop horizontal pill navigation for settings sections (no double sidebar). */
+export function ConfigTopNav({
+  items,
+  active,
+  onOpen,
+}: {
+  items: ConfigIndexItem[];
+  active: string;
+  onOpen: (id: string) => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <nav
+      aria-label={t("设置分组")}
+      className="mb-5 flex flex-wrap items-center gap-1 rounded-xl border border-divider/70 bg-default-100/60 p-1 dark:bg-default-100/30"
+    >
+      {items.map((item) => {
+        const isActive = item.id === active;
+
+        return (
+          <button
+            key={item.id}
+            aria-current={isActive ? "page" : undefined}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs transition-all [&_svg]:h-3.5 [&_svg]:w-3.5 ${
+              isActive
+                ? "bg-content1 font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-divider/80 dark:bg-default-200/90"
+                : "text-default-500 hover:bg-content1/50 hover:text-foreground"
+            }`}
+            type="button"
+            onClick={() => onOpen(item.id)}
+          >
+            <span className={isActive ? "text-foreground" : "text-default-400"}>
+              {item.icon}
+            </span>
+            <span className="whitespace-nowrap">{item.title}</span>
+            {item.changed && (
+              <span
+                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+                title={t("未保存")}
+              />
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
 }
 
 /** The phone's list of groups: icon, name, current values, chevron. */
@@ -180,7 +296,7 @@ export function ConfigSearchBox({
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-default-400" />
       <input
         aria-label={t("搜索设置")}
-        className="h-10 w-full rounded-xl border border-divider bg-content1 pl-9 pr-9 text-[15px] outline-none placeholder:text-default-400 focus:border-default-400 dark:bg-default-50 sm:h-9 sm:text-sm [&::-webkit-search-cancel-button]:appearance-none"
+        className="h-10 w-full rounded-xl border border-divider/80 bg-content1 pl-9 pr-9 text-[15px] shadow-[0_1px_2px_rgba(15,23,42,0.02)] outline-none placeholder:text-default-400 focus:border-default-400 dark:bg-default-50 sm:h-8 sm:rounded-lg sm:text-xs [&::-webkit-search-cancel-button]:appearance-none"
         enterKeyHint="search"
         placeholder={t("搜索设置")}
         type="search"
@@ -194,7 +310,7 @@ export function ConfigSearchBox({
           type="button"
           onClick={() => onChange("")}
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
         </button>
       )}
     </div>
@@ -232,7 +348,7 @@ export function ConfigSearchResults({
       {hits.map((hit) => (
         <button
           key={`${hit.section}:${hit.label}`}
-          className="group flex w-full items-center gap-3.5 pl-4 text-left transition-colors active:bg-default-100"
+          className="group flex w-full items-center gap-3.5 pl-4 text-left transition-colors hover:bg-default-50 active:bg-default-100"
           type="button"
           onClick={() => onPick(hit)}
         >
@@ -257,7 +373,7 @@ export function ConfigSearchResults({
   );
 }
 
-/** Label above the control with a line of help; `inline` puts the control on the right (switches). */
+/** Full-width stacked field inside balanced 2-column cards, or inline row for toggles. */
 export function Field({
   label,
   help,
@@ -271,10 +387,16 @@ export function Field({
 }) {
   if (inline) {
     return (
-      <div data-field className="flex items-center justify-between gap-3">
+      <div data-field className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm">{label}</p>
-          {help && <p className="text-xs text-default-400">{help}</p>}
+          <p className="text-[13px] font-medium text-foreground sm:text-sm">
+            {label}
+          </p>
+          {help && (
+            <p className="mt-0.5 text-xs leading-relaxed text-default-400">
+              {help}
+            </p>
+          )}
         </div>
         <div className="shrink-0">{children}</div>
       </div>
@@ -283,9 +405,13 @@ export function Field({
 
   return (
     <div data-field className="space-y-1.5">
-      <p className="text-sm">{label}</p>
-      {children}
-      {help && <p className="text-xs text-default-400">{help}</p>}
+      <p className="text-[13px] font-medium text-foreground sm:text-sm">
+        {label}
+      </p>
+      <div className="min-w-0">{children}</div>
+      {help && (
+        <p className="text-xs leading-relaxed text-default-400">{help}</p>
+      )}
     </div>
   );
 }
@@ -293,7 +419,7 @@ export function Field({
 /** Small heading inside a section, for a group of fields. */
 export function SubHeading({ children }: { children: React.ReactNode }) {
   return (
-    <p className="border-t border-divider pt-3 text-xs font-semibold text-default-500 first:border-t-0 first:pt-0">
+    <p className="border-t border-divider/80 pt-4 text-xs font-semibold text-default-400 first:border-t-0 first:pt-0">
       {children}
     </p>
   );

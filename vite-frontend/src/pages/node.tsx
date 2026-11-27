@@ -1,5 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
+import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  LayoutGrid,
+  List,
+  Table2,
+} from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -21,6 +29,8 @@ import { Progress } from "@/shadcn-bridge/heroui/progress";
 import {
   createNode,
   getNodeList,
+  getInboundList,
+  getTunnelList,
   updateNode,
   deleteNode,
   getNodeInstallCommands,
@@ -44,13 +54,17 @@ import { ActionSheet } from "@/components/action-sheet";
 import { useI18n } from "@/i18n";
 import {
   EmptyHint,
+  FilterPills,
   PageHeader,
   PageShell,
   PageTabs,
   PageToolbar,
   ToolbarButton,
+  ToolbarSelect,
   SelectionBar,
+  ViewModeSwitch,
 } from "@/components/page-kit";
+import { GroupHeader, groupItems, useCollapsed } from "@/pages/inbound/group";
 import { getRemoteSyncErrorMessage } from "@/pages/node/display";
 import { NodeTuneModal } from "@/pages/node/tune-modal";
 import { NodeBillingModal } from "@/pages/node/billing-modal";
@@ -99,6 +113,20 @@ import {
 } from "@/pages/node/agent-modals";
 import { NodeFilterModal } from "@/pages/node/filter-modal";
 import { NodeRow } from "@/pages/node/node-row";
+import {
+  NodeCard,
+  NodeTable,
+  getNodeMonthBytes,
+  getNodePrimaryLatencyMs,
+  nodeNeedsAttention,
+  type NodeBizCount,
+  type NodeGroupMode,
+  type NodeSortMode,
+  type NodeStatusFilter,
+  type NodeViewCallbacks,
+  type NodeViewMode,
+} from "@/pages/node/node-views";
+import { nodeRegionLabel } from "@/pages/node/region";
 import { formatSpeed, formatUptime, formatFlow } from "@/pages/node/format";
 import { useWideNodeLayout } from "@/pages/node/use-wide-node-layout";
 
@@ -301,6 +329,80 @@ export default function NodePage({
     if (active) void loadMonthTraffic();
   }, [active, loadMonthTraffic]);
   useVisiblePolling(loadMonthTraffic, 60_000, active);
+
+  const navigate = useNavigate();
+  const [viewMode, setViewMode] = useLocalStorageState<NodeViewMode>(
+    "node-view-mode",
+    "cards",
+  );
+  const [groupMode, setGroupMode] = useLocalStorageState<NodeGroupMode>(
+    "node-group-mode",
+    "none",
+  );
+  const [statusFilter, setStatusFilter] = useState<NodeStatusFilter>("all");
+  const [sortMode, setSortMode] = useLocalStorageState<NodeSortMode>(
+    "node-sort-mode",
+    "manual",
+  );
+  const [isGroupCollapsed, toggleGroupCollapsed, setManyGroupsCollapsed] =
+    useCollapsed();
+  const [bizCounts, setBizCounts] = useState<Map<number, NodeBizCount>>(
+    () => new Map(),
+  );
+  const bizLoading = useRef(false);
+  const loadBizCounts = useCallback(async () => {
+    if (bizLoading.current) return;
+    bizLoading.current = true;
+    try {
+      const [inRes, tunRes] = await Promise.all([
+        getInboundList().catch(() => null),
+        getTunnelList().catch(() => null),
+      ]);
+      const next = new Map<number, NodeBizCount>();
+      const bump = (id: number, key: "inbounds" | "tunnels") => {
+        if (!id) return;
+        const cur = next.get(id) ?? { inbounds: 0, tunnels: 0 };
+
+        cur[key] += 1;
+        next.set(id, cur);
+      };
+
+      if (inRes?.code === 0 && Array.isArray(inRes.data)) {
+        for (const item of inRes.data) {
+          if (!item.external && item.nodeId) bump(item.nodeId, "inbounds");
+        }
+      }
+      if (tunRes?.code === 0 && Array.isArray(tunRes.data)) {
+        for (const tun of tunRes.data) {
+          const seen = new Set<number>();
+
+          if (tun.entryNodeId) seen.add(tun.entryNodeId);
+          if (tun.exitNodeId) seen.add(tun.exitNodeId);
+          for (const n of tun.inNodeId ?? []) {
+            if (n.nodeId) seen.add(n.nodeId);
+          }
+          for (const n of tun.outNodeId ?? []) {
+            if (n.nodeId) seen.add(n.nodeId);
+          }
+          for (const hop of tun.chainNodes ?? []) {
+            for (const n of hop) {
+              if (n.nodeId) seen.add(n.nodeId);
+            }
+          }
+          for (const id of seen) bump(id, "tunnels");
+        }
+      }
+      setBizCounts(next);
+    } finally {
+      bizLoading.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active) void loadBizCounts();
+  }, [active, loadBizCounts]);
+  useVisiblePolling(loadBizCounts, 60_000, active);
+
   // The groups servers use, most used first, offered when editing.
   const nodeGroups = useMemo(() => {
     const count = new Map<string, number>();
@@ -1402,13 +1504,30 @@ export default function NodePage({
     const keywordFiltered = filterNodesByKeyword(
       localNodes,
       localSearchKeyword,
-    ).filter(
-      (n) =>
-        !groupFilter ||
+    ).filter((n) => {
+      if (
+        groupFilter &&
         (groupFilter === NO_GROUP
-          ? !n.group?.trim()
-          : n.group?.trim() === groupFilter),
-    );
+          ? Boolean(n.group?.trim())
+          : n.group?.trim() !== groupFilter)
+      ) {
+        return false;
+      }
+      if (statusFilter === "online" && n.connectionStatus !== "online") {
+        return false;
+      }
+      if (statusFilter === "offline" && n.connectionStatus === "online") {
+        return false;
+      }
+      if (
+        statusFilter === "attention" &&
+        !nodeNeedsAttention(n, monthTraffic[String(n.id)])
+      ) {
+        return false;
+      }
+
+      return true;
+    });
 
     if (nodeFilterMode === "all") {
       return keywordFiltered;
@@ -1434,6 +1553,8 @@ export default function NodePage({
     localSearchKeyword,
     nodeFilterMode,
     groupFilter,
+    statusFilter,
+    monthTraffic,
   ]);
 
   const filteredRemoteNodes = useMemo(
@@ -1447,19 +1568,177 @@ export default function NodePage({
   const setCurrentSearchKeyword =
     activeTab === "remote" ? setRemoteSearchKeyword : setLocalSearchKeyword;
 
-  const displayNodes = useMemo(
-    () => (activeTab === "remote" ? filteredRemoteNodes : filteredLocalNodes),
-    [activeTab, filteredLocalNodes, filteredRemoteNodes],
-  );
+  const displayNodes = useMemo(() => {
+    const base =
+      activeTab === "remote" ? filteredRemoteNodes : filteredLocalNodes;
+
+    if (sortMode === "manual") return base;
+    const copy = [...base];
+
+    copy.sort((a, b) => {
+      switch (sortMode) {
+        case "cpu_desc":
+          return (
+            (b.connectionStatus === "online"
+              ? (b.systemInfo?.cpuUsage ?? -1)
+              : -2) -
+            (a.connectionStatus === "online"
+              ? (a.systemInfo?.cpuUsage ?? -1)
+              : -2)
+          );
+        case "mem_desc":
+          return (
+            (b.connectionStatus === "online"
+              ? (b.systemInfo?.memoryUsage ?? -1)
+              : -2) -
+            (a.connectionStatus === "online"
+              ? (a.systemInfo?.memoryUsage ?? -1)
+              : -2)
+          );
+        case "traffic_desc":
+          return (
+            getNodeMonthBytes(monthTraffic[String(b.id)]) -
+            getNodeMonthBytes(monthTraffic[String(a.id)])
+          );
+        case "latency_asc": {
+          const la = getNodePrimaryLatencyMs(a) ?? Number.POSITIVE_INFINITY;
+          const lb = getNodePrimaryLatencyMs(b) ?? Number.POSITIVE_INFINITY;
+
+          return la - lb;
+        }
+        case "expiry_asc": {
+          const ea =
+            a.expiryTime && a.expiryTime > 0
+              ? (getNodeExpiryMeta(a.expiryTime, a.renewalCycle).nextDueTime ??
+                Number.POSITIVE_INFINITY)
+              : Number.POSITIVE_INFINITY;
+          const eb =
+            b.expiryTime && b.expiryTime > 0
+              ? (getNodeExpiryMeta(b.expiryTime, b.renewalCycle).nextDueTime ??
+                Number.POSITIVE_INFINITY)
+              : Number.POSITIVE_INFINITY;
+
+          return ea - eb;
+        }
+        case "name_asc":
+          return a.name.localeCompare(b.name, "zh-CN");
+        default:
+          return 0;
+      }
+    });
+
+    return copy;
+  }, [
+    activeTab,
+    filteredLocalNodes,
+    filteredRemoteNodes,
+    sortMode,
+    monthTraffic,
+  ]);
+
+  const localSummary = useMemo(() => {
+    let online = 0;
+    let offline = 0;
+    let attention = 0;
+    let totalUp = 0;
+    let totalDown = 0;
+    let totalMonthBytes = 0;
+    let totalInbounds = 0;
+    let totalTunnels = 0;
+
+    for (const n of localNodes) {
+      const m = monthTraffic[String(n.id)];
+
+      if (n.connectionStatus === "online") {
+        online++;
+        const info = n.systemInfo;
+
+        if (info) {
+          totalUp += info.netOutSpeed ?? info.uploadSpeed ?? 0;
+          totalDown += info.netInSpeed ?? info.downloadSpeed ?? 0;
+        }
+      } else {
+        offline++;
+      }
+      if (nodeNeedsAttention(n, m)) attention++;
+      totalMonthBytes += getNodeMonthBytes(m);
+      const biz = bizCounts.get(n.id);
+
+      if (biz) {
+        totalInbounds += biz.inbounds;
+        totalTunnels += biz.tunnels;
+      }
+    }
+
+    return {
+      total: localNodes.length,
+      online,
+      offline,
+      attention,
+      totalUp,
+      totalDown,
+      totalMonthBytes,
+      totalInbounds,
+      totalTunnels,
+    };
+  }, [localNodes, monthTraffic, bizCounts]);
 
   const canBatchUpgrade = activeTab === "local";
   const canUseExpiryFilter = activeTab === "local";
   const hasKeywordSearch = currentSearchKeyword.trim().length > 0;
-  const hasActiveFilters = nodeFilterMode !== "all";
+  const hasActiveFilters =
+    nodeFilterMode !== "all" ||
+    (activeTab === "local" && statusFilter !== "all");
   const isDisplayFiltered =
     hasKeywordSearch ||
     (canUseExpiryFilter && hasActiveFilters) ||
-    (activeTab === "local" && groupFilter !== "");
+    (activeTab === "local" && groupFilter !== "") ||
+    sortMode !== "manual" ||
+    (activeTab === "local" && groupMode !== "none");
+
+  const nodeDisplayGroups = useMemo(() => {
+    if (activeTab !== "local" || groupMode === "none") return [];
+
+    return groupItems(
+      displayNodes,
+      (n) => {
+        if (groupMode === "region") {
+          const code = (n.region || n.regionDetected || "").trim();
+
+          return code || "__unknown__";
+        }
+
+        return n.group?.trim() || "__ungrouped__";
+      },
+      (key) => {
+        if (groupMode === "region") {
+          return key === "__unknown__"
+            ? tr("未设置地区")
+            : nodeRegionLabel(key);
+        }
+
+        return key === "__ungrouped__" ? tr("未分组") : key;
+      },
+    ).sort((a, b) => {
+      const aEmpty = a.key.startsWith("__") ? 1 : 0;
+      const bEmpty = b.key.startsWith("__") ? 1 : 0;
+
+      return aEmpty - bEmpty || a.title.localeCompare(b.title, "zh-CN");
+    });
+  }, [activeTab, displayNodes, groupMode, tr]);
+
+  const isGroupedDisplay =
+    activeTab === "local" &&
+    groupMode !== "none" &&
+    viewMode !== "table" &&
+    nodeDisplayGroups.length > 0;
+
+  const nodeGroupCollapseIds = nodeDisplayGroups.map(
+    (g) => `node:${groupMode}:${g.key}`,
+  );
+  const allNodeGroupsCollapsed =
+    nodeGroupCollapseIds.length > 0 &&
+    nodeGroupCollapseIds.every((id) => isGroupCollapsed(id));
 
   const sortableNodeIds = useMemo(
     () => displayNodes.map((n) => n.id),
@@ -1467,7 +1746,19 @@ export default function NodePage({
   );
 
   const wide = useWideNodeLayout();
-  const rowActions = useMemo(
+  const handleOpenInbounds = useCallback(
+    (nodeId: number) => {
+      navigate("/inbound", { state: { nodeId } });
+    },
+    [navigate],
+  );
+  const handleOpenTunnels = useCallback(
+    (nodeName: string) => {
+      navigate("/relay", { state: { tab: "tunnels", query: nodeName } });
+    },
+    [navigate],
+  );
+  const rowActions = useMemo<NodeViewCallbacks>(
     () => ({
       toggleSelect,
       probeNode,
@@ -1475,6 +1766,8 @@ export default function NodePage({
       setSheetNodeId,
       setRouteNode,
       setTrendNode,
+      onOpenInbounds: handleOpenInbounds,
+      onOpenTunnels: handleOpenTunnels,
     }),
     [
       toggleSelect,
@@ -1483,7 +1776,40 @@ export default function NodePage({
       setSheetNodeId,
       setRouteNode,
       setTrendNode,
+      handleOpenInbounds,
+      handleOpenTunnels,
     ],
+  );
+
+  const renderNodeCardItem = (node: Node, sortable: boolean) => (
+    <NodeCard
+      key={node.id}
+      actions={rowActions}
+      biz={bizCounts.get(node.id)}
+      month={monthTraffic[String(node.id)]}
+      node={node}
+      probing={probingIds.has(node.id)}
+      progress={upgradeProgress[node.id]}
+      remoteUsage={remoteUsageMap[node.id]}
+      selectMode={selectMode}
+      selected={selectedIds.has(node.id)}
+      sortable={sortable}
+    />
+  );
+
+  const renderNodeRowItem = (node: Node) => (
+    <NodeRow
+      key={node.id}
+      actions={rowActions}
+      isDisplayFiltered={isDisplayFiltered}
+      month={monthTraffic[String(node.id)]}
+      node={node}
+      probing={probingIds.has(node.id)}
+      progress={upgradeProgress[node.id]}
+      selectMode={selectMode}
+      selected={selectedIds.has(node.id)}
+      wide={wide}
+    />
   );
 
   return (
@@ -1580,57 +1906,182 @@ export default function NodePage({
           search={currentSearchKeyword}
           onSearch={setCurrentSearchKeyword}
         >
+          {activeTab === "local" && viewMode !== "table" && (
+            <ToolbarSelect
+              ariaLabel={tr("分组方式")}
+              className="max-w-[7.5rem]"
+              options={[
+                { value: "none", label: tr("不分组") },
+                { value: "group", label: tr("按分组") },
+                { value: "region", label: tr("按地区") },
+              ]}
+              value={groupMode}
+              onChange={(v) => setGroupMode(v as NodeGroupMode)}
+            />
+          )}
+          <ToolbarSelect
+            ariaLabel={tr("排序方式")}
+            className="max-w-[8rem]"
+            options={[
+              { value: "manual", label: tr("手动排序") },
+              { value: "traffic_desc", label: tr("流量最高") },
+              { value: "cpu_desc", label: tr("CPU 最高") },
+              { value: "mem_desc", label: tr("内存最高") },
+              { value: "latency_asc", label: tr("延迟最低") },
+              { value: "expiry_asc", label: tr("最快到期") },
+              { value: "name_asc", label: tr("按名称") },
+            ]}
+            value={sortMode}
+            onChange={(v) => setSortMode(v as NodeSortMode)}
+          />
           {canUseExpiryFilter && (
             <ToolbarButton
               active={nodeFilterMode !== "all"}
               onPress={() => setIsFilterModalOpen(true)}
             >
-              {nodeFilterMode !== "all" ? tr("已筛选") : tr("筛选")}
+              {nodeFilterMode !== "all" ? tr("到期已筛") : tr("到期")}
             </ToolbarButton>
           )}
+          <ViewModeSwitch
+            ariaLabel={tr("视图模式")}
+            options={[
+              {
+                key: "cards",
+                label: tr("卡片"),
+                icon: <LayoutGrid className="h-3.5 w-3.5" />,
+              },
+              {
+                key: "table",
+                label: tr("表格"),
+                icon: <Table2 className="h-3.5 w-3.5" />,
+              },
+              {
+                key: "list",
+                label: tr("列表"),
+                icon: <List className="h-3.5 w-3.5" />,
+              },
+            ]}
+            value={viewMode}
+            onChange={setViewMode}
+          />
         </PageToolbar>
       )}
 
-      {activeTab === "local" && nodeGroups.length > 0 && (
-        // The admin's 分组: pick one to list only its servers.
-        <nav
-          aria-label={tr("按分组筛选")}
-          className="mb-2 flex flex-wrap gap-1.5"
-        >
-          {[
-            ["", tr("全部"), localNodes.length] as const,
-            ...nodeGroups.map(
-              (g) =>
-                [
-                  g,
-                  g,
-                  localNodes.filter((n) => n.group?.trim() === g).length,
-                ] as const,
-            ),
-            [
-              NO_GROUP,
-              tr("未分组"),
-              localNodes.filter((n) => !n.group?.trim()).length,
-            ] as const,
-          ]
-            .filter(([key, , count]) => key === "" || count > 0)
-            .map(([key, label, count]) => (
-              <button
-                key={key || "all"}
-                aria-pressed={groupFilter === key}
-                className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
-                  groupFilter === key
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-dashed border-divider text-default-600 hover:bg-default-100"
-                }`}
-                type="button"
-                onClick={() => setGroupFilter(key)}
+      {activeTab === "local" && localNodes.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <FilterPills
+              ariaLabel={tr("按状态筛选")}
+              className="mb-0"
+              items={[
+                { key: "all", label: tr("全部"), count: localSummary.total },
+                {
+                  key: "online",
+                  label: tr("在线"),
+                  count: localSummary.online,
+                  tone: "success",
+                },
+                ...(localSummary.offline > 0
+                  ? [
+                      {
+                        key: "offline" as const,
+                        label: tr("离线"),
+                        count: localSummary.offline,
+                        tone: "danger" as const,
+                      },
+                    ]
+                  : []),
+                ...(localSummary.attention > 0
+                  ? [
+                      {
+                        key: "attention" as const,
+                        label: tr("需关注"),
+                        count: localSummary.attention,
+                        tone: "warning" as const,
+                      },
+                    ]
+                  : []),
+              ]}
+              value={statusFilter}
+              onChange={setStatusFilter}
+            />
+            {nodeGroups.length > 0 && (
+              <>
+                <span className="hidden text-divider sm:inline">|</span>
+                <nav
+                  aria-label={tr("按分组筛选")}
+                  className="flex flex-wrap gap-1.5"
+                >
+                  {[
+                    ["", tr("全部分组"), localNodes.length] as const,
+                    ...nodeGroups.map(
+                      (g) =>
+                        [
+                          g,
+                          g,
+                          localNodes.filter((n) => n.group?.trim() === g)
+                            .length,
+                        ] as const,
+                    ),
+                    [
+                      NO_GROUP,
+                      tr("未分组"),
+                      localNodes.filter((n) => !n.group?.trim()).length,
+                    ] as const,
+                  ]
+                    .filter(([key, , count]) => key === "" || count > 0)
+                    .map(([key, label, count]) => (
+                      <button
+                        key={key || "all"}
+                        aria-pressed={groupFilter === key}
+                        className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+                          groupFilter === key
+                            ? "border-foreground bg-foreground text-background dark:border-default-300 dark:bg-default-200 dark:text-foreground"
+                            : "border-dashed border-divider text-default-600 hover:bg-default-100"
+                        }`}
+                        type="button"
+                        onClick={() => setGroupFilter(key)}
+                      >
+                        {label}
+                        <span className="tabular-nums opacity-60">{count}</span>
+                      </button>
+                    ))}
+                </nav>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2.5">
+            {!loading && (
+              <span className="hidden items-center gap-1.5 text-xs tabular-nums text-default-400 md:inline-flex">
+                <span>↑ {formatSpeed(localSummary.totalUp)}</span>
+                <span>↓ {formatSpeed(localSummary.totalDown)}</span>
+                <span className="text-divider">·</span>
+                <span>
+                  {tr("本月")} {formatFlow(localSummary.totalMonthBytes)}
+                </span>
+              </span>
+            )}
+            {isGroupedDisplay && nodeDisplayGroups.length > 1 && (
+              <ToolbarButton
+                onPress={() =>
+                  setManyGroupsCollapsed(
+                    nodeGroupCollapseIds,
+                    !allNodeGroupsCollapsed,
+                  )
+                }
               >
-                {label}
-                <span className="tabular-nums opacity-60">{count}</span>
-              </button>
-            ))}
-        </nav>
+                {allNodeGroupsCollapsed ? (
+                  <ChevronsUpDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronsDownUp className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  {allNodeGroupsCollapsed ? tr("全部展开") : tr("全部折叠")}
+                </span>
+              </ToolbarButton>
+            )}
+          </div>
+        </div>
       )}
 
       {/* A connection that comes up within a moment needs no notice. */}
@@ -1668,6 +2119,69 @@ export default function NodePage({
                 : tr("暂无本地服务器")
           }
         />
+      ) : viewMode === "table" ? (
+        <NodeTable
+          actions={rowActions}
+          bizCounts={bizCounts}
+          monthTraffic={monthTraffic}
+          nodes={displayNodes}
+          probingIds={probingIds}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          upgradeProgress={upgradeProgress}
+        />
+      ) : isGroupedDisplay ? (
+        <div className="space-y-2">
+          {nodeDisplayGroups.map((g) => {
+            const id = `node:${groupMode}:${g.key}`;
+            const folded = isGroupCollapsed(id);
+            const offCount = g.items.filter(
+              (n) => n.connectionStatus !== "online",
+            ).length;
+
+            return (
+              <div key={g.key}>
+                <GroupHeader
+                  collapsed={folded}
+                  count={g.items.length}
+                  extra={
+                    offCount > 0 ? (
+                      <span className="rounded bg-danger/10 px-1.5 py-0.5 text-[11px] text-danger">
+                        {tr("{count} 离线", { count: offCount })}
+                      </span>
+                    ) : undefined
+                  }
+                  title={g.title}
+                  unit={tr("台")}
+                  onToggle={() => toggleGroupCollapsed(id)}
+                />
+                {!folded &&
+                  (viewMode === "cards" ? (
+                    <div className="mt-2.5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {g.items.map((node) => renderNodeCardItem(node, false))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col">
+                      {g.items.map(renderNodeRowItem)}
+                    </div>
+                  ))}
+              </div>
+            );
+          })}
+        </div>
+      ) : viewMode === "cards" ? (
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <SortableContext
+            items={sortableNodeIds}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {displayNodes.map((node) =>
+                renderNodeCardItem(node, !isDisplayFiltered),
+              )}
+            </div>
+          </SortableContext>
+        </DndContext>
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
@@ -1675,20 +2189,7 @@ export default function NodePage({
             strategy={rectSortingStrategy}
           >
             <div className="flex flex-col">
-              {displayNodes.map((node) => (
-                <NodeRow
-                  key={node.id}
-                  actions={rowActions}
-                  isDisplayFiltered={isDisplayFiltered}
-                  month={monthTraffic[String(node.id)]}
-                  node={node}
-                  probing={probingIds.has(node.id)}
-                  progress={upgradeProgress[node.id]}
-                  selectMode={selectMode}
-                  selected={selectedIds.has(node.id)}
-                  wide={wide}
-                />
-              ))}
+              {displayNodes.map(renderNodeRowItem)}
             </div>
           </SortableContext>
         </DndContext>

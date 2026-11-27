@@ -56,6 +56,9 @@ type Subscription struct {
 	Remark       string `gorm:"type:text;not null;default:''"`
 	// Pinned floats key subscriptions (e.g. personal/landing) to the top.
 	Pinned int `gorm:"not null;default:0"`
+	// GroupName is the admin's own folder/category name for organizing
+	// subscriptions (e.g. "自用", "拼车"); "" is ungrouped.
+	GroupName string `gorm:"column:group_name;type:varchar(50);not null;default:''"`
 	// Tags is a comma-separated list of custom category tags (e.g. "拼车,月付").
 	Tags string `gorm:"type:text;not null;default:''"`
 	// UserID is the panel user the subscription is assigned to (0 = none):

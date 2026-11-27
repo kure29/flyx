@@ -599,6 +599,7 @@ type SubscriptionBackup struct {
 	Enabled     int    `json:"enabled"`
 	Remark      string `json:"remark"`
 	Pinned      int    `json:"pinned,omitempty"`
+	GroupName   string `json:"group,omitempty"`
 	Tags        string `json:"tags,omitempty"`
 	Inx         int    `json:"inx"`
 	CreatedTime int64  `json:"createdTime"`

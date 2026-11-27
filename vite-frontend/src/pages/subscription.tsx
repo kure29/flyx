@@ -21,6 +21,7 @@ import {
   ArrowUp,
   Copy,
   CopyPlus,
+  Folder,
   GripVertical,
   LayoutTemplate,
   QrCode,
@@ -289,6 +290,7 @@ function draftFrom(
       enabled: true,
       remark: "",
       pinned: false,
+      group: "",
       tags: [],
       trafficLimit: 0,
       limitGB: "",
@@ -307,6 +309,7 @@ function draftFrom(
     enabled: s.enabled,
     remark: s.remark,
     pinned: Boolean(s.pinned),
+    group: s.group ?? "",
     tags: s.tags ?? [],
     trafficLimit: s.trafficLimit,
     limitGB: gbText(s.trafficLimit),
@@ -321,6 +324,16 @@ function draftForGroup(
   return {
     ...draftFrom(undefined, sources),
     groupIds: [groupId],
+  };
+}
+
+function draftForSubGroup(
+  group: string,
+  sources: RemoteSourceItem[] = [],
+): Draft {
+  return {
+    ...draftFrom(undefined, sources),
+    group,
   };
 }
 
@@ -357,6 +370,7 @@ function Editor({
   sources,
   ruleGroups,
   templates,
+  groupSuggestions,
   tagSuggestions,
   saving,
   onSave,
@@ -368,6 +382,7 @@ function Editor({
   sources: RemoteSourceItem[];
   ruleGroups: SubRuleGroup[];
   templates: SubTemplate[];
+  groupSuggestions: string[];
   tagSuggestions: string[];
   saving: boolean;
   onSave: () => void;
@@ -684,6 +699,39 @@ function Editor({
               variant="bordered"
               onChange={(e) => set({ remark: e.target.value })}
             />
+            <div className="space-y-1.5">
+              <Input
+                label="订阅分组"
+                maxLength={50}
+                placeholder="如：自用、拼车、家庭（留空归入未分组）"
+                value={draft.group ?? ""}
+                variant="bordered"
+                onChange={(e) => set({ group: e.target.value })}
+              />
+              {groupSuggestions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {groupSuggestions.map((g) => {
+                    const active = (draft.group ?? "").trim() === g;
+
+                    return (
+                      <button
+                        key={g}
+                        className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-xs transition-colors ${
+                          active
+                            ? "border-foreground bg-foreground text-background dark:border-default-300 dark:bg-default-200 dark:text-foreground"
+                            : "border-divider bg-default-50 text-default-600 hover:bg-default-100"
+                        }`}
+                        type="button"
+                        onClick={() => set({ group: active ? "" : g })}
+                      >
+                        <Folder className="h-3 w-3 opacity-70" />
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-foreground">分类标签</p>
               <TagEditorInput
@@ -1409,6 +1457,8 @@ export default function SubscriptionPage() {
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchTagModal, setBatchTagModal] = useState(false);
   const [batchTagInput, setBatchTagInput] = useState<string[]>([]);
+  const [batchGroupModal, setBatchGroupModal] = useState(false);
+  const [batchGroupInput, setBatchGroupInput] = useState("");
   const [pinningId, setPinningId] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1606,13 +1656,14 @@ export default function SubscriptionPage() {
     action: SubscriptionBatchAction,
     days?: number,
     tags?: string[],
+    group?: string,
   ) => {
     const ids = Array.from(selectedIds);
 
     if (ids.length === 0) return;
     setBatchBusy(true);
     try {
-      const res = await batchSubscriptions({ ids, action, days, tags });
+      const res = await batchSubscriptions({ ids, action, days, tags, group });
 
       if (res.code !== 0) {
         toast.error(res.msg || tr("操作失败"));
@@ -1627,6 +1678,7 @@ export default function SubscriptionPage() {
           count: ids.length,
           days: days ?? 0,
         }),
+        "set-group": tr("已更新 {count} 个订阅的分组", { count: ids.length }),
         "add-tag": tr("已为 {count} 个订阅添加标签", { count: ids.length }),
         "set-tags": tr("已更新 {count} 个订阅标签", { count: ids.length }),
         "remove-tag": tr("已移除标签"),
@@ -1742,6 +1794,21 @@ export default function SubscriptionPage() {
 
   const tagSuggestions = useMemo(() => allTags.map(([tag]) => tag), [allTags]);
 
+  // Collect all custom subscription groups across subscriptions, sorted by frequency.
+  const subGroupSuggestions = useMemo(() => {
+    const map = new Map<string, number>();
+
+    for (const s of subs) {
+      const g = (s.group ?? "").trim();
+
+      if (g) map.set(g, (map.get(g) ?? 0) + 1);
+    }
+
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-CN"))
+      .map(([name]) => name);
+  }, [subs]);
+
   const sourceText = useCallback(
     (s: SubscriptionItem) =>
       (s.groupIds ?? [])
@@ -1772,6 +1839,7 @@ export default function SubscriptionPage() {
       if (q) {
         const haystack = [
           s.name,
+          s.group ?? "",
           s.remark,
           s.userName ?? "",
           ...(s.tags ?? []),
@@ -1845,12 +1913,12 @@ export default function SubscriptionPage() {
     });
   }, [groups, q]);
 
-  // Group subscriptions by primary node group (with Pinned section on top).
+  // Group subscriptions by their own custom group name (with Pinned section on top).
   const groupedSections = useMemo(() => {
     const sections: Array<{
       key: string;
       title: string;
-      groupId?: number;
+      subGroup?: string;
       pinned?: boolean;
       items: SubscriptionItem[];
     }> = [];
@@ -1871,30 +1939,34 @@ export default function SubscriptionPage() {
       });
     }
 
-    const byGroup = new Map<number, SubscriptionItem[]>();
+    const bySubGroup = new Map<string, SubscriptionItem[]>();
     const ungrouped: SubscriptionItem[] = [];
 
     for (const s of rest) {
-      const primaryId = groupFilter > 0 ? groupFilter : (s.groupIds?.[0] ?? 0);
+      const name = (s.group ?? "").trim();
 
-      if (primaryId > 0 && groupName.has(primaryId)) {
-        const bucket = byGroup.get(primaryId) ?? [];
+      if (name) {
+        const bucket = bySubGroup.get(name) ?? [];
 
         bucket.push(s);
-        byGroup.set(primaryId, bucket);
+        bySubGroup.set(name, bucket);
       } else {
         ungrouped.push(s);
       }
     }
 
-    for (const g of groups) {
-      const items = byGroup.get(g.id);
+    const sortedNames = Array.from(bySubGroup.keys()).sort((a, b) =>
+      a.localeCompare(b, "zh-CN"),
+    );
+
+    for (const name of sortedNames) {
+      const items = bySubGroup.get(name);
 
       if (items?.length) {
         sections.push({
-          key: `g-${g.id}`,
-          title: g.name,
-          groupId: g.id,
+          key: `sg-${name}`,
+          title: name,
+          subGroup: name,
           items,
         });
       }
@@ -1902,14 +1974,14 @@ export default function SubscriptionPage() {
 
     if (ungrouped.length > 0) {
       sections.push({
-        key: "__none__",
-        title: tr("未选节点组"),
+        key: "__ungrouped__",
+        title: tr("未分组"),
         items: ungrouped,
       });
     }
 
     return sections;
-  }, [shownSubs, groups, groupName, groupFilter, tagFilter, tr]);
+  }, [shownSubs, groupFilter, tagFilter, tr]);
 
   if (loading) return <PageLoadingState message={tr("正在加载...")} />;
 
@@ -1949,12 +2021,17 @@ export default function SubscriptionPage() {
     setTagFilter("");
   };
 
-  const renderSubRow = (s: SubscriptionItem, sortable: boolean) => (
+  const renderSubRow = (
+    s: SubscriptionItem,
+    sortable: boolean,
+    showGroup = false,
+  ) => (
     <SubRowItem
       key={s.id}
       batchMode={batchMode}
       pinning={pinningId === s.id}
       selected={selectedIds.has(s.id)}
+      showGroup={showGroup}
       sortable={sortable}
       sourceText={sourceText(s)}
       sub={s}
@@ -2029,7 +2106,7 @@ export default function SubscriptionPage() {
       <PageToolbar
         placeholder={
           tab === "subs"
-            ? tr("搜索订阅名、节点组、标签或备注")
+            ? tr("搜索订阅名、分组、节点组、标签或备注")
             : tr("搜索节点组或关联订阅")
         }
         primary={
@@ -2132,6 +2209,10 @@ export default function SubscriptionPage() {
                 setBatchMode(false);
                 setSelectedIds(new Set());
               }}
+              onOpenGroupModal={() => {
+                setBatchGroupInput("");
+                setBatchGroupModal(true);
+              }}
               onOpenTagModal={() => {
                 setBatchTagInput([]);
                 setBatchTagModal(true);
@@ -2159,11 +2240,11 @@ export default function SubscriptionPage() {
                   collapsed={Boolean(collapsed[sec.key])}
                   items={sec.items}
                   pinned={sec.pinned}
-                  renderRow={(s) => renderSubRow(s, false)}
+                  renderRow={(s) => renderSubRow(s, false, Boolean(sec.pinned))}
                   title={sec.title}
                   onCreateInGroup={
-                    sec.groupId
-                      ? () => setDraft(draftForGroup(sec.groupId!, sources))
+                    sec.subGroup
+                      ? () => setDraft(draftForSubGroup(sec.subGroup!, sources))
                       : undefined
                   }
                   onToggleCollapse={() =>
@@ -2194,7 +2275,7 @@ export default function SubscriptionPage() {
                 strategy={verticalListSortingStrategy}
               >
                 <div className="divide-y divide-divider/70 overflow-hidden rounded-xl border border-divider bg-background">
-                  {shownSubs.map((s) => renderSubRow(s, canDragSubs))}
+                  {shownSubs.map((s) => renderSubRow(s, canDragSubs, true))}
                 </div>
               </SortableContext>
             </DndContext>
@@ -2220,6 +2301,7 @@ export default function SubscriptionPage() {
                     {detail.name}
                   </h2>
                   <p className="text-small font-normal text-default-500">
+                    {detail.group ? `${detail.group} · ` : ""}
                     {tr("{count} 个节点", { count: detail.nodeCount })}
                     {detail.expireTime
                       ? ` · ${expiryLabel(detail.expireTime)}`
@@ -2411,6 +2493,7 @@ export default function SubscriptionPage() {
             draft && (
               <Editor
                 draft={draft}
+                groupSuggestions={subGroupSuggestions}
                 groups={groups}
                 ruleGroups={ruleGroups}
                 saving={saving}
@@ -2455,6 +2538,95 @@ export default function SubscriptionPage() {
               />
             )
           }
+        </ModalContent>
+      </Modal>
+
+      {/* Batch group modal */}
+      <Modal
+        classNames={{ base: modalBase }}
+        isOpen={batchGroupModal}
+        placement="center"
+        onOpenChange={setBatchGroupModal}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader>
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-default-100 text-foreground">
+                    <Folder className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <h2 className="text-base font-semibold">
+                      {tr("批量设置分组")}
+                    </h2>
+                    <p className="text-xs font-normal text-default-500">
+                      {tr("为选中的 {count} 个订阅设置分组", {
+                        count: selectedIds.size,
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </ModalHeader>
+              <ModalBody className="space-y-2.5">
+                <Input
+                  label={tr("订阅分组")}
+                  maxLength={50}
+                  placeholder={tr("如：自用、拼车、家庭（留空归入未分组）")}
+                  value={batchGroupInput}
+                  variant="bordered"
+                  onChange={(e) => setBatchGroupInput(e.target.value)}
+                />
+                {subGroupSuggestions.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {subGroupSuggestions.map((g) => {
+                      const active = batchGroupInput.trim() === g;
+
+                      return (
+                        <button
+                          key={g}
+                          className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-xs transition-colors ${
+                            active
+                              ? "border-foreground bg-foreground text-background dark:border-default-300 dark:bg-default-200 dark:text-foreground"
+                              : "border-divider bg-default-50 text-default-600 hover:bg-default-100"
+                          }`}
+                          type="button"
+                          onClick={() => setBatchGroupInput(active ? "" : g)}
+                        >
+                          <Folder className="h-3 w-3 opacity-70" />
+                          {g}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-default-400">
+                  {tr("留空则移出分组，归入「未分组」")}
+                </p>
+              </ModalBody>
+              <ModalFooter>
+                <Button size="sm" variant="light" onPress={onClose}>
+                  {tr("取消")}
+                </Button>
+                <Button
+                  color="primary"
+                  isLoading={batchBusy}
+                  size="sm"
+                  onPress={async () => {
+                    await runBatch(
+                      "set-group",
+                      undefined,
+                      undefined,
+                      batchGroupInput.trim(),
+                    );
+                    onClose();
+                  }}
+                >
+                  {tr("确定设置")}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
         </ModalContent>
       </Modal>
 

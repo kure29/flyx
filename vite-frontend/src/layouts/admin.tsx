@@ -403,7 +403,7 @@ export default function AdminLayout({
 
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto desktop-scrollbar"
+          className="admin-canvas flex-1 overflow-y-auto desktop-scrollbar"
         >
           <div
             key={location.pathname}

@@ -1,6 +1,7 @@
 import type { RemoteSourceItem } from "@/api";
 import type {
   InboundApiItem,
+  InboundRelayApiItem,
   KernelApiItem,
   KernelCapabilitiesApiData,
   NodeApiItem,
@@ -8,8 +9,15 @@ import type {
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { ChevronDown, Copy } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Copy,
+  LayoutGrid,
+  List,
+  Table2,
+} from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 import {
@@ -17,6 +25,7 @@ import {
   batchToggleInbounds,
   deleteInbound,
   getInboundList,
+  getInboundRelays,
   getKernelCapabilities,
   getKernelList,
   getNodeList,
@@ -32,7 +41,16 @@ import {
   StaggerList,
 } from "@/components/animated-page";
 import { PageLoadingState } from "@/components/page-state";
-import { PageHeader, PageTabs, PageToolbar } from "@/components/page-kit";
+import {
+  FilterPills,
+  PageHeader,
+  PageTabs,
+  PageToolbar,
+  ToolbarButton,
+  ToolbarSelect,
+  ViewModeSwitch,
+  type FilterPillItem,
+} from "@/components/page-kit";
 import { useI18n } from "@/i18n";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import {
@@ -42,6 +60,17 @@ import {
 } from "@/hooks/use-cached-state";
 import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { GroupHeader, groupItems, useCollapsed } from "@/pages/inbound/group";
+import {
+  InboundCard,
+  InboundTable,
+  getInboundHealth,
+  type InboundCardActions,
+  type InboundGroupMode,
+  type InboundRelayFilter,
+  type InboundSortMode,
+  type InboundStatusFilter,
+  type InboundViewMode,
+} from "@/pages/inbound/inbound-views";
 import { LatencyCell } from "@/components/latency-cell";
 import { RouteModal } from "@/components/route-modal";
 import { LatencyTrendModal } from "@/components/lazy-charts";
@@ -54,6 +83,7 @@ import {
 } from "@/pages/inbound/external";
 import { InboundFormModal } from "@/pages/inbound/inbound-form-modal";
 import { type NodeHubState } from "@/pages/node-hub";
+import { nodeRegionLabel } from "@/pages/node/region";
 import { RelayModal } from "@/pages/inbound/relay-modal";
 import { RemoteSourcesSection } from "@/pages/inbound/sources";
 import { ShareModal, copyText } from "@/pages/inbound/share";
@@ -218,8 +248,14 @@ function groupRank(key: string): number {
 
 const PAGE = "inbound";
 
+/** Route state for deep-linking from the Servers page (e.g. "2 入站"). */
+export interface InboundPageState {
+  nodeId?: number;
+}
+
 export default function InboundPage() {
   const { t: tr } = useI18n();
+  const location = useLocation();
   // A revisit shows the last data at once and reloads in the background.
   const [loading, setLoading] = useState(() => !pageCached(PAGE));
   const [caps, setCaps] = useCachedState<KernelCapabilitiesApiData | null>(
@@ -238,12 +274,33 @@ export default function InboundPage() {
     "inbounds",
     [],
   );
-  const [isCollapsed, toggleCollapsed] = useCollapsed();
+  const [relays, setRelays] = useCachedState<InboundRelayApiItem[]>(
+    PAGE,
+    "relays",
+    [],
+  );
+  const [isCollapsed, toggleCollapsed, setManyCollapsed] = useCollapsed();
   const [searchKeyword, setSearchKeyword] = useLocalStorageState(
     "inbound-search-keyword",
     "",
   );
-  const [nodeFilter, setNodeFilter] = useState("");
+  const [rawViewMode, setViewMode] = useLocalStorageState<InboundViewMode>(
+    "inbound-view-mode",
+    "cards",
+  );
+  const viewMode: InboundViewMode =
+    rawViewMode === "table" || rawViewMode === "list" ? rawViewMode : "cards";
+  const [groupMode, setGroupMode] = useLocalStorageState<InboundGroupMode>(
+    "inbound-group-mode",
+    "server",
+  );
+  const [statusFilter, setStatusFilter] = useState<InboundStatusFilter>("all");
+  const [relayFilter, setRelayFilter] = useState<InboundRelayFilter>("all");
+  const [sortMode, setSortMode] = useLocalStorageState<InboundSortMode>(
+    "inbound-sort-mode",
+    "default",
+  );
+  const [selectedGroupKey, setSelectedGroupKey] = useState("");
   const [tagFilter, setTagFilter] = useLocalStorageState(
     "inbound-tag-filter",
     "",
@@ -297,6 +354,18 @@ export default function InboundPage() {
   const reloadPendingRef = useRef(false);
   const metadataLoadedAtRef = useRef(0);
 
+  // Consume deep-link filter (e.g. clicking "2 入站" on a server card).
+  useEffect(() => {
+    const state = location.state as InboundPageState | null;
+
+    if (state?.nodeId) {
+      setTab("inbounds");
+      setGroupMode("server");
+      setSelectedGroupKey(String(state.nodeId));
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.pathname, location.state, navigate, setGroupMode, setTab]);
+
   const loadData = useCallback(
     async (initial = false, options?: { silent?: boolean }): Promise<void> => {
       const silent = options?.silent ?? false;
@@ -313,13 +382,14 @@ export default function InboundPage() {
         // sources at most every thirty seconds.
         const metadata =
           !silent || Date.now() - metadataLoadedAtRef.current >= 30_000;
-        const [capsRes, nodeRes, kernelRes, inboundRes, sourceRes] =
+        const [capsRes, nodeRes, kernelRes, inboundRes, sourceRes, relayRes] =
           await Promise.all([
             metadata ? getKernelCapabilities() : null,
             metadata ? getNodeList() : null,
             metadata ? getKernelList() : null,
             getInboundList(),
             metadata ? getRemoteSources() : null,
+            getInboundRelays(0).catch(() => null),
           ]);
 
         if (metadata) metadataLoadedAtRef.current = Date.now();
@@ -327,6 +397,7 @@ export default function InboundPage() {
         if (sourceRes?.code === 0) setSources(sourceRes.data ?? []);
         if (nodeRes?.code === 0) setNodes(nodeRes.data || []);
         if (kernelRes?.code === 0) setKernels(kernelRes.data || []);
+        if (relayRes?.code === 0) setRelays(relayRes.data || []);
         if (inboundRes.code === 0) {
           const rows = inboundRes.data || [];
 
@@ -370,47 +441,232 @@ export default function InboundPage() {
     useCallback(() => loadData(false, { silent: true }), [loadData]),
   );
 
-  const nodeOptions = useMemo(() => {
-    const map = new Map<string, string>();
+  const relaysByInbound = useMemo(() => {
+    const map = new Map<number, InboundRelayApiItem[]>();
 
-    for (const i of inbounds) {
-      map.set(groupKeyOf(i), groupLabelOf(i));
+    for (const r of relays) {
+      const list = map.get(r.inboundId);
+
+      if (list) list.push(r);
+      else map.set(r.inboundId, [r]);
     }
 
-    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-CN"));
-  }, [inbounds]);
+    return map;
+  }, [relays]);
+
+  const nodeRegionMap = useMemo(() => {
+    const map = new Map<number, string>();
+
+    for (const n of nodes) {
+      const code = (n.region || n.regionDetected || "").trim();
+
+      if (code) map.set(n.id, code);
+    }
+
+    return map;
+  }, [nodes]);
 
   const allTags = useMemo(() => collectTags(inbounds), [inbounds]);
   // A remembered tag that no node carries any more filters nothing.
   const activeTag = allTags.includes(tagFilter) ? tagFilter : "";
 
-  const filtered = useMemo(() => {
+  const statusCounts = useMemo(() => {
+    let running = 0;
+    let issue = 0;
+    let disabled = 0;
+
+    for (const i of inbounds) {
+      const h = getInboundHealth(i);
+
+      if (!i.enabled) disabled++;
+      else if (h.running) running++;
+      else issue++;
+    }
+
+    return { all: inbounds.length, running, issue, disabled };
+  }, [inbounds]);
+
+  const sortItems = useCallback(
+    (items: InboundApiItem[]) => {
+      if (sortMode === "default") return items;
+      const copy = [...items];
+
+      if (sortMode === "traffic_desc") {
+        copy.sort(
+          (a, b) =>
+            b.uploadBytes + b.downloadBytes - (a.uploadBytes + a.downloadBytes),
+        );
+      } else if (sortMode === "name_asc") {
+        copy.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+      } else if (sortMode === "port_asc") {
+        copy.sort((a, b) => a.port - b.port);
+      }
+
+      return copy;
+    },
+    [sortMode],
+  );
+
+  // Base filtered list (before the horizontal group pill selection).
+  const baseFiltered = useMemo(() => {
     const kw = searchKeyword.trim().toLowerCase();
 
-    return inbounds.filter(
-      (i) =>
-        (!nodeFilter || groupKeyOf(i) === nodeFilter) &&
-        (!activeTag || (i.tags ?? []).includes(activeTag)) &&
-        (!kw ||
-          [
-            i.name,
-            i.nodeName,
-            i.protocol,
-            String(i.port),
-            i.remark,
-            ...(i.tags ?? []),
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(kw)),
-    );
-  }, [inbounds, searchKeyword, nodeFilter, activeTag]);
+    const matched = inbounds.filter((i) => {
+      if (activeTag && !(i.tags ?? []).includes(activeTag)) return false;
+      if (statusFilter !== "all") {
+        const h = getInboundHealth(i);
 
-  // Grouped by server, imported nodes last; one group shows as a flat list.
-  const inboundGroups = groupItems(filtered, groupKeyOf, (_key, i) =>
-    groupLabelOf(i),
-  ).sort((a, b) => groupRank(a.key) - groupRank(b.key));
-  const grouped = new Set(inbounds.map(groupKeyOf)).size > 1;
+        if (statusFilter === "running" && !h.running) return false;
+        if (statusFilter === "disabled" && i.enabled) return false;
+        if (statusFilter === "issue" && (h.running || !i.enabled)) return false;
+      }
+      if (relayFilter !== "all") {
+        const count = relaysByInbound.get(i.id)?.length || i.relayCount;
+
+        if (relayFilter === "relayed" && count <= 0) return false;
+        if (relayFilter === "direct" && count > 0) return false;
+      }
+      if (kw) {
+        const hay = [
+          i.name,
+          i.nodeName,
+          i.sourceName,
+          i.protocol,
+          String(i.port),
+          i.remark,
+          ...(i.tags ?? []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        if (!hay.includes(kw)) return false;
+      }
+
+      return true;
+    });
+
+    return sortItems(matched);
+  }, [
+    inbounds,
+    activeTag,
+    statusFilter,
+    relayFilter,
+    searchKeyword,
+    relaysByInbound,
+    sortItems,
+  ]);
+
+  const groupMetaOf = useCallback(
+    (i: InboundApiItem): { key: string; title: string; rank: number } => {
+      switch (groupMode) {
+        case "region": {
+          if (i.external) {
+            return {
+              key: i.sourceId ? `source:${i.sourceId}` : "external",
+              title: groupLabelOf(i),
+              rank: i.sourceId ? 2 : 1,
+            };
+          }
+          const code = nodeRegionMap.get(i.nodeId) || "";
+
+          return {
+            key: code || "unknown",
+            title: code ? nodeRegionLabel(code) : tr("未设置地区"),
+            rank: code ? 0 : 1,
+          };
+        }
+        case "protocol": {
+          const proto = (i.protocol || "unknown").toUpperCase();
+
+          return { key: proto, title: proto, rank: 0 };
+        }
+        case "tag": {
+          const first = i.tags?.[0]?.trim() || "";
+
+          return {
+            key: first || "__untagged__",
+            title: first ? `# ${first}` : tr("未打标签"),
+            rank: first ? 0 : 1,
+          };
+        }
+        case "server":
+        default: {
+          const key = groupKeyOf(i);
+
+          return { key, title: groupLabelOf(i), rank: groupRank(key) };
+        }
+      }
+    },
+    [groupMode, nodeRegionMap, tr],
+  );
+
+  const inboundGroups = useMemo(() => {
+    if (groupMode === "none") return [];
+    const rankMap = new Map<string, number>();
+    const groups = groupItems(
+      baseFiltered,
+      (i) => {
+        const m = groupMetaOf(i);
+
+        rankMap.set(m.key, m.rank);
+
+        return m.key;
+      },
+      (_key, first) => groupMetaOf(first).title,
+    );
+
+    return groups.sort(
+      (a, b) =>
+        (rankMap.get(a.key) ?? 0) - (rankMap.get(b.key) ?? 0) ||
+        a.title.localeCompare(b.title, "zh-CN"),
+    );
+  }, [baseFiltered, groupMode, groupMetaOf]);
+
+  const activeGroupKey =
+    groupMode !== "none" &&
+    selectedGroupKey &&
+    inboundGroups.some((g) => g.key === selectedGroupKey)
+      ? selectedGroupKey
+      : "";
+
+  const filtered = useMemo(() => {
+    if (!activeGroupKey) return baseFiltered;
+
+    return (
+      inboundGroups.find((g) => g.key === activeGroupKey)?.items ?? baseFiltered
+    );
+  }, [activeGroupKey, baseFiltered, inboundGroups]);
+
+  const groupPills: FilterPillItem<string>[] = useMemo(() => {
+    if (groupMode === "none" || inboundGroups.length <= 1) return [];
+
+    return [
+      { key: "", label: tr("全部"), count: baseFiltered.length },
+      ...inboundGroups.map((g) => {
+        const hasBad = g.items.some(
+          (i) => getInboundHealth(i).status === "bad",
+        );
+        const hasWarn = g.items.some(
+          (i) => getInboundHealth(i).status === "warn",
+        );
+
+        return {
+          key: g.key,
+          label: g.title,
+          count: g.items.length,
+          tone: hasBad
+            ? ("danger" as const)
+            : hasWarn
+              ? ("warning" as const)
+              : ("default" as const),
+        };
+      }),
+    ];
+  }, [groupMode, inboundGroups, baseFiltered.length, tr]);
+
+  const grouped =
+    groupMode !== "none" && !activeGroupKey && inboundGroups.length > 1;
 
   const openCreate = () => {
     const firstKernelNode = kernels[0]?.nodeId;
@@ -887,6 +1143,28 @@ export default function InboundPage() {
       },
     ];
 
+  const cardActions: InboundCardActions = {
+    selectMode,
+    selectedIds,
+    toggling,
+    probingIds,
+    onToggleSelect: toggleSelect,
+    onOpenSheet: setSheetFor,
+    onShare: setSharing,
+    onRelay: setRelaying,
+    onToggleEnabled: handleToggle,
+    onProbeOne: probeOne,
+  };
+
+  const groupCollapseIds = inboundGroups.map(
+    (g) => `inbound:${groupMode}:${g.key}`,
+  );
+  const allGroupsCollapsed =
+    groupCollapseIds.length > 0 &&
+    groupCollapseIds.every((id) => isCollapsed(id));
+  const showExpandAllToggle =
+    viewMode === "list" && grouped && inboundGroups.length > 1;
+
   return (
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
       <PageHeader
@@ -908,75 +1186,226 @@ export default function InboundPage() {
       {tab === "inbounds" && (
         <>
           {!selectMode && (
-            <PageToolbar
-              more={[
-                {
-                  key: "probe",
-                  label: probing ? tr("检测中…") : tr("检测节点连通性"),
-                  disabled: probing || inbounds.length === 0,
-                  onPress: runProbe,
-                },
-                {
-                  key: "import",
-                  label: tr("导入节点"),
-                  onPress: () => setImportOpen(true),
-                },
-                {
-                  key: "batch",
-                  label: tr("批量操作"),
-                  disabled: inbounds.length === 0,
-                  onPress: () => setSelectMode(true),
-                },
-              ]}
-              placeholder={tr("搜索名称、服务器、协议、端口、标签")}
-              primary={{
-                key: "create",
-                label: tr("新建入站"),
-                disabled: kernels.length === 0,
-                onPress: openCreate,
-              }}
-              search={searchKeyword}
-              onSearch={setSearchKeyword}
-            >
-              {nodeOptions.length > 1 && (
-                // appearance-none: the browser's own arrow ignored the
-                // padding and stuck out of the pill.
-                <div className="relative max-w-[10rem] shrink-0">
-                  <select
-                    aria-label={tr("按服务器筛选")}
-                    className="h-8 w-full appearance-none truncate rounded-md bg-transparent pl-2.5 pr-8 text-sm text-default-500 outline-none hover:bg-default-100 hover:text-foreground"
-                    value={nodeFilter}
-                    onChange={(e) => setNodeFilter(e.target.value)}
-                  >
-                    <option value="">{tr("全部服务器")}</option>
-                    {nodeOptions.map(([id, name]) => (
-                      <option key={id} value={id}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-default-400" />
-                </div>
-              )}
-              {allTags.length > 0 && (
-                <div className="relative max-w-[8rem] shrink-0">
-                  <select
-                    aria-label={tr("按标签筛选")}
-                    className="h-8 w-full appearance-none truncate rounded-md bg-transparent pl-2.5 pr-8 text-sm text-default-500 outline-none hover:bg-default-100 hover:text-foreground"
+            <>
+              <PageToolbar
+                more={[
+                  {
+                    key: "probe",
+                    label: probing ? tr("检测中…") : tr("检测节点连通性"),
+                    disabled: probing || inbounds.length === 0,
+                    onPress: runProbe,
+                  },
+                  {
+                    key: "import",
+                    label: tr("导入节点"),
+                    onPress: () => setImportOpen(true),
+                  },
+                  {
+                    key: "batch",
+                    label: tr("批量操作"),
+                    disabled: inbounds.length === 0,
+                    onPress: () => setSelectMode(true),
+                  },
+                ]}
+                placeholder={tr("搜索名称、服务器、协议、端口、标签")}
+                primary={{
+                  key: "create",
+                  label: tr("新建入站"),
+                  disabled: kernels.length === 0,
+                  onPress: openCreate,
+                }}
+                search={searchKeyword}
+                onSearch={setSearchKeyword}
+              >
+                <ToolbarSelect
+                  ariaLabel={tr("分组方式")}
+                  className="max-w-[8rem]"
+                  options={[
+                    { value: "server", label: tr("按服务器") },
+                    { value: "region", label: tr("按地区") },
+                    { value: "protocol", label: tr("按协议") },
+                    { value: "tag", label: tr("按标签") },
+                    { value: "none", label: tr("不分组") },
+                  ]}
+                  value={groupMode}
+                  onChange={(v) => {
+                    setGroupMode(v as InboundGroupMode);
+                    setSelectedGroupKey("");
+                  }}
+                />
+                {allTags.length > 0 && (
+                  <ToolbarSelect
+                    ariaLabel={tr("按标签筛选")}
+                    className="max-w-[8rem]"
+                    options={[
+                      { value: "", label: tr("全部标签") },
+                      ...allTags.map((t) => ({ value: t, label: t })),
+                    ]}
                     value={activeTag}
-                    onChange={(e) => setTagFilter(e.target.value)}
-                  >
-                    <option value="">{tr("全部标签")}</option>
-                    {allTags.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-default-400" />
+                    onChange={setTagFilter}
+                  />
+                )}
+                {(statusCounts.issue > 0 || statusCounts.disabled > 0) && (
+                  <ToolbarSelect
+                    ariaLabel={tr("按状态筛选")}
+                    className="max-w-[7.5rem]"
+                    options={[
+                      { value: "all", label: tr("全部状态") },
+                      {
+                        value: "running",
+                        label: `${tr("运行中")} (${statusCounts.running})`,
+                      },
+                      ...(statusCounts.issue > 0
+                        ? [
+                            {
+                              value: "issue",
+                              label: `${tr("异常")} (${statusCounts.issue})`,
+                            },
+                          ]
+                        : []),
+                      ...(statusCounts.disabled > 0
+                        ? [
+                            {
+                              value: "disabled",
+                              label: `${tr("已停用")} (${statusCounts.disabled})`,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    value={statusFilter}
+                    onChange={(v) => setStatusFilter(v as InboundStatusFilter)}
+                  />
+                )}
+                <ToolbarSelect
+                  ariaLabel={tr("排序方式")}
+                  className="max-w-[7.5rem]"
+                  options={[
+                    { value: "default", label: tr("默认排序") },
+                    { value: "traffic_desc", label: tr("流量最高") },
+                    { value: "name_asc", label: tr("按名称") },
+                    { value: "port_asc", label: tr("按端口") },
+                  ]}
+                  value={sortMode}
+                  onChange={(v) => setSortMode(v as InboundSortMode)}
+                />
+                <ViewModeSwitch
+                  ariaLabel={tr("视图模式")}
+                  options={[
+                    {
+                      key: "cards",
+                      label: tr("卡片"),
+                      icon: <LayoutGrid className="h-3.5 w-3.5" />,
+                    },
+                    {
+                      key: "table",
+                      label: tr("表格"),
+                      icon: <Table2 className="h-3.5 w-3.5" />,
+                    },
+                    {
+                      key: "list",
+                      label: tr("列表"),
+                      icon: <List className="h-3.5 w-3.5" />,
+                    },
+                  ]}
+                  value={viewMode}
+                  onChange={setViewMode}
+                />
+              </PageToolbar>
+
+              {inbounds.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  {groupPills.length > 0 ? (
+                    <FilterPills
+                      ariaLabel={tr("按分组筛选")}
+                      className="mb-0"
+                      items={groupPills}
+                      value={activeGroupKey}
+                      onChange={setSelectedGroupKey}
+                    />
+                  ) : (
+                    <FilterPills
+                      ariaLabel={tr("按状态筛选")}
+                      className="mb-0"
+                      items={[
+                        {
+                          key: "all",
+                          label: tr("全部"),
+                          count: statusCounts.all,
+                        },
+                        {
+                          key: "running",
+                          label: tr("运行中"),
+                          count: statusCounts.running,
+                          tone: "success",
+                        },
+                        ...(statusCounts.issue > 0
+                          ? [
+                              {
+                                key: "issue" as const,
+                                label: tr("异常"),
+                                count: statusCounts.issue,
+                                tone: "danger" as const,
+                              },
+                            ]
+                          : []),
+                        ...(statusCounts.disabled > 0
+                          ? [
+                              {
+                                key: "disabled" as const,
+                                label: tr("已停用"),
+                                count: statusCounts.disabled,
+                              },
+                            ]
+                          : []),
+                      ]}
+                      value={statusFilter}
+                      onChange={setStatusFilter}
+                    />
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <ToolbarButton
+                      active={relayFilter === "relayed"}
+                      onPress={() =>
+                        setRelayFilter((prev) =>
+                          prev === "relayed" ? "all" : "relayed",
+                        )
+                      }
+                    >
+                      {tr("仅已中转")}
+                    </ToolbarButton>
+                    <ToolbarButton
+                      active={relayFilter === "direct"}
+                      onPress={() =>
+                        setRelayFilter((prev) =>
+                          prev === "direct" ? "all" : "direct",
+                        )
+                      }
+                    >
+                      {tr("仅直连")}
+                    </ToolbarButton>
+                    {showExpandAllToggle && (
+                      <ToolbarButton
+                        onPress={() =>
+                          setManyCollapsed(
+                            groupCollapseIds,
+                            !allGroupsCollapsed,
+                          )
+                        }
+                      >
+                        {allGroupsCollapsed ? (
+                          <ChevronsUpDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronsDownUp className="h-3.5 w-3.5" />
+                        )}
+                        <span>
+                          {allGroupsCollapsed ? tr("全部展开") : tr("全部折叠")}
+                        </span>
+                      </ToolbarButton>
+                    )}
+                  </div>
                 </div>
               )}
-            </PageToolbar>
+            </>
           )}
 
           {selectMode && (
@@ -1065,7 +1494,7 @@ export default function InboundPage() {
                       )
                     : inbounds.length === 0
                       ? tr("点击“新建入站”，选择一个模板即可快速创建。")
-                      : tr("换个关键词、服务器或标签试试。")}
+                      : tr("换个关键词、服务器或筛选条件试试。")}
                 </p>
                 {kernels.length === 0 && inbounds.length === 0 && (
                   <Button
@@ -1083,6 +1512,24 @@ export default function InboundPage() {
                 )}
               </CardBody>
             </Card>
+          ) : viewMode === "table" ? (
+            <InboundTable
+              actions={cardActions}
+              items={filtered}
+              relaysByInbound={relaysByInbound}
+            />
+          ) : viewMode === "cards" ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((item) => (
+                <InboundCard
+                  key={item.id}
+                  actions={cardActions}
+                  item={item}
+                  relays={relaysByInbound.get(item.id) ?? []}
+                  showServer={groupMode !== "server" || !activeGroupKey}
+                />
+              ))}
+            </div>
           ) : !grouped ? (
             <StaggerList className={gridClass}>
               {filtered.map((i) => (
@@ -1092,7 +1539,7 @@ export default function InboundPage() {
           ) : (
             <div>
               {inboundGroups.map((g) => {
-                const id = `inbound:node:${g.key}`;
+                const id = `inbound:${groupMode}:${g.key}`;
                 const folded = isCollapsed(id);
                 const off = g.items.filter((i) => !i.enabled).length;
 

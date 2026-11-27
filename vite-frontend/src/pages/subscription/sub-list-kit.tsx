@@ -14,6 +14,7 @@ import {
   ChevronsUpDown,
   Copy,
   CopyPlus,
+  Folder,
   GripVertical,
   Layers,
   List,
@@ -395,10 +396,10 @@ export function SubFilterBar({
                 className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${
                   active
                     ? p.tone === "amber"
-                      ? "bg-amber-500 text-white"
+                      ? "bg-amber-500 text-white dark:bg-amber-500/80 dark:text-[#111214]"
                       : p.tone === "rose"
-                        ? "bg-rose-500 text-white"
-                        : "bg-foreground text-background"
+                        ? "bg-rose-500 text-white dark:bg-rose-500/80 dark:text-[#111214]"
+                        : "bg-foreground text-background dark:bg-default-200 dark:text-foreground"
                     : p.tone === "amber"
                       ? "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
                       : p.tone === "rose"
@@ -454,7 +455,7 @@ export function SubFilterBar({
             aria-pressed={batchMode}
             className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors ${
               batchMode
-                ? "border-foreground bg-foreground text-background"
+                ? "border-foreground bg-foreground text-background dark:border-default-300 dark:bg-default-200 dark:text-foreground"
                 : "border-divider text-default-600 hover:bg-default-100 hover:text-foreground"
             }`}
             type="button"
@@ -476,7 +477,7 @@ export function SubFilterBar({
           <button
             className={`h-6 rounded-full px-2.5 text-[11px] font-medium transition-colors ${
               tagFilter === ""
-                ? "bg-foreground text-background"
+                ? "bg-foreground text-background dark:bg-default-200 dark:text-foreground"
                 : "bg-default-100 text-default-600 hover:bg-default-200/70 dark:bg-default-100/50"
             }`}
             type="button"
@@ -488,7 +489,7 @@ export function SubFilterBar({
             <button
               className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors ${
                 tagFilter === "__pinned__"
-                  ? "bg-amber-500 text-white"
+                  ? "bg-amber-500 text-white dark:bg-amber-500/80 dark:text-[#111214]"
                   : "bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
               }`}
               type="button"
@@ -509,7 +510,7 @@ export function SubFilterBar({
                 key={tag}
                 className={`h-6 rounded-full px-2.5 text-[11px] font-medium transition-colors ${
                   active
-                    ? "bg-foreground text-background"
+                    ? "bg-foreground text-background dark:bg-default-200 dark:text-foreground"
                     : "bg-default-100 text-default-600 hover:bg-default-200/70 dark:bg-default-100/50"
                 }`}
                 type="button"
@@ -534,6 +535,7 @@ export function SubBatchBar({
   onSelectAll,
   onClearSelection,
   onBatch,
+  onOpenGroupModal,
   onOpenTagModal,
   onExit,
 }: {
@@ -543,6 +545,7 @@ export function SubBatchBar({
   onSelectAll: () => void;
   onClearSelection: () => void;
   onBatch: (action: SubscriptionBatchAction, days?: number) => Promise<void>;
+  onOpenGroupModal: () => void;
   onOpenTagModal: () => void;
   onExit: () => void;
 }) {
@@ -629,6 +632,16 @@ export function SubBatchBar({
           className="h-7 gap-1 px-2.5 text-xs"
           isDisabled={count === 0 || busy}
           size="sm"
+          startContent={<Folder className="h-3.5 w-3.5" />}
+          variant="flat"
+          onPress={onOpenGroupModal}
+        >
+          {t("设分组")}
+        </Button>
+        <Button
+          className="h-7 gap-1 px-2.5 text-xs"
+          isDisabled={count === 0 || busy}
+          size="sm"
           startContent={<Tag className="h-3.5 w-3.5" />}
           variant="flat"
           onPress={onOpenTagModal}
@@ -663,6 +676,7 @@ export function SubBatchBar({
 export function SubRowItem({
   sub,
   sourceText,
+  showGroup,
   sortable,
   batchMode,
   selected,
@@ -678,6 +692,7 @@ export function SubRowItem({
 }: {
   sub: SubscriptionItem;
   sourceText: string;
+  showGroup?: boolean;
   sortable: boolean;
   batchMode: boolean;
   selected: boolean;
@@ -778,6 +793,12 @@ export function SubRowItem({
                 aria-label={t("已置顶")}
                 className="h-3 w-3 shrink-0 text-amber-500"
               />
+            )}
+            {showGroup && sub.group && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-divider/80 bg-default-50 px-1.5 py-0.5 text-[10px] font-medium text-default-600 dark:bg-default-100/40 dark:text-default-400">
+                <Folder className="h-2.5 w-2.5 text-default-400" />
+                {sub.group}
+              </span>
             )}
             {!sub.enabled ? (
               <Chip className="h-5 text-[11px]" size="sm" variant="flat">
