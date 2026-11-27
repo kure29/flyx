@@ -13,6 +13,7 @@ const (
 	TypeXray    = "xray"
 	TypeSingbox = "singbox"
 	TypeSnell   = "snell"
+	TypeMieru   = "mieru"
 )
 
 const (
@@ -24,6 +25,7 @@ const (
 	ProtocolTUIC        = "tuic"
 	ProtocolAnyTLS      = "anytls"
 	ProtocolSnell       = "snell"
+	ProtocolMieru       = "mieru"
 	ProtocolNaive       = "naive"
 	ProtocolSOCKS       = "socks"
 	ProtocolHTTP        = "http"
@@ -36,7 +38,7 @@ const (
 	TransportGRPC  = "grpc"
 	TransportXHTTP = "xhttp"
 	TransportQUIC  = "quic"
-	// TransportUDP is WireGuard's own UDP transport.
+	// TransportUDP is WireGuard / Mieru UDP transport.
 	TransportUDP = "udp"
 )
 
@@ -186,6 +188,18 @@ var shadowTLSDownload = &Download{
 	Mirrorable: true,
 }
 
+// Mieru (mita) publishes statically linked Linux tarballs and SHA-256 asset
+// digests on GitHub (amd64 and arm64).
+var mieruDownload = &Download{
+	URL:         "https://github.com/enfein/mieru/releases/download/v{VERSION}/mita_{VERSION}_linux_{ARCH}.tar.gz",
+	Archive:     "tar.gz",
+	BinName:     "mita",
+	ArchMap:     map[string]string{"amd64": "amd64", "arm64": "arm64"},
+	GitHubRepo:  "enfein/mieru",
+	GitHubAsset: "mita_{VERSION}_linux_{ARCH}.tar.gz",
+	Mirrorable:  true,
+}
+
 var catalog = []Info{
 	{
 		Type:        TypeXray,
@@ -266,6 +280,20 @@ var catalog = []Info{
 		Versions: []string{"5.0.1", "6.0.0", "4.1.1"},
 		Protocols: []ProtocolCap{
 			{Protocol: ProtocolSnell, Transports: []TransportCap{{Type: TransportTCP, Securities: []string{SecurityNone, SecurityShadowTLS}}}},
+		},
+	},
+	{
+		Type:        TypeMieru,
+		Name:        "Mieru",
+		Implemented: true,
+		ReleaseRepo: "enfein/mieru",
+		CertModes:   []string{},
+		Download:    mieruDownload,
+		Protocols: []ProtocolCap{
+			{Protocol: ProtocolMieru, Transports: []TransportCap{
+				{Type: TransportTCP, Securities: []string{SecurityNone}},
+				{Type: TransportUDP, Securities: []string{SecurityNone}},
+			}},
 		},
 	},
 	{

@@ -192,8 +192,9 @@ func (h *Handler) validateChainFor(row model.NodeInbound, kernelType, version st
 			return err
 		}
 	}
-	if kernelType == kernel.TypeSnell && (strings.TrimSpace(row.SplitRules) != "" || row.DefaultBlock == 1) {
-		return errors.New("Snell 内核不支持分流")
+	if (kernelType == kernel.TypeSnell || kernelType == kernel.TypeMieru) && (strings.TrimSpace(row.SplitRules) != "" || row.DefaultBlock == 1) {
+		info, _ := kernel.Lookup(kernelType)
+		return fmt.Errorf("%s 内核不支持分流", firstNonEmpty(info.Name, kernelType))
 	}
 	return nil
 }

@@ -27,8 +27,8 @@ func NormalizeOutboundIPStrategy(kernelType, strategy string) (string, error) {
 	if strategy != OutboundIPAuto && strategy != OutboundIPv4Only && strategy != OutboundIPv6Only && !isOutboundIPPreference(strategy) {
 		return "", fmt.Errorf("未知出站 IP 策略 %q", strategy)
 	}
-	if strategy != OutboundIPAuto && kernelType != TypeXray && kernelType != TypeSingbox {
-		return "", fmt.Errorf("出站 IP 策略需要 Xray 或 sing-box 内核")
+	if strategy != OutboundIPAuto && kernelType != TypeXray && kernelType != TypeSingbox && kernelType != TypeMieru {
+		return "", fmt.Errorf("出站 IP 策略需要 Xray、sing-box 或 Mieru 内核")
 	}
 	return strategy, nil
 }
@@ -46,6 +46,14 @@ func ValidateOutboundIPExtra(kernelType, strategy string, extra json.RawMessage)
 	var fields map[string]interface{}
 	if err := json.Unmarshal(extra, &fields); err != nil {
 		return fmt.Errorf("高级配置必须是 JSON 对象")
+	}
+	if kernelType == TypeMieru {
+		if dns, ok := fields["dns"].(map[string]interface{}); ok {
+			if _, exists := dns["dualStack"]; exists {
+				return fmt.Errorf("指定出站 IP 策略时，高级配置不能覆盖 dns.dualStack 字段")
+			}
+		}
+		return nil
 	}
 	for _, key := range []string{"tag", "detour"} {
 		if _, exists := fields[key]; exists {

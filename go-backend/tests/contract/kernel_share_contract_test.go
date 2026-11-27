@@ -416,36 +416,82 @@ func TestPhase3KernelsContract(t *testing.T) {
 	if entry["uri"] != "" || !strings.Contains(entry["surge"].(string), "shadow-tls-version=3") || !strings.Contains(entry["surge"].(string), "version=4") {
 		t.Fatalf("snell share must be a Surge line: %v", entry)
 	}
-	// Port hopping: the range is reserved on the node like a port.
+	// Port hopping and L4-aware port sharing:
+	// - TCP-only and UDP-only inbounds can share the same port (e.g. AnyTLS TCP 443 + Hysteria2 UDP 443).
+	// - Same-L4 (UDP+UDP) and dual-stack (TCP+UDP) still conflict.
+	// - UDP hop ranges conflict with UDP/dual-stack ports and the forwarding port range, not TCP-only ports.
+	if tcpOn443, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"anytls-443","protocol":"anytls","port":443,"security":{"type":"tls"}}`); tcpOn443 == 0 {
+		t.Fatalf("TCP inbound sharing port 443 with UDP hysteria2 must be allowed: %s", msg)
+	}
+	if _, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"tuic-443","protocol":"tuic","port":443,"transport":{"type":"quic"},"security":{"type":"tls"}}`); !strings.Contains(msg, "已被") {
+		t.Fatalf("UDP inbound sharing port 443 with UDP hysteria2 must be rejected: %s", msg)
+	}
+	if _, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"ss-443","protocol":"shadowsocks","port":443}`); !strings.Contains(msg, "已被") {
+		t.Fatalf("TCP+UDP shadowsocks sharing port 443 with UDP hysteria2 must be rejected: %s", msg)
+	}
+	if tuic6161, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"tuic-6161","protocol":"tuic","port":6161,"transport":{"type":"quic"},"security":{"type":"tls"}}`); tuic6161 == 0 {
+		t.Fatalf("tuic 6161: %s", msg)
+	}
+
 	hop := func(rng string) string {
 		return kernelContractPost(t, router, admin, "/api/v1/inbound/update",
-			`{"id":`+jsonInt64(hyID)+`,"name":"hy2","protocol":"hysteria2","port":443,"transport":{"type":"quic"},"security":{"type":"tls"},"settings":{"portHopping":"`+rng+`"}}`).Msg
+			`{"id":`+jsonInt64(hyID)+`,"name":"hy2","protocol":"hysteria2","port":443,"transport":{"type":"quic"},"security":{"type":"tls"},"settings":{"obfsPassword":"sal-contract","portHopping":"`+rng+`"}}`).Msg
 	}
 	if msg := hop("30005-30020"); !strings.Contains(msg, "转发端口段") {
 		t.Fatalf("hop range inside the node forwarding range must be rejected: %s", msg)
 	}
 	if msg := hop("6100-6200"); !strings.Contains(msg, "已被") {
-		t.Fatalf("hop range covering the snell port must be rejected: %s", msg)
+		t.Fatalf("hop range covering UDP tuic port 6161 must be rejected: %s", msg)
 	}
 	if msg := hop("1100-1200"); strings.Contains(msg, "端口") {
 		t.Fatalf("free hop range: %s", msg)
 	}
-	if _, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"in-hop","protocol":"anytls","port":1150,"security":{"type":"tls"}}`); !strings.Contains(msg, "端口跳跃范围") {
-		t.Fatalf("port inside another inbound's hop range must be rejected: %s", msg)
+	if _, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"in-hop-udp","protocol":"tuic","port":1150,"transport":{"type":"quic"},"security":{"type":"tls"}}`); !strings.Contains(msg, "端口跳跃范围") {
+		t.Fatalf("UDP port inside another inbound's hop range must be rejected: %s", msg)
+	}
+	if _, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"in-hop-ss","protocol":"shadowsocks","port":1150}`); !strings.Contains(msg, "端口跳跃范围") {
+		t.Fatalf("TCP+UDP port inside another inbound's hop range must be rejected: %s", msg)
+	}
+	if tcpInHop, msg := create(`{"nodeId":` + n + `,"kernelType":"singbox","name":"in-hop-tcp","protocol":"anytls","port":1150,"security":{"type":"tls"}}`); tcpInHop == 0 {
+		t.Fatalf("TCP-only port inside a UDP hop range must be allowed: %s", msg)
 	}
 	hyShare := kernelContractPost(t, router, admin, "/api/v1/inbound/share", `{"id":`+jsonInt64(hyID)+`}`)
-	if uri := hyShare.Data.([]interface{})[0].(map[string]interface{})["uri"].(string); !strings.HasPrefix(uri, "hysteria2://") || !strings.Contains(uri, "mport=1100-1200") {
+	hyEntry := hyShare.Data.([]interface{})[0].(map[string]interface{})
+	if uri := hyEntry["uri"].(string); !strings.HasPrefix(uri, "hysteria2://") || !strings.Contains(uri, "mport=1100-1200") || !strings.Contains(uri, "obfs=salamander") || !strings.Contains(uri, "obfs-password=sal-contract") {
 		t.Fatalf("hy2 share: %+v", hyShare)
+	}
+	if surgeLine := hyEntry["surge"].(string); !strings.Contains(surgeLine, "salamander-password=sal-contract") {
+		t.Fatalf("hy2 surge share: %+v", hyEntry)
+	}
+
+	// Verify real `xray version` banner enables support-x25519mlkem768 in both Clash and share URI,
+	// and Surge subscription renders VLESS Reality.
+	kernelContractPost(t, router, admin, "/api/v1/kernel/install", `{"nodeId":`+n+`,"kernelType":"xray"}`)
+	if err := r.DB().Exec(`UPDATE node_kernel SET installed_version = ? WHERE node_id = ? AND kernel_type = 'xray'`,
+		"Xray 26.9.9 (Xray, Penetrates Everything.) abc1234 (go1.25.0 linux/amd64)", nodeID).Error; err != nil {
+		t.Fatalf("seed xray installed_version: %v", err)
+	}
+	if vlessID, msg := create(`{"nodeId":` + n + `,"kernelType":"xray","name":"xr-reality","protocol":"vless","port":8443,"settings":{"flow":"xtls-rprx-vision"},"security":{"type":"reality"}}`); vlessID == 0 {
+		t.Fatalf("xray vless reality: %s", msg)
+	} else {
+		vlessShare := kernelContractPost(t, router, admin, "/api/v1/inbound/share", `{"id":`+jsonInt64(vlessID)+`}`)
+		vEntry := vlessShare.Data.([]interface{})[0].(map[string]interface{})
+		if !strings.Contains(vEntry["uri"].(string), "support-x25519mlkem768=true") {
+			t.Fatalf("xray 26.9.9 share uri must include support-x25519mlkem768=true: %v", vEntry["uri"])
+		}
+		if !strings.Contains(vEntry["surge"].(string), "vless,") || !strings.Contains(vEntry["surge"].(string), "reality-public-key=") {
+			t.Fatalf("vless reality share must include Surge line: %v", vEntry["surge"])
+		}
 	}
 
 	info := kernelContractPost(t, router, admin, "/api/v1/inbound/sub/info", `{}`)
 	token := info.Data.(map[string]interface{})["token"].(string)
 	surge := getSub(t, router, "/api/v1/open_api/sub/"+token+"?format=surge", "").Body.String()
-	if !strings.Contains(surge, "= snell,") || !strings.Contains(surge, "= hysteria2,") {
+	if !strings.Contains(surge, "= snell,") || !strings.Contains(surge, "= hysteria2,") || !strings.Contains(surge, "salamander-password=sal-contract") || !strings.Contains(surge, "= vless,") {
 		t.Fatalf("surge sub: %s", surge)
 	}
 	clash := getSub(t, router, "/api/v1/open_api/sub/"+token, "clash-verge").Body.String()
-	if strings.Contains(clash, "snell") || !strings.Contains(clash, `type: "hysteria2"`) {
+	if strings.Contains(clash, "snell") || !strings.Contains(clash, `type: "hysteria2"`) || !strings.Contains(clash, `obfs: "salamander"`) || !strings.Contains(clash, "support-x25519mlkem768: true") {
 		t.Fatalf("clash sub: %s", clash)
 	}
 }
@@ -501,5 +547,85 @@ func TestACMEAndNaiveContract(t *testing.T) {
 	uri := share.Data.([]interface{})[0].(map[string]interface{})["uri"].(string)
 	if !strings.HasPrefix(uri, "naive+https://") || !strings.Contains(uri, "@203.0.113.10:2443?sni=hk.example.com#") {
 		t.Fatalf("naive share: %s", uri)
+	}
+}
+
+func TestMieruInboundAndSubscriptionContract(t *testing.T) {
+	secret := "contract-jwt-secret"
+	router, r := setupContractRouter(t, secret)
+	admin, _ := auth.GenerateToken(1, "admin_user", 0, secret)
+	nodeID := seedKernelNode(t, r, "tokyo")
+	n := jsonInt64(nodeID)
+
+	// Install Mieru kernel (node is offline so DB record is created in pending state).
+	kernelContractPost(t, router, admin, "/api/v1/kernel/install", `{"nodeId":`+n+`,"kernelType":"mieru"}`)
+
+	create := func(body string) (int64, string) {
+		out := kernelContractPost(t, router, admin, "/api/v1/inbound/create", body)
+		if out.Code != 0 {
+			return 0, out.Msg
+		}
+		return int64(out.Data.(map[string]interface{})["id"].(float64)), out.Msg
+	}
+
+	// Create TCP and UDP Mieru inbounds on the same port 20120 (disjoint L4 protocols).
+	tcpID, msg := create(`{"nodeId":` + n + `,"kernelType":"mieru","name":"Mieru TCP","protocol":"mieru","port":20120,"transport":{"type":"tcp"},"settings":{"username":"alice","password":"secret-tcp","mtu":1400,"mieruMultiplexing":"MULTIPLEXING_MIDDLE","mieruHandshakeMode":"HANDSHAKE_NO_WAIT"},"outboundIpStrategy":"ipv4_only"}`)
+	if tcpID == 0 {
+		t.Fatalf("create mieru tcp failed: %s", msg)
+	}
+	udpID, msg := create(`{"nodeId":` + n + `,"kernelType":"mieru","name":"Mieru UDP","protocol":"mieru","port":20120,"transport":{"type":"udp"},"settings":{"username":"bob","password":"secret-udp","mtu":1380}}`)
+	if udpID == 0 {
+		t.Fatalf("create mieru udp on same port failed: %s", msg)
+	}
+	// Duplicate TCP on port 20120 must be rejected.
+	if dupID, dupMsg := create(`{"nodeId":` + n + `,"kernelType":"mieru","name":"Mieru TCP Dup","protocol":"mieru","port":20120,"transport":{"type":"tcp"}}`); dupID != 0 || !strings.Contains(dupMsg, "Mieru TCP") {
+		t.Fatalf("duplicate TCP mieru on port 20120 should fail: id=%d msg=%s", dupID, dupMsg)
+	}
+	// Split rules on Mieru must be rejected.
+	if badSplit := kernelContractPost(t, router, admin, "/api/v1/inbound/split", `{"id":`+jsonInt64(tcpID)+`,"splitRules":[{"domains":["example.com"],"action":"block"}]}`); badSplit.Code == 0 {
+		t.Fatalf("split rules on Mieru should be rejected: %+v", badSplit)
+	}
+
+	// Verify /api/v1/inbound/share returns mierus:// URI and no Surge line.
+	shareTCP := kernelContractPost(t, router, admin, "/api/v1/inbound/share", `{"id":`+jsonInt64(tcpID)+`}`)
+	tcpEntry := shareTCP.Data.([]interface{})[0].(map[string]interface{})
+	uriTCP := tcpEntry["uri"].(string)
+	if !strings.HasPrefix(uriTCP, "mierus://alice:secret-tcp@203.0.113.10?") ||
+		!strings.Contains(uriTCP, "port=20120") ||
+		!strings.Contains(uriTCP, "protocol=TCP") ||
+		!strings.Contains(uriTCP, "handshake-mode=HANDSHAKE_NO_WAIT") {
+		t.Fatalf("unexpected TCP share uri: %s", uriTCP)
+	}
+	if s, _ := tcpEntry["surge"].(string); s != "" {
+		t.Fatalf("mieru must not emit Surge line: %q", s)
+	}
+
+	// Verify subscription formats.
+	info := kernelContractPost(t, router, admin, "/api/v1/inbound/sub/info", `{}`)
+	token := info.Data.(map[string]interface{})["token"].(string)
+
+	for _, ua := range []string{"clash-verge/v2.0", "Stash/2.4"} {
+		body := getSub(t, router, "/api/v1/open_api/sub/"+token, ua).Body.String()
+		for _, want := range []string{`type: "mieru"`, `transport: "TCP"`, `transport: "UDP"`, `username: "alice"`, `handshake-mode: "HANDSHAKE_NO_WAIT"`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s subscription missing %q:\n%s", ua, want, body)
+			}
+		}
+		if strings.Contains(body, "mtu:") {
+			t.Fatalf("%s subscription must omit mtu for mieru:\n%s", ua, body)
+		}
+	}
+	b64Body, err := base64.StdEncoding.DecodeString(getSub(t, router, "/api/v1/open_api/sub/"+token, "v2rayN/7.0").Body.String())
+	if err != nil {
+		t.Fatalf("decode base64 sub: %v", err)
+	}
+	if strings.Count(string(b64Body), "mierus://") != 2 {
+		t.Fatalf("base64 sub must contain 2 mierus:// URIs:\n%s", string(b64Body))
+	}
+	for _, format := range []string{"singbox", "surge", "shadowrocket", "loon", "qx"} {
+		body := getSub(t, router, "/api/v1/open_api/sub/"+token+"?format="+format, "").Body.String()
+		if strings.Contains(body, "Mieru TCP") || strings.Contains(body, "Mieru UDP") {
+			t.Fatalf("format %s must skip Mieru nodes:\n%s", format, body)
+		}
 	}
 }

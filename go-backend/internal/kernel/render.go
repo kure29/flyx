@@ -19,9 +19,10 @@ type File struct {
 // Process is one supervised process; Bin is "" for the kernel's own binary
 // or the name of an extra binary.
 type Process struct {
-	Name string   `json:"name"`
-	Bin  string   `json:"bin"`
-	Args []string `json:"args"`
+	Name string            `json:"name"`
+	Bin  string            `json:"bin"`
+	Args []string          `json:"args"`
+	Env  map[string]string `json:"env,omitempty"`
 }
 
 // Rendered is everything the agent needs to run one kernel.
@@ -122,6 +123,12 @@ func RenderWith(kernelType string, inbounds []Inbound, opts RenderOptions) (Rend
 			return Rendered{}, err
 		}
 		out = r
+	case TypeMieru:
+		r, err := renderMieru(sorted)
+		if err != nil {
+			return Rendered{}, err
+		}
+		out = r
 	default:
 		return Rendered{}, fmt.Errorf("暂不支持内核 %s", kernelType)
 	}
@@ -144,6 +151,17 @@ func hashRendered(r Rendered) string {
 	}
 	for _, p := range r.Processes {
 		h.Write([]byte(p.Name + "\x00" + p.Bin + "\x00" + strings.Join(p.Args, "\x00")))
+		if len(p.Env) > 0 {
+			keys := make([]string, 0, len(p.Env))
+			for k := range p.Env {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				h.Write([]byte{3})
+				h.Write([]byte(k + "=" + p.Env[k]))
+			}
+		}
 		h.Write([]byte{1})
 	}
 	for _, e := range r.Extras {

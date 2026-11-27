@@ -246,6 +246,29 @@ func (r *Repository) ListNodeInboundsByNode(nodeID int64) ([]model.NodeInbound, 
 	return rows, r.db.Where("node_id = ?", nodeID).Order("id ASC").Find(&rows).Error
 }
 
+// NodeForwardOrTunnelPortRangeOccupant reports whether a forward or chain
+// tunnel listens on any port in [lo, hi] of a node ("" when free). Forwards
+// and tunnels carry both TCP and UDP, so they conflict with any L4 protocol.
+func (r *Repository) NodeForwardOrTunnelPortRangeOccupant(nodeID int64, lo, hi int) (string, error) {
+	if r == nil || r.db == nil {
+		return "", errors.New("repository not initialized")
+	}
+	var count int64
+	if err := r.db.Model(&model.ForwardPort{}).Where("node_id = ? AND port BETWEEN ? AND ?", nodeID, lo, hi).Count(&count).Error; err != nil {
+		return "", err
+	}
+	if count > 0 {
+		return "转发", nil
+	}
+	if err := r.db.Model(&model.ChainTunnel{}).Where("node_id = ? AND port BETWEEN ? AND ?", nodeID, lo, hi).Count(&count).Error; err != nil {
+		return "", err
+	}
+	if count > 0 {
+		return "隧道", nil
+	}
+	return "", nil
+}
+
 // NodePortRangeOccupant reports what listens on any port in [lo, hi] of a
 // node: an inbound, a forward or a tunnel ("" when free).
 func (r *Repository) NodePortRangeOccupant(nodeID int64, lo, hi int, excludeInboundID int64) (string, error) {
@@ -263,19 +286,7 @@ func (r *Repository) NodePortRangeOccupant(nodeID int64, lo, hi int, excludeInbo
 	if count > 0 {
 		return "其他节点服务", nil
 	}
-	if err := r.db.Model(&model.ForwardPort{}).Where("node_id = ? AND port BETWEEN ? AND ?", nodeID, lo, hi).Count(&count).Error; err != nil {
-		return "", err
-	}
-	if count > 0 {
-		return "转发", nil
-	}
-	if err := r.db.Model(&model.ChainTunnel{}).Where("node_id = ? AND port BETWEEN ? AND ?", nodeID, lo, hi).Count(&count).Error; err != nil {
-		return "", err
-	}
-	if count > 0 {
-		return "隧道", nil
-	}
-	return "", nil
+	return r.NodeForwardOrTunnelPortRangeOccupant(nodeID, lo, hi)
 }
 
 // ApplyInboundCounterSamples converts cumulative counters into traffic deltas.

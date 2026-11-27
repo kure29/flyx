@@ -737,16 +737,18 @@ func constantTimeEqual(a, b string) bool {
 	return v == 0
 }
 
-// installedKernelVersion is a concrete release such as "25.10.15".
-var installedKernelVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?$`)
+// installedXrayVersion extracts a concrete release such as "25.10.15" from
+// either a bare tag ("v26.9.9") or the first line of `xray version`
+// ("Xray 26.9.9 (Xray, Penetrates Everything.) ...").
+var installedXrayVersion = regexp.MustCompile(`(?i)^(?:xray\s+)?v?([0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:$|\s|-)`)
 
 // kernelSupportsPostQuantumReality: Xray negotiates X25519MLKEM768 in REALITY
-// from 25.5.16 on. Mihomo needs server support for it, so an unknown installed
-// version does not count.
+// from 25.5.16 on (and requires it from 26.9.9 on). Mihomo needs server
+// support for it, so an unknown installed version does not count.
 func kernelSupportsPostQuantumReality(k *model.NodeKernel) bool {
 	if k == nil || k.KernelType != kernel.TypeXray {
 		return false
 	}
-	version := strings.TrimSpace(k.InstalledVersion)
-	return installedKernelVersion.MatchString(version) && !versionBelow(version, 25, 5, 16)
+	m := installedXrayVersion.FindStringSubmatch(strings.TrimSpace(k.InstalledVersion))
+	return m != nil && !versionBelow(m[1], 25, 5, 16)
 }

@@ -27,6 +27,8 @@ type Settings struct {
 	SnellMode string `json:"snellMode,omitempty"`
 	// Masquerade is the site Hysteria2 serves to non-clients (optional URL).
 	Masquerade string `json:"masquerade,omitempty"`
+	// ObfsPassword enables Hysteria2 Salamander obfuscation when non-empty.
+	ObfsPassword string `json:"obfsPassword,omitempty"`
 	// BackendPort is the loopback port a ShadowTLS-fronted Snell listens on.
 	BackendPort int `json:"backendPort,omitempty"`
 	// PortHopping is a UDP range ("20000-30000") the agent redirects to the
@@ -48,6 +50,10 @@ type Settings struct {
 	// first host of its /24.
 	PeerAddress string `json:"peerAddress,omitempty"`
 	MTU         int    `json:"mtu,omitempty"`
+
+	// Mieru client-side preferences carried in share links & Clash configs.
+	MieruMultiplexing  string `json:"mieruMultiplexing,omitempty"`
+	MieruHandshakeMode string `json:"mieruHandshakeMode,omitempty"`
 }
 
 // HopRange returns the port-hopping range, or 0, 0 when disabled.
@@ -187,6 +193,11 @@ func (in Inbound) Network() string {
 			return "tcp"
 		}
 		return "tcp,udp"
+	case ProtocolMieru:
+		if in.Transport.Type == TransportUDP {
+			return "udp"
+		}
+		return "tcp"
 	}
 	return "tcp"
 }
@@ -209,6 +220,13 @@ const (
 	defaultXHTTPMode           = "auto"
 	DefaultWireGuardPeer       = "10.66.66.2"
 	DefaultWireGuardMTU        = 1420
+	DefaultMieruMTU            = 1400
+	MieruMuxOff                = "MULTIPLEXING_OFF"
+	MieruMuxLow                = "MULTIPLEXING_LOW"
+	MieruMuxMiddle             = "MULTIPLEXING_MIDDLE"
+	MieruMuxHigh               = "MULTIPLEXING_HIGH"
+	MieruHandshakeStandard     = "HANDSHAKE_STANDARD"
+	MieruHandshakeNoWait       = "HANDSHAKE_NO_WAIT"
 	maxExtraConfigBytes        = 64 * 1024
 )
 
@@ -379,14 +397,20 @@ func normalizeSettings(in *Inbound) error {
 	s.Password = strings.TrimSpace(s.Password)
 	s.Method = strings.TrimSpace(s.Method)
 	s.Flow = strings.TrimSpace(s.Flow)
-	if in.Protocol != ProtocolNaive && in.Protocol != ProtocolSOCKS && in.Protocol != ProtocolHTTP {
+	if in.Protocol != ProtocolNaive && in.Protocol != ProtocolSOCKS && in.Protocol != ProtocolHTTP && in.Protocol != ProtocolMieru {
 		s.Username = ""
 	}
 	if in.Protocol != ProtocolVLESS {
 		s.Decryption = ""
 	}
 	if in.Protocol != ProtocolWireGuard {
-		s.PrivateKey, s.PublicKey, s.PeerPrivateKey, s.PeerPublicKey, s.PeerAddress, s.MTU = "", "", "", "", "", 0
+		s.PrivateKey, s.PublicKey, s.PeerPrivateKey, s.PeerPublicKey, s.PeerAddress = "", "", "", "", ""
+		if in.Protocol != ProtocolMieru {
+			s.MTU = 0
+		}
+	}
+	if in.Protocol != ProtocolMieru {
+		s.MieruMultiplexing, s.MieruHandshakeMode = "", ""
 	}
 	s.Encryption = ""
 
@@ -495,6 +519,11 @@ func normalizeSettings(in *Inbound) error {
 		if err := normalizeWireGuard(s); err != nil {
 			return err
 		}
+	case ProtocolMieru:
+		s.UUID, s.Method, s.Flow = "", "", ""
+		if err := normalizeMieru(s); err != nil {
+			return err
+		}
 	case ProtocolSnell:
 		if s.Password == "" {
 			s.Password = RandomPassword()
@@ -522,6 +551,10 @@ func normalizeSettings(in *Inbound) error {
 		s.UUID, s.Method, s.Flow = "", "", ""
 	}
 	if in.Protocol == ProtocolHysteria2 {
+		s.ObfsPassword = strings.TrimSpace(s.ObfsPassword)
+		if len(s.ObfsPassword) > 128 || strings.ContainsAny(s.ObfsPassword, " \t\r\n,\"") {
+			return errors.New("Salamander 混淆密码不能包含空白、逗号或引号，且长度不超过 128")
+		}
 		lo, hi, err := parseHopRange(s.PortHopping)
 		if err != nil {
 			return err
@@ -534,6 +567,7 @@ func normalizeSettings(in *Inbound) error {
 			s.PortHopping = fmt.Sprintf("%d-%d", lo, hi)
 		}
 	} else {
+		s.ObfsPassword = ""
 		s.PortHopping = ""
 	}
 	if in.Protocol == ProtocolSnell && in.Security.Type == SecurityShadowTLS {
@@ -623,6 +657,54 @@ func (s Settings) WireGuardServerAddress() string {
 	}
 	return fmt.Sprintf("%d.%d.%d.1", ip[0], ip[1], ip[2])
 }
+
+func normalizeMieru(s *Settings) error {
+	s.Username = strings.TrimSpace(s.Username)
+	if s.Username == "" {
+		s.Username = "u" + RealityShortID()[:8]
+	}
+	if !mieruUserPattern.MatchString(s.Username) {
+		return errors.New("Mieru 用户名只能包含字母、数字和 ._-@，长度 1-64")
+	}
+	if s.Password == "" {
+		s.Password = RandomPassword()
+	}
+	if len(s.Password) > 64 || strings.ContainsAny(s.Password, " \t\r\n") {
+		return errors.New("Mieru 密码不能包含空白字符，且长度不超过 64 字节")
+	}
+	for _, r := range s.Password {
+		if r < 0x20 || r == 0x7f {
+			return errors.New("Mieru 密码不能包含控制字符")
+		}
+	}
+	if s.MTU == 0 {
+		s.MTU = DefaultMieruMTU
+	}
+	if s.MTU < 1280 || s.MTU > 1500 {
+		return errors.New("Mieru MTU 应在 1280-1500 之间")
+	}
+	s.MieruMultiplexing = strings.ToUpper(strings.TrimSpace(s.MieruMultiplexing))
+	if s.MieruMultiplexing == "" {
+		s.MieruMultiplexing = MieruMuxLow
+	}
+	switch s.MieruMultiplexing {
+	case MieruMuxOff, MieruMuxLow, MieruMuxMiddle, MieruMuxHigh:
+	default:
+		return fmt.Errorf("不支持的 Mieru 多路复用等级 %s", s.MieruMultiplexing)
+	}
+	s.MieruHandshakeMode = strings.ToUpper(strings.TrimSpace(s.MieruHandshakeMode))
+	if s.MieruHandshakeMode == "" {
+		s.MieruHandshakeMode = MieruHandshakeStandard
+	}
+	switch s.MieruHandshakeMode {
+	case MieruHandshakeStandard, MieruHandshakeNoWait:
+	default:
+		return fmt.Errorf("不支持的 Mieru 握手模式 %s", s.MieruHandshakeMode)
+	}
+	return nil
+}
+
+var mieruUserPattern = regexp.MustCompile(`^[A-Za-z0-9._@-]{1,64}$`)
 
 var naiveUserPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 

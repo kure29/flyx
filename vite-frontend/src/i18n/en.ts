@@ -364,8 +364,8 @@ export const EN_DICT: Record<string, string> = {
   // ─── Servers / Node Hub ─────────────────────────────────────────────
   "装了 agent 的服务器：实时状态、监控和管理都在这里":
     "Managed servers running the agent: live status, monitoring, and control",
-  "服务器上安装的 Xray / sing-box / Snell 等内核，节点（入站）跑在内核上":
-    "Proxy kernels (Xray / sing-box / Snell) installed on servers to run nodes",
+  "服务器上安装的 Xray / sing-box / Snell / Mieru 等内核，节点（入站）跑在内核上":
+    "Proxy kernels (Xray / sing-box / Snell / Mieru) installed on servers to run nodes",
   内核: "Kernels",
   "装了 agent 的机器：搭建节点和中转、看状态和监控":
     "Servers with agent installed: build nodes, relays, and view monitoring",

@@ -838,7 +838,7 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 			return
 		}
 	}
-	if msg, err := h.inboundPortConflict(row.NodeID, in, row.ID); err != nil {
+	if msg, err := h.inboundPortConflict(row.NodeID, k.KernelType, in, row.ID); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	} else if msg != "" {
@@ -905,7 +905,8 @@ func boolToInt(b bool) int {
 func (h *Handler) pickFreeInboundPort(nodeID, excludeInboundID int64) (int, error) {
 	for i := 0; i < 64; i++ {
 		port := 20000 + rand.Intn(40000)
-		msg, err := h.inboundPortConflict(nodeID, kernel.Inbound{Port: port}, excludeInboundID)
+		// Leave Protocol empty so random port picking avoids both TCP and UDP occupants.
+		msg, err := h.inboundPortConflict(nodeID, "", kernel.Inbound{Port: port}, excludeInboundID)
 		if err != nil {
 			return 0, err
 		}
@@ -919,6 +920,7 @@ func (h *Handler) pickFreeInboundPort(nodeID, excludeInboundID int64) (int, erro
 // portSpan is a port range an inbound occupies on its node.
 type portSpan struct {
 	lo, hi int
+	net    string // "tcp", "udp", or "tcp,udp" (empty treated as both)
 	what   string
 }
 
@@ -931,25 +933,57 @@ func (s portSpan) String() string {
 
 func (s portSpan) overlaps(o portSpan) bool { return s.lo <= o.hi && o.lo <= s.hi }
 
+// networksOverlap reports whether two L4 protocol lists ("tcp", "udp",
+// "tcp,udp") share at least one protocol. Empty is treated as both.
+func networksOverlap(a, b string) bool {
+	aTCP, aUDP := networkFlags(a)
+	bTCP, bUDP := networkFlags(b)
+	return (aTCP && bTCP) || (aUDP && bUDP)
+}
+
+func networkFlags(net string) (tcp, udp bool) {
+	if strings.TrimSpace(net) == "" {
+		return true, true
+	}
+	for _, part := range strings.Split(net, ",") {
+		switch strings.ToLower(strings.TrimSpace(part)) {
+		case "tcp":
+			tcp = true
+		case "udp":
+			udp = true
+		}
+	}
+	if !tcp && !udp {
+		return true, true
+	}
+	return tcp, udp
+}
+
 // inboundSpans lists the ports an inbound needs: its listen port, the
-// loopback backend of a ShadowTLS front, and the port-hopping range.
-func inboundSpans(in kernel.Inbound) []portSpan {
-	spans := []portSpan{{in.Port, in.Port, "端口"}}
+// loopback backend of a ShadowTLS front, and the UDP port-hopping range.
+func inboundSpans(kernelType string, in kernel.Inbound) []portSpan {
+	net := ""
+	if in.Protocol != "" {
+		net = in.NetworkOn(kernelType)
+	}
+	spans := []portSpan{{lo: in.Port, hi: in.Port, net: net, what: "端口"}}
 	if bp := in.Settings.BackendPort; bp > 0 {
-		spans = append(spans, portSpan{bp, bp, "后端端口"})
+		spans = append(spans, portSpan{lo: bp, hi: bp, net: "tcp,udp", what: "后端端口"})
 	}
 	if lo, hi := in.HopRange(); lo > 0 {
-		spans = append(spans, portSpan{lo, hi, "端口跳跃范围"})
+		spans = append(spans, portSpan{lo: lo, hi: hi, net: "udp", what: "端口跳跃范围"})
 	}
 	return spans
 }
 
 // inboundPortConflict describes the first clash between the ports an
 // inbound needs and what already runs on the node ("" when there is none).
-func (h *Handler) inboundPortConflict(nodeID int64, in kernel.Inbound, excludeInboundID int64) (string, error) {
-	spans := inboundSpans(in)
+// TCP-only inbounds (e.g. VLESS-Reality) and UDP-only inbounds (e.g.
+// Hysteria2 / TUIC) may share a port number on the same node.
+func (h *Handler) inboundPortConflict(nodeID int64, kernelType string, in kernel.Inbound, excludeInboundID int64) (string, error) {
+	spans := inboundSpans(kernelType, in)
 	for _, sp := range spans {
-		occ, err := h.repo.NodePortRangeOccupant(nodeID, sp.lo, sp.hi, excludeInboundID)
+		occ, err := h.repo.NodeForwardOrTunnelPortRangeOccupant(nodeID, sp.lo, sp.hi)
 		if err != nil {
 			return "", err
 		}
@@ -975,18 +1009,32 @@ func (h *Handler) inboundPortConflict(nodeID int64, in kernel.Inbound, excludeIn
 	if err != nil {
 		return "", err
 	}
+	kernelTypes := make(map[int64]string)
+	if len(others) > 0 {
+		kernels, err := h.repo.ListNodeKernels(nodeID)
+		if err != nil {
+			return "", err
+		}
+		for _, nk := range kernels {
+			kernelTypes[nk.ID] = nk.KernelType
+		}
+	}
 	for _, row := range others {
 		if row.ID == excludeInboundID {
 			continue
 		}
-		other, err := inboundFromModel(row)
-		if err != nil {
-			continue
+		var otherSpans []portSpan
+		if other, err := inboundFromModel(row); err == nil {
+			otherSpans = inboundSpans(kernelTypes[row.KernelID], other)
+		} else if row.Port > 0 {
+			otherSpans = []portSpan{{lo: row.Port, hi: row.Port, net: "tcp,udp", what: "端口"}}
 		}
-		// Listen ports were checked by the query above; compare the rest.
-		for _, os := range inboundSpans(other)[1:] {
+		for _, os := range otherSpans {
 			for _, sp := range spans {
-				if sp.overlaps(os) {
+				if sp.overlaps(os) && networksOverlap(sp.net, os.net) {
+					if os.what == "端口" {
+						return fmt.Sprintf("%s 已被入站「%s」占用", sp, row.Name), nil
+					}
 					return fmt.Sprintf("%s 与入站「%s」的%s 冲突", sp, row.Name, os), nil
 				}
 			}
