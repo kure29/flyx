@@ -141,6 +141,7 @@ type Status struct {
 	Epoch        string         `json:"epoch"`
 	NftAvailable bool           `json:"nftAvailable"`
 	NftError     string         `json:"nftError,omitempty"`
+	Mux          *MuxState      `json:"mux,omitempty"`
 }
 
 type adapter struct {

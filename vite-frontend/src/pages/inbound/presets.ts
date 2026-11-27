@@ -134,6 +134,7 @@ export interface InboundForm {
   realityPrivateKey: string;
   realityShortIds: string;
   realityMinClientVer: string;
+  realityXver: string;
   shadowTlsPassword: string;
   acmeEmail: string;
   acmeDns: string;
@@ -142,6 +143,7 @@ export interface InboundForm {
   acmeDnsSet: boolean;
   shareAddressMode: "auto" | "ipv4" | "ipv6" | "custom";
   shareHost: string;
+  sharePort: string;
   remark: string;
   extra: string;
   relayOnly: boolean;
@@ -415,6 +417,7 @@ export function emptyForm(
     realityPrivateKey: "",
     realityShortIds: "",
     realityMinClientVer: "",
+    realityXver: "0",
     shadowTlsPassword: "",
     acmeEmail: "",
     acmeDns: "",
@@ -423,6 +426,7 @@ export function emptyForm(
     acmeDnsSet: false,
     shareAddressMode: "auto",
     shareHost: "",
+    sharePort: "",
     remark: "",
     extra: "",
     relayOnly: false,
@@ -537,6 +541,7 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     realityPrivateKey: item.security.realityPrivateKey ?? "",
     realityShortIds: (item.security.realityShortIds ?? []).join(","),
     realityMinClientVer: item.security.realityMinClientVer ?? "",
+    realityXver: String(item.security.realityXver ?? 0),
     shadowTlsPassword: item.security.shadowTlsPassword ?? "",
     acmeEmail: item.security.acmeEmail ?? "",
     acmeDns: item.security.acmeDns ?? "",
@@ -546,6 +551,7 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     shareAddressMode:
       item.shareAddressMode ?? (item.shareHost ? "custom" : "auto"),
     shareHost: item.shareHost,
+    sharePort: item.sharePort ? String(item.sharePort) : "",
     remark: item.remark,
     extra: item.extra,
     relayOnly: item.relayOnly,
@@ -737,6 +743,10 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
         form.securityType === "reality"
           ? form.realityMinClientVer.trim() || undefined
           : undefined,
+      realityXver:
+        form.securityType === "reality" && form.kernelType === "xray"
+          ? Number(form.realityXver) || 0
+          : undefined,
       shadowTlsPassword:
         form.securityType === "shadowtls"
           ? form.shadowTlsPassword.trim() || undefined
@@ -754,6 +764,7 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
     extra: form.extra.trim(),
     shareAddressMode: form.shareAddressMode,
     shareHost: form.shareAddressMode === "custom" ? form.shareHost.trim() : "",
+    sharePort: form.sharePort.trim() ? Number(form.sharePort) : 0,
     remark: form.remark.trim(),
     relayOnly: form.relayOnly || form.acceptProxyProtocol,
     acceptProxyProtocol: form.acceptProxyProtocol,

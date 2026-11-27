@@ -257,6 +257,7 @@ func autoMigrateModels(db *gorm.DB) error {
 		&model.TunnelQuality{},
 		&model.NodeKernel{},
 		&model.NodeInbound{},
+		&model.NodePortMux{},
 		&model.NodeInboundCounter{},
 		&model.CounterStream{},
 		&model.CounterEpoch{},

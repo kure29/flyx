@@ -38,6 +38,7 @@ type Manager struct {
 	instances   map[string]*instance
 	nft         *nftCounters
 	onlineIPs   *onlineIPTracker
+	mux         *sniMux
 	// lastNftErr is the last nftables sync failure logged (guarded by mu).
 	lastNftErr string
 }
@@ -66,10 +67,12 @@ func NewManager(baseDir string) *Manager {
 		instances: make(map[string]*instance),
 		nft:       newNftCounters(baseDir),
 		onlineIPs: newOnlineIPTracker(),
+		mux:       newSNIMux(),
 	}
 }
 
 func (m *Manager) statePath() string { return filepath.Join(m.baseDir, "state.json") }
+func (m *Manager) muxPath() string   { return filepath.Join(m.baseDir, "mux.json") }
 func (m *Manager) runDir(t string) string {
 	return filepath.Join(m.baseDir, t, "run")
 }
@@ -87,20 +90,62 @@ func (m *Manager) Restore() {
 }
 
 func (m *Manager) restore() {
-	b, err := os.ReadFile(m.statePath())
+	if b, err := os.ReadFile(m.statePath()); err == nil {
+		var reqs []ApplyRequest
+		if err := json.Unmarshal(b, &reqs); err != nil {
+			fmt.Printf("⚠️ 内核状态文件损坏: %v\n", err)
+		} else {
+			for _, req := range reqs {
+				if _, err := m.Apply(req); err != nil {
+					fmt.Printf("⚠️ 恢复内核 %s 失败: %v\n", req.Type, err)
+				}
+			}
+		}
+	}
+	m.restoreMux()
+}
+
+func (m *Manager) restoreMux() {
+	b, err := os.ReadFile(m.muxPath())
 	if err != nil {
 		return
 	}
-	var reqs []ApplyRequest
-	if err := json.Unmarshal(b, &reqs); err != nil {
-		fmt.Printf("⚠️ 内核状态文件损坏: %v\n", err)
+	var cfg MuxConfig
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		fmt.Printf("⚠️ 端口复用状态文件损坏: %v\n", err)
 		return
 	}
-	for _, req := range reqs {
-		if _, err := m.Apply(req); err != nil {
-			fmt.Printf("⚠️ 恢复内核 %s 失败: %v\n", req.Type, err)
-		}
+	if !cfg.Enabled {
+		return
 	}
+	if _, err := m.mux.apply(cfg); err != nil {
+		fmt.Printf("⚠️ 恢复端口复用失败: %v\n", err)
+	}
+}
+
+func (m *Manager) persistMux(cfg MuxConfig) {
+	if !cfg.Enabled {
+		_ = os.Remove(m.muxPath())
+		return
+	}
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(m.baseDir, 0o700); err != nil {
+		return
+	}
+	_ = writeFileAtomic(m.muxPath(), b, 0o600)
+}
+
+// ApplyMux starts, hot-reloads, or stops the node's TCP SNI multiplexer and
+// persists the configuration so it survives agent restarts.
+func (m *Manager) ApplyMux(cfg MuxConfig) (MuxState, error) {
+	st, err := m.mux.apply(cfg)
+	if err == nil {
+		m.persistMux(m.mux.config())
+	}
+	return st, err
 }
 
 func (m *Manager) persist() {
@@ -561,9 +606,11 @@ func (m *Manager) Status(logsFor string) Status {
 	m.mu.Unlock()
 	sort.Strings(types)
 
+	muxSt := m.mux.state()
 	out := Status{
 		Kernels: make([]State, 0, len(types)),
 		UserIPs: m.onlineIPs.Snapshot(time.Now()),
+		Mux:     &muxSt,
 	}
 	for _, t := range types {
 		out.Kernels = append(out.Kernels, m.state(t, t == logsFor))
@@ -598,6 +645,9 @@ func (m *Manager) Uninstall() error {
 }
 
 func (m *Manager) Shutdown() {
+	if m.mux != nil {
+		m.mux.stop()
+	}
 	m.mu.Lock()
 	insts := make([]*instance, 0, len(m.instances))
 	for _, inst := range m.instances {

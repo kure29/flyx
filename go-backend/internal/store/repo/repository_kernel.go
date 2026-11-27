@@ -38,9 +38,69 @@ func (r *Repository) ListKernelNodeIDs() ([]int64, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("repository not initialized")
 	}
-	var ids []int64
-	err := r.db.Model(&model.NodeKernel{}).Distinct("node_id").Order("node_id ASC").Pluck("node_id", &ids).Error
-	return ids, err
+	var kernelIDs []int64
+	if err := r.db.Model(&model.NodeKernel{}).Distinct("node_id").Order("node_id ASC").Pluck("node_id", &kernelIDs).Error; err != nil {
+		return nil, err
+	}
+	var muxIDs []int64
+	if err := r.db.Model(&model.NodePortMux{}).Where("enabled = ?", 1).Distinct("node_id").Order("node_id ASC").Pluck("node_id", &muxIDs).Error; err != nil {
+		return nil, err
+	}
+	seen := make(map[int64]bool, len(kernelIDs)+len(muxIDs))
+	out := make([]int64, 0, len(kernelIDs)+len(muxIDs))
+	for _, id := range kernelIDs {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, id := range muxIDs {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) GetNodePortMux(nodeID int64) (*model.NodePortMux, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var m model.NodePortMux
+	err := r.db.Where("node_id = ?", nodeID).First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &m, err
+}
+
+func (r *Repository) ListNodePortMuxes() ([]model.NodePortMux, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var rows []model.NodePortMux
+	return rows, r.db.Order("node_id ASC").Find(&rows).Error
+}
+
+func (r *Repository) UpsertNodePortMux(m *model.NodePortMux) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "node_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"enabled", "listen", "port", "rules", "fallback_target", "fallback_proxy",
+			"status", "last_error", "config_hash", "applied_hash", "updated_time",
+		}),
+	}).Create(m).Error
+}
+
+func (r *Repository) UpdateNodePortMuxFields(nodeID int64, fields map[string]interface{}) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	return r.db.Model(&model.NodePortMux{}).Where("node_id = ?", nodeID).Updates(fields).Error
 }
 
 func (r *Repository) GetNodeKernel(id int64) (*model.NodeKernel, error) {
@@ -122,6 +182,9 @@ func deleteNodeKernelsTx(tx *gorm.DB, nodeID int64) error {
 	if err := tx.Where("node_id = ?", nodeID).Delete(&model.NodeInbound{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("node_id = ?", nodeID).Delete(&model.NodePortMux{}).Error; err != nil {
+		return err
+	}
 	return tx.Where("node_id = ?", nodeID).Delete(&model.NodeKernel{}).Error
 }
 
@@ -181,6 +244,8 @@ func (r *Repository) SaveNodeInbound(in *model.NodeInbound) error {
 		"extra":                 in.Extra,
 		"share_host":            in.ShareHost,
 		"share_address_mode":    in.ShareAddressMode,
+		"share_port":            in.SharePort,
+		"mux_port":              in.MuxPort,
 		"remark":                in.Remark,
 		"relay_only":            in.RelayOnly,
 		"accept_proxy_protocol": in.AcceptProxyProtocol,
@@ -194,6 +259,16 @@ func (r *Repository) SaveNodeInbound(in *model.NodeInbound) error {
 		"rate_down_mbps":        in.RateDownMbps,
 		"outbound_ip_strategy":  in.OutboundIPStrategy,
 		"updated_time":          in.UpdatedTime,
+	}).Error
+}
+
+func (r *Repository) SetNodeInboundMuxPort(id int64, muxPort int, now int64) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	return r.db.Model(&model.NodeInbound{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"mux_port":     muxPort,
+		"updated_time": now,
 	}).Error
 }
 
@@ -229,7 +304,24 @@ func listNodeInboundPortsTx(tx *gorm.DB, nodeID int64, excludeInboundID int64) (
 	if excludeInboundID > 0 {
 		q = q.Where("id <> ?", excludeInboundID)
 	}
-	return ports, q.Pluck("port", &ports).Error
+	if err := q.Pluck("port", &ports).Error; err != nil {
+		return nil, err
+	}
+	var muxPorts []int
+	qm := tx.Model(&model.NodeInbound{}).Where("node_id = ? AND mux_port > 0", nodeID)
+	if excludeInboundID > 0 {
+		qm = qm.Where("id <> ?", excludeInboundID)
+	}
+	if err := qm.Pluck("mux_port", &muxPorts).Error; err != nil {
+		return nil, err
+	}
+	ports = append(ports, muxPorts...)
+	var portMux []int
+	if err := tx.Model(&model.NodePortMux{}).Where("node_id = ? AND enabled = 1 AND port > 0", nodeID).Pluck("port", &portMux).Error; err != nil {
+		return nil, err
+	}
+	ports = append(ports, portMux...)
+	return ports, nil
 }
 
 // NodePortOccupant names what already uses port on a node, or "" when free.
@@ -270,13 +362,13 @@ func (r *Repository) NodeForwardOrTunnelPortRangeOccupant(nodeID int64, lo, hi i
 }
 
 // NodePortRangeOccupant reports what listens on any port in [lo, hi] of a
-// node: an inbound, a forward or a tunnel ("" when free).
+// node: an inbound, a port mux, a forward or a tunnel ("" when free).
 func (r *Repository) NodePortRangeOccupant(nodeID int64, lo, hi int, excludeInboundID int64) (string, error) {
 	if r == nil || r.db == nil {
 		return "", errors.New("repository not initialized")
 	}
 	var count int64
-	q := r.db.Model(&model.NodeInbound{}).Where("node_id = ? AND port BETWEEN ? AND ?", nodeID, lo, hi)
+	q := r.db.Model(&model.NodeInbound{}).Where("node_id = ? AND ((port BETWEEN ? AND ?) OR (mux_port BETWEEN ? AND ?))", nodeID, lo, hi, lo, hi)
 	if excludeInboundID > 0 {
 		q = q.Where("id <> ?", excludeInboundID)
 	}
@@ -285,6 +377,12 @@ func (r *Repository) NodePortRangeOccupant(nodeID int64, lo, hi int, excludeInbo
 	}
 	if count > 0 {
 		return "其他节点服务", nil
+	}
+	if err := r.db.Model(&model.NodePortMux{}).Where("node_id = ? AND enabled = 1 AND port BETWEEN ? AND ?", nodeID, lo, hi).Count(&count).Error; err != nil {
+		return "", err
+	}
+	if count > 0 {
+		return "端口复用", nil
 	}
 	return r.NodeForwardOrTunnelPortRangeOccupant(nodeID, lo, hi)
 }

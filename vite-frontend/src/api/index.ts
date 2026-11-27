@@ -32,6 +32,8 @@ import type {
   KernelCapabilitiesApiData,
   KernelApiItem,
   KernelStateApiData,
+  NodePortMuxApiData,
+  NodePortMuxSavePayload,
   InboundApiItem,
   InboundProbe,
   LatencyTrend,
@@ -819,6 +821,12 @@ export const controlKernel = (
 ) => Network.post("/kernel/control", { id, action, force });
 export const getKernelLogs = (id: number) =>
   Network.post<KernelStateApiData>("/kernel/logs", { id });
+export const getNodePortMux = (nodeId: number) =>
+  Network.post<NodePortMuxApiData>("/node/port-mux/get", { nodeId });
+export const getNodePortMuxList = () =>
+  Network.post<NodePortMuxApiData[]>("/node/port-mux/list");
+export const saveNodePortMux = (data: NodePortMuxSavePayload) =>
+  Network.post<NodePortMuxApiData>("/node/port-mux/save", data);
 export const getInboundList = () =>
   Network.post<InboundApiItem[]>("/inbound/list");
 export const createInbound = (data: InboundMutationPayload) =>

@@ -186,4 +186,9 @@ func (h *Handler) refreshInboundWhitelist(inboundID int64) {
 	if err := h.applyKernel(row.KernelID, false); err != nil {
 		log.Printf("whitelist refresh failed inbound_id=%d err=%v", inboundID, err)
 	}
+	if row.MuxPort > 0 {
+		if err := h.syncNodePortMuxIfEnabled(row.NodeID); err != nil {
+			log.Printf("port mux whitelist refresh failed inbound_id=%d err=%v", inboundID, err)
+		}
+	}
 }

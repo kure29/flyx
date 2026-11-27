@@ -559,6 +559,7 @@ type InboundsBackup struct {
 	Kernels       []KernelBackup         `json:"kernels"`
 	Inbounds      []InboundBackup        `json:"inbounds"`
 	Relays        []InboundRelayBackup   `json:"relays"`
+	PortMuxes     []NodePortMuxBackup    `json:"portMuxes,omitempty"`
 	Counters      []InboundCounterBackup `json:"counters,omitempty"`
 	Subscriptions []SubscriptionBackup   `json:"subscriptions,omitempty"`
 	Sources       []RemoteSourceBackup   `json:"sources,omitempty"`
@@ -567,6 +568,17 @@ type InboundsBackup struct {
 	// Users are shared users from 3.0.10 backups; imported as share
 	// subscriptions.
 	Users []SubUserBackup `json:"users,omitempty"`
+}
+
+type NodePortMuxBackup struct {
+	NodeID         int64  `json:"nodeId"`
+	Enabled        int    `json:"enabled"`
+	Listen         string `json:"listen"`
+	Port           int    `json:"port"`
+	Rules          string `json:"rules"`
+	FallbackTarget string `json:"fallbackTarget,omitempty"`
+	FallbackProxy  int    `json:"fallbackProxy,omitempty"`
+	CreatedTime    int64  `json:"createdTime"`
 }
 
 // NodeGroupBackup keeps its id: subscriptions refer to it.
@@ -655,6 +667,8 @@ type InboundBackup struct {
 	Extra               string `json:"extra"`
 	ShareAddressMode    string `json:"shareAddressMode,omitempty"`
 	ShareHost           string `json:"shareHost"`
+	SharePort           int    `json:"sharePort,omitempty"`
+	MuxPort             int    `json:"muxPort,omitempty"`
 	Remark              string `json:"remark"`
 	RelayOnly           int    `json:"relayOnly"`
 	AcceptProxyProtocol int    `json:"acceptProxyProtocol"`

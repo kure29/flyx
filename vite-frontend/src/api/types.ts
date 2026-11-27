@@ -622,6 +622,7 @@ export interface InboundSecurity {
   realityPublicKey?: string;
   realityShortIds?: string[];
   realityMinClientVer?: string;
+  realityXver?: number;
   shadowTlsPassword?: string;
   acmeEmail?: string;
   acmeDns?: string;
@@ -629,6 +630,48 @@ export interface InboundSecurity {
   acmeDnsSecret?: string;
   /** List output only: DNS credentials are stored but not returned. */
   acmeDnsSet?: boolean;
+}
+
+export interface NodePortMuxRule {
+  sni: string;
+  target: string;
+  proxyProtocol?: boolean;
+  remark?: string;
+}
+
+export interface NodePortMuxInboundBinding {
+  id: number;
+  name: string;
+  kernelType: string;
+  protocol: string;
+  sni: string;
+  muxPort: number;
+  enabled: boolean;
+}
+
+export interface NodePortMuxApiData {
+  nodeId: number;
+  enabled: boolean;
+  listen: string;
+  port: number;
+  rules: NodePortMuxRule[];
+  fallbackTarget: string;
+  fallbackProxy: boolean;
+  status: string;
+  lastError: string;
+  synced: boolean;
+  updatedTime: number;
+  inbounds: NodePortMuxInboundBinding[];
+}
+
+export interface NodePortMuxSavePayload {
+  nodeId: number;
+  enabled: boolean;
+  listen: string;
+  port: number;
+  rules: NodePortMuxRule[];
+  fallbackTarget: string;
+  fallbackProxy: boolean;
 }
 
 export interface InboundProbe {
@@ -734,6 +777,8 @@ export interface InboundApiItem {
   shareAddressMode?: "auto" | "ipv4" | "ipv6" | "custom";
   shareAddress?: string;
   shareHost: string;
+  sharePort?: number;
+  muxPort?: number;
   remark: string;
   relayOnly: boolean;
   relayCount: number;
@@ -783,6 +828,7 @@ export interface InboundMutationPayload {
   extra: string;
   shareAddressMode?: "auto" | "ipv4" | "ipv6" | "custom";
   shareHost: string;
+  sharePort?: number;
   remark: string;
   relayOnly: boolean;
   acceptProxyProtocol: boolean;

@@ -122,6 +122,9 @@ type Security struct {
 	// defaults to 26.3.27 when unset, which locks out Mihomo/Clash (they
 	// report 1.8.2) and older mobile clients, so the panel always sets it.
 	RealityMinClientVer string `json:"realityMinClientVer,omitempty"`
+	// RealityXver sets Xray realitySettings.xver (0, 1, or 2) when sending
+	// PROXY protocol headers to a local fallback dest such as Caddy/Nginx.
+	RealityXver int `json:"realityXver,omitempty"`
 
 	// ShadowTLS v3: SNI is the handshake site, this is the shared secret.
 	ShadowTLSPassword string `json:"shadowTlsPassword,omitempty"`
@@ -751,6 +754,7 @@ func normalizeSecurity(in *Inbound) error {
 	case SecurityTLS:
 		sec.RealityDest, sec.RealityPrivateKey, sec.RealityPublicKey, sec.RealityShortIDs = "", "", "", nil
 		sec.RealityMinClientVer = ""
+		sec.RealityXver = 0
 		sec.ShadowTLSPassword = ""
 		quic := in.Protocol == ProtocolHysteria2 || in.Protocol == ProtocolTUIC
 		if quic {
@@ -799,6 +803,9 @@ func normalizeSecurity(in *Inbound) error {
 		sec.CertMode, sec.CertPEM, sec.KeyPEM, sec.CertFile, sec.KeyFile = "", "", "", "", ""
 		sec.ACMEEmail, sec.ACMEDNS, sec.ACMEDNSKey, sec.ACMEDNSSecret = "", "", "", ""
 		sec.ShadowTLSPassword = ""
+		if sec.RealityXver < 0 || sec.RealityXver > 2 {
+			return errors.New("Reality xver 仅支持 0、1 或 2")
+		}
 		if sec.SNI == "" {
 			sec.SNI = DefaultRealitySNI
 		}
