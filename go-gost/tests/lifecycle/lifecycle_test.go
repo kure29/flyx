@@ -38,14 +38,13 @@ func TestAgentStartupAndFailedReloadPreservePanelRules(t *testing.T) {
 		t.Fatalf("build: %v\n%s", err, output)
 	}
 	dir := t.TempDir()
-	early, baseline := address(t), address(t)
-	apiAddr := address(t)
 	panelConnections := make(chan *websocket.Conn, 2)
 	wsReady := make(chan struct{})
 	responses := make(chan map[string]any, 8)
 	var ready sync.Once
 	upgrader := websocket.Upgrader{}
-	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var early string
+	panel := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/system-info" {
 			w.Write([]byte("ok"))
 			return
@@ -71,6 +70,9 @@ func TestAgentStartupAndFailedReloadPreservePanelRules(t *testing.T) {
 			}
 		}
 	}))
+	addrs := addresses(t, 3)
+	early, baseline, apiAddr := addrs[0], addrs[1], addrs[2]
+	panel.Start()
 	defer panel.Close()
 	writeJSON(t, filepath.Join(dir, "config.json"), map[string]any{"addr": panel.URL, "secret": "audit-secret", "http": 1, "tls": 1, "socks": 1})
 	fifo := filepath.Join(dir, "delayed.json")
@@ -228,12 +230,27 @@ func service(name, addr string) map[string]any {
 }
 func address(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	return addresses(t, 1)[0]
+}
+func addresses(t *testing.T, n int) []string {
+	t.Helper()
+	listeners := make([]net.Listener, 0, n)
+	addrs := make([]string, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			for _, open := range listeners {
+				open.Close()
+			}
+			t.Fatal(err)
+		}
+		listeners = append(listeners, l)
+		addrs = append(addrs, l.Addr().String())
 	}
-	defer l.Close()
-	return l.Addr().String()
+	for _, l := range listeners {
+		l.Close()
+	}
+	return addrs
 }
 func listening(addr string) bool {
 	c, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
