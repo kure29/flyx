@@ -23,8 +23,10 @@ function getPayloadFromToken(token: string): JWTPayload | null {
 
     if (parts.length !== 3) return null;
 
-    const encodedPayload = parts[1];
-    const decodedPayload = atob(encodedPayload);
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+    const decodedPayload = new TextDecoder().decode(bytes);
 
     return JSON.parse(decodedPayload) as JWTPayload;
   } catch {
