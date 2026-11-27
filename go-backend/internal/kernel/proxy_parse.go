@@ -361,6 +361,9 @@ func parseUserURI(typ, rest string) (Proxy, error) {
 				if ro.str("public-key") == "" {
 					return nil, errors.New("Reality 链接缺少公钥 pbk")
 				}
+				if typ == "vless" && (q.Get("support-x25519mlkem768") == "1" || strings.EqualFold(q.Get("support-x25519mlkem768"), "true")) {
+					ro["support-x25519mlkem768"] = true
+				}
 				p["reality-opts"] = map[string]interface{}(ro)
 				if p.str("client-fingerprint") == "" {
 					p["client-fingerprint"] = "chrome"
@@ -708,6 +711,58 @@ func parseSurgeLine(line string) (Proxy, error) {
 			p["plugin-opts"] = map[string]interface{}(po)
 		}
 		applySurgeShadowTLS(p, kv)
+	case "vless":
+		p["type"] = "vless"
+		uuid := kv.str("username")
+		if uuid == "" && len(positional) >= 1 { // Loon: vless, host, port, "uuid", ...
+			uuid = strings.Trim(positional[0], `"`)
+		}
+		p["uuid"] = uuid
+		p["udp"] = true
+		p.set("flow", kv.str("flow"))
+		if enc := kv.str("encryption"); enc != "" && enc != "none" {
+			p["encryption"] = enc
+		}
+		sni := firstNonEmptyString(kv.str("sni"), kv.str("tls-name"))
+		if pbk := firstNonEmptyString(kv.str("reality-public-key"), kv.str("public-key")); pbk != "" {
+			p["tls"] = true
+			p.set("servername", sni)
+			ro := Proxy{"public-key": pbk}
+			ro.set("short-id", firstNonEmptyString(kv.str("reality-short-id"), kv.str("short-id")))
+			p["reality-opts"] = map[string]interface{}(ro)
+			p["client-fingerprint"] = firstNonEmptyString(kv.str("client-fingerprint"), "chrome")
+		} else if kv.flag("tls") || kv.flag("over-tls") {
+			p["tls"] = true
+			p.set("servername", sni)
+			p.set("skip-cert-verify", kv.flag("skip-cert-verify"))
+			p.set("alpn", kv.strs("alpn"))
+			p.set("client-fingerprint", kv.str("client-fingerprint"))
+		}
+		switch {
+		case kv.flag("xhttp") || kv.str("transport") == "xhttp":
+			p["network"] = "xhttp"
+			xo := Proxy{}
+			xo.set("path", firstNonEmptyString(kv.str("xhttp-path"), kv.str("path")))
+			xo.set("host", firstNonEmptyString(kv.str("xhttp-host"), kv.str("host")))
+			xo.set("mode", kv.str("xhttp-mode"))
+			p.set("xhttp-opts", xo)
+		case kv.flag("grpc") || kv.str("transport") == "grpc":
+			p["network"] = "grpc"
+			goOpts := Proxy{}
+			goOpts.set("grpc-service-name", kv.str("grpc-service-name"))
+			p.set("grpc-opts", goOpts)
+		default:
+			applySurgeWS(p, kv)
+			if kv.flag("ws-http-upgrade") {
+				wo := p.sub("ws-opts")
+				if len(wo) == 0 {
+					wo = Proxy{}
+				}
+				wo["v2ray-http-upgrade"] = true
+				p["network"] = "ws"
+				p["ws-opts"] = map[string]interface{}(wo)
+			}
+		}
 	case "vmess":
 		p["type"] = "vmess"
 		p["uuid"] = kv.str("username")

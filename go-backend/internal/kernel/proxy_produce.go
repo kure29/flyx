@@ -90,6 +90,9 @@ func proxyURI(e Endpoint) (string, bool) {
 			ro := p.sub("reality-opts")
 			q.Set("pbk", ro.str("public-key"))
 			setIf(q, "sid", ro.str("short-id"))
+			if p.Type() == "vless" && ro.flag("support-x25519mlkem768") {
+				q.Set("support-x25519mlkem768", "true")
+			}
 		case p.usesTLS():
 			q.Set("security", "tls")
 		default:
@@ -522,6 +525,62 @@ func proxySurge(e Endpoint) (string, bool) {
 			}
 		case "shadow-tls":
 			shadowTLS(po)
+		default:
+			return "", false
+		}
+	case "vless":
+		parts = append(parts, "vless", host, port, "username="+p.str("uuid"))
+		if f := p.str("flow"); f != "" {
+			parts = append(parts, "flow="+f)
+		}
+		if hasVLESSEncryption(p) {
+			parts = append(parts, "encryption="+p.str("encryption"))
+		}
+		if ro := p.sub("reality-opts"); len(ro) > 0 {
+			if sni := p.serverName(); sni != "" {
+				parts = append(parts, "sni="+sni)
+			}
+			parts = append(parts, "reality-public-key="+ro.str("public-key"))
+			if sid := ro.str("short-id"); sid != "" {
+				parts = append(parts, "reality-short-id="+sid)
+			}
+		} else if p.usesTLS() {
+			parts = append(parts, "tls=true")
+			tlsTail()
+			if alpn := p.strs("alpn"); len(alpn) > 0 {
+				parts = append(parts, "alpn="+strings.Join(alpn, ","))
+			}
+		}
+		switch p.network() {
+		case "tcp":
+		case "ws":
+			h, path, _, _ := transportFields(p)
+			parts = append(parts, "ws=true")
+			if p.sub("ws-opts").flag("v2ray-http-upgrade") {
+				parts = append(parts, "ws-http-upgrade=true")
+			}
+			parts = append(parts, "ws-path="+firstNonEmptyString(path, "/"))
+			if h != "" {
+				parts = append(parts, "ws-headers=Host:"+h)
+			}
+		case "grpc":
+			if !p.usesTLS() {
+				return "", false
+			}
+			_, _, service, _ := transportFields(p)
+			parts = append(parts, "grpc=true")
+			if service != "" {
+				parts = append(parts, "grpc-service-name="+service)
+			}
+		case "xhttp":
+			h, path, _, mode := transportFields(p)
+			parts = append(parts, "xhttp=true", "xhttp-path="+firstNonEmptyString(path, "/"))
+			if h != "" {
+				parts = append(parts, "xhttp-host="+h)
+			}
+			if mode != "" && mode != defaultXHTTPMode {
+				parts = append(parts, "xhttp-mode="+mode)
+			}
 		default:
 			return "", false
 		}

@@ -90,6 +90,7 @@ export interface InboundForm {
   snellVersion: string;
   snellMode: string;
   masquerade: string;
+  obfsPassword: string;
   backendPort: number;
   portHopping: string;
   username: string;
@@ -187,6 +188,15 @@ export const PRESETS: Preset[] = [
     protocol: "vless",
     transport: "xhttp",
     security: "reality",
+  },
+  {
+    key: "vless-xhttp-tls",
+    label: "VLESS + XHTTP + TLS（CDN）",
+    description: "XHTTP + TLS，适合套 Cloudflare 等 CDN 使用",
+    protocol: "vless",
+    transport: "xhttp",
+    security: "tls",
+    needsDomain: true,
   },
   {
     key: "ss2022",
@@ -340,6 +350,7 @@ export function emptyForm(
     snellVersion: "",
     snellMode: "",
     masquerade: "",
+    obfsPassword: "",
     backendPort: 0,
     portHopping: "",
     username: "",
@@ -451,6 +462,7 @@ export function formFromItem(item: InboundApiItem): InboundForm {
       : "",
     snellMode: item.settings.snellMode ?? "",
     masquerade: item.settings.masquerade ?? "",
+    obfsPassword: item.settings.obfsPassword ?? "",
     backendPort: item.settings.backendPort ?? 0,
     portHopping: item.settings.portHopping ?? "",
     username: item.settings.username ?? "",
@@ -608,6 +620,10 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
           : undefined,
       masquerade:
         form.protocol === "hysteria2" ? form.masquerade.trim() : undefined,
+      obfsPassword:
+        form.protocol === "hysteria2"
+          ? form.obfsPassword.trim() || undefined
+          : undefined,
       backendPort: form.backendPort || undefined,
       portHopping:
         form.protocol === "hysteria2"
@@ -735,6 +751,9 @@ export function describeInbound(item: InboundApiItem): string {
   }
   if (item.security.certMode === "acme") {
     parts.push("ACME");
+  }
+  if (item.settings.obfsPassword) {
+    parts.push("Salamander");
   }
   if (item.settings.portHopping) {
     parts.push("端口跳跃");

@@ -297,6 +297,13 @@ export function InboundFormModal({
         return "端口跳跃格式为 起始-结束（1024-65535），例如 20000-30000";
       }
     }
+    if (form.protocol === "hysteria2" && form.obfsPassword.trim()) {
+      const pw = form.obfsPassword.trim();
+
+      if (pw.length > 128 || /[\s,"]/.test(pw)) {
+        return "Salamander 混淆密码不能包含空白、逗号或引号，且长度不超过 128";
+      }
+    }
     if (form.securityType === "tls" && certMode === "file") {
       if (!form.certFile.trim() || !form.keyFile.trim()) {
         return "请填写证书和私钥在服务器上的路径";
@@ -769,8 +776,8 @@ export function InboundFormModal({
                           </p>
                           <p className="text-xs text-default-500">
                             不用证书也能防探测，密钥自动生成。客户端需要 Xray
-                            25.9+（v2rayN 等）或 Mihomo；sing-box、Surge
-                            等客户端的订阅里会略过它
+                            25.9+（v2rayN 等）、Mihomo 或 Surge
+                            6+；sing-box、Loon 等客户端的订阅里会略过它
                           </p>
                         </div>
                       </div>
@@ -935,6 +942,38 @@ export function InboundFormModal({
                         value={form.masquerade}
                         variant="bordered"
                         onChange={(e) => set("masquerade", e.target.value)}
+                      />
+                    )}
+                    {form.protocol === "hysteria2" && (
+                      <Input
+                        description="留空不启用；启用后流量经 Salamander 混淆，需客户端支持（启用后上方网页伪装将失效）"
+                        endContent={
+                          <button
+                            className="whitespace-nowrap text-xs text-primary hover:underline"
+                            type="button"
+                            onClick={() => {
+                              const chars =
+                                "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+                              const bytes = new Uint8Array(16);
+
+                              crypto.getRandomValues(bytes);
+                              set(
+                                "obfsPassword",
+                                Array.from(
+                                  bytes,
+                                  (b) => chars[b % chars.length],
+                                ).join(""),
+                              );
+                            }}
+                          >
+                            随机生成
+                          </button>
+                        }
+                        label="Salamander 混淆密码（可选）"
+                        placeholder="留空不启用"
+                        value={form.obfsPassword}
+                        variant="bordered"
+                        onChange={(e) => set("obfsPassword", e.target.value)}
                       />
                     )}
                     {form.protocol === "hysteria2" && (

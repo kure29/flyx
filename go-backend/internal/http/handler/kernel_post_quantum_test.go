@@ -14,13 +14,16 @@ func TestKernelSupportsPostQuantumReality(t *testing.T) {
 		{"xray", "25.5.16", true},
 		{"xray", "v25.10.15", true},
 		{"xray", "26.1", true},
+		{"xray", "Xray 25.10.15", true},
+		{"xray", "Xray 26.9.9 (Xray, Penetrates Everything.) abc1234 (go1.25.0 linux/amd64)", true},
+		{"xray", "Xray 25.5.15 (Xray, Penetrates Everything.)", false},
 		{"xray", "25.5.15", false},
 		{"xray", "25.4", false},
 		{"xray", "1.8.24", false},
 		// Unknown installed versions do not count: Mihomo needs server support.
 		{"xray", "", false},
 		{"xray", "latest", false},
-		{"xray", "Xray 25.10.15", false},
+		{"xray", "Xray custom", false},
 		{"singbox", "1.12.0", false},
 		{"sing-box", "1.13.0", false},
 	} {

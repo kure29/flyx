@@ -195,6 +195,7 @@ function detailRows(item: InboundApiItem): Array<[string, string]> {
   if (s.snellVersion) rows.push(["Snell 版本", `v${s.snellVersion}`]);
   if (s.snellMode) rows.push(["流量整形", s.snellMode]);
   if (s.masquerade) rows.push(["伪装网站", s.masquerade]);
+  if (s.obfsPassword) rows.push(["Salamander 混淆密码", s.obfsPassword]);
   if (s.portHopping) rows.push(["端口跳跃", `${s.portHopping}（UDP）`]);
   if (t.path) rows.push(["路径", t.path]);
   if (t.host) rows.push(["Host", t.host]);

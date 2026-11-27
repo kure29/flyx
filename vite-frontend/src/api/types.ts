@@ -584,6 +584,7 @@ export interface InboundSettings {
   /** Snell v6 traffic shaping: unset (default) or "unshaped". */
   snellMode?: string;
   masquerade?: string;
+  obfsPassword?: string;
   backendPort?: number;
   portHopping?: string;
   username?: string;

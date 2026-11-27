@@ -182,6 +182,9 @@ func singboxInbounds(in Inbound, acme *acmeProviders) ([]interface{}, error) {
 		item["type"] = "hysteria2"
 		item["users"] = []interface{}{obj{"password": s.Password}}
 		item["ignore_client_bandwidth"] = true
+		if s.ObfsPassword != "" {
+			item["obfs"] = obj{"type": "salamander", "password": s.ObfsPassword}
+		}
 		if s.Masquerade != "" {
 			item["masquerade"] = s.Masquerade
 		}

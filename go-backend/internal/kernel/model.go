@@ -27,6 +27,8 @@ type Settings struct {
 	SnellMode string `json:"snellMode,omitempty"`
 	// Masquerade is the site Hysteria2 serves to non-clients (optional URL).
 	Masquerade string `json:"masquerade,omitempty"`
+	// ObfsPassword enables Hysteria2 Salamander obfuscation when non-empty.
+	ObfsPassword string `json:"obfsPassword,omitempty"`
 	// BackendPort is the loopback port a ShadowTLS-fronted Snell listens on.
 	BackendPort int `json:"backendPort,omitempty"`
 	// PortHopping is a UDP range ("20000-30000") the agent redirects to the
@@ -522,6 +524,10 @@ func normalizeSettings(in *Inbound) error {
 		s.UUID, s.Method, s.Flow = "", "", ""
 	}
 	if in.Protocol == ProtocolHysteria2 {
+		s.ObfsPassword = strings.TrimSpace(s.ObfsPassword)
+		if len(s.ObfsPassword) > 128 || strings.ContainsAny(s.ObfsPassword, " \t\r\n,\"") {
+			return errors.New("Salamander 混淆密码不能包含空白、逗号或引号，且长度不超过 128")
+		}
 		lo, hi, err := parseHopRange(s.PortHopping)
 		if err != nil {
 			return err
@@ -534,6 +540,7 @@ func normalizeSettings(in *Inbound) error {
 			s.PortHopping = fmt.Sprintf("%d-%d", lo, hi)
 		}
 	} else {
+		s.ObfsPassword = ""
 		s.PortHopping = ""
 	}
 	if in.Protocol == ProtocolSnell && in.Security.Type == SecurityShadowTLS {
