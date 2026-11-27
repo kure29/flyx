@@ -318,38 +318,51 @@ func (h *Handler) createRelayForward(userID int64, name string, tunnel *tunnelRe
 			return 0, err
 		}
 	}
-	port := inPort
-	if port <= 0 {
-		port = h.pickTunnelPort(tunnel.ID)
-	}
-	if port <= 0 || port > 65535 {
-		return 0, errors.New("没有可用的入口端口")
-	}
-	for _, nodeID := range entryNodes {
-		node, nodeErr := h.getNodeRecord(nodeID)
-		if nodeErr != nil {
-			continue
-		}
-		if err := validateRemoteNodePort(node, port); err != nil {
-			return 0, err
-		}
-		if err := validateLocalNodePort(node, port); err != nil {
-			return 0, err
-		}
-		if err := h.validateForwardPortAvailability(node, port, 0); err != nil {
-			return 0, err
-		}
-	}
+	var (
+		forwardID int64
+		createErr error
+	)
+	func() {
+		h.forwardPortMu.Lock()
+		defer h.forwardPortMu.Unlock()
 
-	now := time.Now().UnixMilli()
-	userName := h.repo.GetUsernameByID(userID)
-	if userName == "" {
-		userName = "admin"
-	}
-	forwardID, err := h.repo.CreateForwardTx(userID, userName, name, tunnel.ID, remoteAddr, "fifo", now,
-		h.repo.NextIndex("forward"), entryNodes, port, "", 0, 0, proxyProtocolSend)
-	if err != nil {
-		return 0, err
+		port := inPort
+		if port <= 0 {
+			port = h.pickTunnelPort(tunnel.ID)
+		}
+		if port <= 0 || port > 65535 {
+			createErr = errors.New("没有可用的入口端口")
+			return
+		}
+		for _, nodeID := range entryNodes {
+			node, nodeErr := h.getNodeRecord(nodeID)
+			if nodeErr != nil {
+				continue
+			}
+			if err := validateRemoteNodePort(node, port); err != nil {
+				createErr = err
+				return
+			}
+			if err := validateLocalNodePort(node, port); err != nil {
+				createErr = err
+				return
+			}
+			if err := h.validateForwardPortAvailability(node, port, 0); err != nil {
+				createErr = err
+				return
+			}
+		}
+
+		now := time.Now().UnixMilli()
+		userName := h.repo.GetUsernameByID(userID)
+		if userName == "" {
+			userName = "admin"
+		}
+		forwardID, createErr = h.repo.CreateForwardTx(userID, userName, name, tunnel.ID, remoteAddr, "fifo", now,
+			h.repo.NextIndex("forward"), entryNodes, port, "", 0, 0, proxyProtocolSend)
+	}()
+	if createErr != nil {
+		return 0, createErr
 	}
 	created, err := h.getForwardRecord(forwardID)
 	if err != nil {
@@ -365,6 +378,9 @@ func (h *Handler) createRelayForward(userID int64, name string, tunnel *tunnelRe
 	}
 	if err := h.syncForwardServices(created, "UpdateService", true); err != nil {
 		_ = h.deleteForwardByID(forwardID)
+		if tunnelIsRealm(tunnel) && len(entryNodes) > 1 {
+			_, _ = h.syncRealmNodes(entryNodes, nil)
+		}
 		return 0, err
 	}
 	return forwardID, nil

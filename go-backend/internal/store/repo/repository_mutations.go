@@ -684,6 +684,13 @@ func (r *Repository) GetUsedPortsOnNodeAsMap(nodeID int64) (map[int]bool, error)
 	for _, p := range chainPorts {
 		used[p] = true
 	}
+	inboundPorts, err := listNodeInboundPortsTx(r.db, nodeID, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range inboundPorts {
+		used[p] = true
+	}
 	return used, nil
 }
 

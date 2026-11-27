@@ -64,6 +64,7 @@ export interface ForwardApiItem {
   proxyProtocol?: number;
   proxyProtocolReceive?: number;
   proxyProtocolSend?: number;
+  updatedTime?: number;
   inx?: number;
   [key: string]: unknown;
 }
