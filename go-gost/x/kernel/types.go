@@ -124,13 +124,22 @@ type UserCounter struct {
 	Bytes int64  `json:"bytes"`
 }
 
+// UserOnlineIP is one client IP recently observed on a subscription user's
+// connection in this agent's sliding window.
+type UserOnlineIP struct {
+	ID       int64  `json:"id"`
+	IP       string `json:"ip"`
+	LastSeen int64  `json:"lastSeen"`
+}
+
 type Status struct {
-	Kernels      []State       `json:"kernels"`
-	Counters     []Counter     `json:"counters"`
-	Users        []UserCounter `json:"users,omitempty"`
-	Epoch        string        `json:"epoch"`
-	NftAvailable bool          `json:"nftAvailable"`
-	NftError     string        `json:"nftError,omitempty"`
+	Kernels      []State        `json:"kernels"`
+	Counters     []Counter      `json:"counters"`
+	Users        []UserCounter  `json:"users,omitempty"`
+	UserIPs      []UserOnlineIP `json:"userIps,omitempty"`
+	Epoch        string         `json:"epoch"`
+	NftAvailable bool           `json:"nftAvailable"`
+	NftError     string         `json:"nftError,omitempty"`
 }
 
 type adapter struct {

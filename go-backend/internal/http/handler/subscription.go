@@ -264,7 +264,7 @@ func newUUID() string {
 // subActive reports whether the link works (and, for share subscriptions,
 // whether its credentials must be on the kernels).
 func subActive(s *model.Subscription, now time.Time) bool {
-	return s.Enabled == 1 && (s.ExpireTime == 0 || s.ExpireTime > now.UnixMilli()) && !subOverQuota(s)
+	return s.Enabled == 1 && (s.ExpireTime == 0 || s.ExpireTime > now.UnixMilli()) && !subOverQuota(s) && !subIPSuspended(s, now)
 }
 
 // subInactiveReason is why the link no longer works, as the name of the
@@ -276,6 +276,8 @@ func subInactiveReason(s *model.Subscription, now time.Time) string {
 		return ""
 	case s.Enabled != 1:
 		return "⚠️ 订阅已停用，请联系管理员"
+	case subIPSuspended(s, now):
+		return fmt.Sprintf("⚠️ 在线 IP 超限，暂停至 %s", time.UnixMilli(s.IPSuspendedUntil).Format("15:04"))
 	case subOverQuota(s):
 		return "⚠️ 流量已用完，请联系管理员"
 	}
@@ -350,13 +352,22 @@ func kernelUser(s *model.Subscription) kernel.User {
 // activeUsersByInbound maps inbound ids to the share subscriptions whose
 // credentials the kernels must currently accept.
 func (h *Handler) activeUsersByInbound(now time.Time) map[int64][]kernel.User {
+	users, _ := h.activeUsersByInboundWithTracking(now)
+	return users
+}
+
+// activeUsersByInboundWithTracking also reports which inbounds serve at least
+// one active share subscription with MaxOnlineIPs > 0 so sing-box kernels can
+// enable info-level connection logging only where needed.
+func (h *Handler) activeUsersByInboundWithTracking(now time.Time) (map[int64][]kernel.User, map[int64]bool) {
 	subs, err := h.repo.ListSubscriptions()
 	if err != nil {
 		log.Printf("subscription lookup failed: %v", err)
-		return nil
+		return nil, nil
 	}
 	var c *subContext
 	out := map[int64][]kernel.User{}
+	tracked := map[int64]bool{}
 	for i := range subs {
 		s := &subs[i]
 		if !isShare(s) || !subActive(s, now) {
@@ -364,14 +375,17 @@ func (h *Handler) activeUsersByInbound(now time.Time) map[int64][]kernel.User {
 		}
 		if c == nil {
 			if c, err = h.loadSubContext(); err != nil {
-				return nil
+				return nil, nil
 			}
 		}
 		for _, id := range c.inboundIDs(s) {
 			out[id] = append(out[id], kernelUser(s))
+			if s.MaxOnlineIPs > 0 {
+				tracked[id] = true
+			}
 		}
 	}
-	return out
+	return out, tracked
 }
 
 // applyKernelsForInbounds pushes the kernels serving the given inbounds,
@@ -416,6 +430,11 @@ func (h *Handler) syncSubscriptions(now time.Time) {
 				if h.notifier != nil {
 					h.notifier.clearAlerts(fmt.Sprintf("subflow:%d:", s.ID))
 				}
+			}
+		}
+		if s.IPSuspendedUntil > 0 && !subIPSuspended(s, now) {
+			if err := h.repo.SetSubscriptionIPSuspendedUntil(s.ID, 0, now.UnixMilli()); err == nil {
+				s.IPSuspendedUntil = 0
 			}
 		}
 		active := boolToInt(isShare(s) && subActive(s, now))
@@ -481,6 +500,14 @@ type subscriptionView struct {
 	OverQuota     bool  `json:"overQuota"`
 	// TrafficSince is when the traffic above started counting (unix ms).
 	TrafficSince int64 `json:"trafficSince"`
+	// Online IP protection & 24h pull audit.
+	MaxOnlineIPs     int    `json:"maxOnlineIps"`
+	IPAction         string `json:"ipAction"`
+	IPSuspendMinutes int    `json:"ipSuspendMinutes"`
+	IPSuspendedUntil int64  `json:"ipSuspendedUntil"`
+	MaxPullIPs       int    `json:"maxPullIps"`
+	OnlineIPCount    int    `json:"onlineIpCount"`
+	PullIPCount24h   int    `json:"pullIpCount24h"`
 	// UserID / UserName: the panel user it is assigned to (0 = none).
 	UserID   int64  `json:"userId"`
 	UserName string `json:"userName,omitempty"`
@@ -549,6 +576,20 @@ func (h *Handler) withUserName(v subscriptionView, names map[int64]string) subsc
 }
 
 func (h *Handler) subscriptionView(s *model.Subscription, c *subContext, now time.Time) subscriptionView {
+	onlineCount := 0
+	if store := h.onlineIPStore(); store != nil {
+		onlineCount = len(store.onlineIPsForSub(s.ID, now))
+	}
+	pullCount := 0
+	if h.repo != nil && s.ID > 0 {
+		if recentIPs, err := h.repo.ListRecentSubscriptionPullIPs(s.ID, now.Add(-subPullWindow).UnixMilli()); err == nil {
+			pullCount = countDistinctSubscriptionIPs(recentIPs)
+		}
+	}
+	return h.subscriptionViewWithIPStats(s, c, now, onlineCount, pullCount)
+}
+
+func (h *Handler) subscriptionViewWithIPStats(s *model.Subscription, c *subContext, now time.Time, onlineCount, pullCount int) subscriptionView {
 	ids := c.inboundIDs(s)
 	byID := make(map[int64]model.NodeInbound, len(c.rows))
 	for _, r := range c.rows {
@@ -570,6 +611,10 @@ func (h *Handler) subscriptionView(s *model.Subscription, c *subContext, now tim
 		groupIDs = append(groupIDs, g.ID)
 	}
 	pipe := parsePipeline(s.Options)
+	suspendedUntil := int64(0)
+	if subIPSuspended(s, now) {
+		suspendedUntil = s.IPSuspendedUntil
+	}
 	return subscriptionView{
 		ID: s.ID, Name: s.Name, Kind: s.Kind, Token: s.Token, Path: "/api/v1/open_api/sub/" + s.Token,
 		GroupIDs: groupIDs, SharedIDs: shared, Options: pipe,
@@ -578,6 +623,9 @@ func (h *Handler) subscriptionView(s *model.Subscription, c *subContext, now tim
 		NodeCount:   len(kernel.ApplySubOptions(h.subNodes(c, s), pipe.options())),
 		UploadBytes: s.UploadBytes, DownloadBytes: s.DownloadBytes, TrafficLimit: s.TrafficLimit,
 		ResetDay: s.ResetDay, OverQuota: subOverQuota(s), UserID: s.UserID, TrafficSince: subTrafficSince(s),
+		MaxOnlineIPs: s.MaxOnlineIPs, IPAction: effectiveIPAction(s.IPAction),
+		IPSuspendMinutes: effectiveIPSuspendMinutes(s.IPSuspendMinutes), IPSuspendedUntil: suspendedUntil,
+		MaxPullIPs: s.MaxPullIPs, OnlineIPCount: onlineCount, PullIPCount24h: pullCount,
 	}
 }
 
@@ -607,9 +655,13 @@ func (h *Handler) subscriptionList(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	names, _ := h.repo.UserNames()
+	onlineCounts := h.onlineIPStore().onlineIPCounts(now)
+	recentPullBySub, _ := h.repo.ListAllRecentSubscriptionPullIPs(now.Add(-subPullWindow).UnixMilli())
 	items := make([]subscriptionView, 0, len(subs))
 	for i := range subs {
-		items = append(items, h.withUserName(h.subscriptionView(&subs[i], c, now), names))
+		s := &subs[i]
+		pullCount := countDistinctSubscriptionIPs(recentPullBySub[s.ID])
+		items = append(items, h.withUserName(h.subscriptionViewWithIPStats(s, c, now, onlineCounts[s.ID], pullCount), names))
 	}
 	response.WriteJSON(w, response.OK(map[string]interface{}{
 		"items":      items,
@@ -631,9 +683,14 @@ type subscriptionRequest struct {
 	Group      *string     `json:"group"`
 	Tags       *[]string   `json:"tags"`
 	// TrafficLimit is in bytes (0 = unlimited); ResetDay 1-28 (0 = never).
-	TrafficLimit int64  `json:"trafficLimit"`
-	ResetDay     int    `json:"resetDay"`
-	UserID       *int64 `json:"userId"`
+	TrafficLimit int64 `json:"trafficLimit"`
+	ResetDay     int   `json:"resetDay"`
+	// Online IP protection & 24h pull IP cap.
+	MaxOnlineIPs     *int    `json:"maxOnlineIps"`
+	IPAction         *string `json:"ipAction"`
+	IPSuspendMinutes *int    `json:"ipSuspendMinutes"`
+	MaxPullIPs       *int    `json:"maxPullIps"`
+	UserID           *int64  `json:"userId"`
 }
 
 // validate checks the request and keeps the node groups that exist.
@@ -652,6 +709,28 @@ func (req *subscriptionRequest) validate(c *subContext) error {
 	}
 	if req.ResetDay < 0 || req.ResetDay > 28 {
 		return errText("每月重置日只能是 1–28 号")
+	}
+	if req.MaxOnlineIPs != nil {
+		if *req.MaxOnlineIPs < 0 || *req.MaxOnlineIPs > maxOnlineIPsLimit {
+			return errText("在线 IP 上限需在 0–1000 之间")
+		}
+	}
+	if req.IPAction != nil {
+		norm, err := normalizeIPAction(*req.IPAction)
+		if err != nil {
+			return err
+		}
+		req.IPAction = &norm
+	}
+	if req.IPSuspendMinutes != nil {
+		if *req.IPSuspendMinutes < 0 || *req.IPSuspendMinutes > maxIPSuspendMinutes {
+			return errText("暂停时长需在 0–10080 分钟之间")
+		}
+	}
+	if req.MaxPullIPs != nil {
+		if *req.MaxPullIPs < 0 || *req.MaxPullIPs > maxPullIPsLimit {
+			return errText("24 小时拉取 IP 上限需在 0–1000 之间")
+		}
 	}
 	if req.Group != nil {
 		norm, err := normalizeSubscriptionGroup(*req.Group)
@@ -752,8 +831,28 @@ func (h *Handler) subscriptionSave(w http.ResponseWriter, r *http.Request) {
 		_ = h.repo.MarkSubscriptionResetTime(s.ID, s.TrafficResetTime)
 	}
 	s.ResetDay = req.ResetDay
+	if req.MaxOnlineIPs != nil {
+		s.MaxOnlineIPs = *req.MaxOnlineIPs
+		if s.MaxOnlineIPs == 0 {
+			s.IPSuspendedUntil = 0
+			h.onlineIPStore().clearBreach(s.ID)
+		}
+	}
+	if req.IPAction != nil {
+		s.IPAction = *req.IPAction
+	}
+	if req.IPSuspendMinutes != nil {
+		s.IPSuspendMinutes = *req.IPSuspendMinutes
+	}
+	if req.MaxPullIPs != nil {
+		s.MaxPullIPs = *req.MaxPullIPs
+	}
 	if req.Enabled != nil {
 		s.Enabled = boolToInt(*req.Enabled)
+		if *req.Enabled {
+			s.IPSuspendedUntil = 0
+			h.onlineIPStore().clearBreach(s.ID)
+		}
 	}
 	if req.UserID != nil {
 		if *req.UserID > 0 {
@@ -1082,7 +1181,7 @@ func (h *Handler) subscriptionBatch(w http.ResponseWriter, r *http.Request) {
 	var normGroup string
 	var err error
 	switch req.Action {
-	case "enable", "disable", "reset-traffic", "pin", "unpin":
+	case "enable", "disable", "unsuspend", "reset-traffic", "pin", "unpin":
 	case "extend-days":
 		if req.Days <= 0 || req.Days > 3650 {
 			response.WriteJSON(w, response.ErrDefault("续期天数需在 1–3650 之间"))
@@ -1129,11 +1228,20 @@ func (h *Handler) subscriptionBatch(w http.ResponseWriter, r *http.Request) {
 		switch req.Action {
 		case "enable":
 			s.Enabled = 1
+			s.IPSuspendedUntil = 0
+			h.onlineIPStore().clearBreach(s.ID)
 			s.AppliedActive = boolToInt(isShare(s) && subActive(s, now))
 			needsPush = true
 		case "disable":
 			s.Enabled = 0
+			s.IPSuspendedUntil = 0
+			h.onlineIPStore().clearBreach(s.ID)
 			s.AppliedActive = 0
+			needsPush = true
+		case "unsuspend":
+			s.IPSuspendedUntil = 0
+			h.onlineIPStore().clearBreach(s.ID)
+			s.AppliedActive = boolToInt(isShare(s) && subActive(s, now))
 			needsPush = true
 		case "extend-days":
 			if s.ExpireTime > nowMs {

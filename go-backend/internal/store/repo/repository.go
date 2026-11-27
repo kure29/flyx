@@ -265,6 +265,7 @@ func autoMigrateModels(db *gorm.DB) error {
 		&model.Subscription{},
 		&model.SubscriptionCounter{},
 		&model.SubscriptionTraffic{},
+		&model.SubscriptionPullLog{},
 		&model.NodeTraffic{},
 		&model.RemoteSource{},
 		&model.SubscriptionTemplate{},

@@ -660,20 +660,21 @@ func (h *Handler) userPackage(w http.ResponseWriter, r *http.Request) {
 }
 
 type userSubscriptionView struct {
-	ID            int64    `json:"id"`
-	Name          string   `json:"name"`
-	Path          string   `json:"path"`
-	Status        string   `json:"status"`
-	ExpireTime    int64    `json:"expireTime"`
-	UploadBytes   int64    `json:"uploadBytes"`
-	DownloadBytes int64    `json:"downloadBytes"`
-	TrafficLimit  int64    `json:"trafficLimit"`
-	ResetDay      int      `json:"resetDay"`
-	NextResetTime int64    `json:"nextResetTime"`
-	TrafficSince  int64    `json:"trafficSince"`
-	NodeCount     int      `json:"nodeCount"`
-	Rules         bool     `json:"rules"`
-	Templates     []string `json:"templates,omitempty"`
+	ID               int64    `json:"id"`
+	Name             string   `json:"name"`
+	Path             string   `json:"path"`
+	Status           string   `json:"status"`
+	IPSuspendedUntil int64    `json:"ipSuspendedUntil,omitempty"`
+	ExpireTime       int64    `json:"expireTime"`
+	UploadBytes      int64    `json:"uploadBytes"`
+	DownloadBytes    int64    `json:"downloadBytes"`
+	TrafficLimit     int64    `json:"trafficLimit"`
+	ResetDay         int      `json:"resetDay"`
+	NextResetTime    int64    `json:"nextResetTime"`
+	TrafficSince     int64    `json:"trafficSince"`
+	NodeCount        int      `json:"nodeCount"`
+	Rules            bool     `json:"rules"`
+	Templates        []string `json:"templates,omitempty"`
 }
 
 func templateClientKeys(m map[string]int64) []string {
@@ -692,6 +693,9 @@ func templateClientKeys(m map[string]int64) []string {
 func subscriptionStatusString(s *model.Subscription, now time.Time) string {
 	if s.Enabled != 1 {
 		return "disabled"
+	}
+	if subIPSuspended(s, now) {
+		return "ip_suspended"
 	}
 	if s.ExpireTime > 0 && now.UnixMilli() > s.ExpireTime {
 		return "expired"
@@ -739,21 +743,26 @@ func (h *Handler) userSubscriptions(w http.ResponseWriter, r *http.Request) {
 	for i := range subs {
 		s := &subs[i]
 		pipe := parsePipeline(s.Options)
+		suspendedUntil := int64(0)
+		if subIPSuspended(s, now) {
+			suspendedUntil = s.IPSuspendedUntil
+		}
 		items = append(items, userSubscriptionView{
-			ID:            s.ID,
-			Name:          s.Name,
-			Path:          "/api/v1/open_api/sub/" + s.Token,
-			Status:        subscriptionStatusString(s, now),
-			ExpireTime:    s.ExpireTime,
-			UploadBytes:   s.UploadBytes,
-			DownloadBytes: s.DownloadBytes,
-			TrafficLimit:  s.TrafficLimit,
-			ResetDay:      s.ResetDay,
-			NextResetTime: nextMonthlyResetUnixMs(s.ResetDay, now),
-			TrafficSince:  subTrafficSince(s),
-			NodeCount:     len(kernel.ApplySubOptions(h.subNodes(c, s), pipe.options())),
-			Rules:         pipe.Rules,
-			Templates:     templateClientKeys(pipe.Templates),
+			ID:               s.ID,
+			Name:             s.Name,
+			Path:             "/api/v1/open_api/sub/" + s.Token,
+			Status:           subscriptionStatusString(s, now),
+			IPSuspendedUntil: suspendedUntil,
+			ExpireTime:       s.ExpireTime,
+			UploadBytes:      s.UploadBytes,
+			DownloadBytes:    s.DownloadBytes,
+			TrafficLimit:     s.TrafficLimit,
+			ResetDay:         s.ResetDay,
+			NextResetTime:    nextMonthlyResetUnixMs(s.ResetDay, now),
+			TrafficSince:     subTrafficSince(s),
+			NodeCount:        len(kernel.ApplySubOptions(h.subNodes(c, s), pipe.options())),
+			Rules:            pipe.Rules,
+			Templates:        templateClientKeys(pipe.Templates),
 		})
 	}
 	response.WriteJSON(w, response.OK(items))
@@ -785,21 +794,26 @@ func (h *Handler) userSubscriptionReset(w http.ResponseWriter, r *http.Request) 
 	}
 	now := time.Now()
 	pipe := parsePipeline(s.Options)
+	suspendedUntil := int64(0)
+	if subIPSuspended(s, now) {
+		suspendedUntil = s.IPSuspendedUntil
+	}
 	view := userSubscriptionView{
-		ID:            s.ID,
-		Name:          s.Name,
-		Path:          "/api/v1/open_api/sub/" + s.Token,
-		Status:        subscriptionStatusString(s, now),
-		ExpireTime:    s.ExpireTime,
-		UploadBytes:   s.UploadBytes,
-		DownloadBytes: s.DownloadBytes,
-		TrafficLimit:  s.TrafficLimit,
-		ResetDay:      s.ResetDay,
-		NextResetTime: nextMonthlyResetUnixMs(s.ResetDay, now),
-		TrafficSince:  subTrafficSince(s),
-		NodeCount:     len(kernel.ApplySubOptions(h.subNodes(c, s), pipe.options())),
-		Rules:         pipe.Rules,
-		Templates:     templateClientKeys(pipe.Templates),
+		ID:               s.ID,
+		Name:             s.Name,
+		Path:             "/api/v1/open_api/sub/" + s.Token,
+		Status:           subscriptionStatusString(s, now),
+		IPSuspendedUntil: suspendedUntil,
+		ExpireTime:       s.ExpireTime,
+		UploadBytes:      s.UploadBytes,
+		DownloadBytes:    s.DownloadBytes,
+		TrafficLimit:     s.TrafficLimit,
+		ResetDay:         s.ResetDay,
+		NextResetTime:    nextMonthlyResetUnixMs(s.ResetDay, now),
+		TrafficSince:     subTrafficSince(s),
+		NodeCount:        len(kernel.ApplySubOptions(h.subNodes(c, s), pipe.options())),
+		Rules:            pipe.Rules,
+		Templates:        templateClientKeys(pipe.Templates),
 	}
 	h.respondAfterSubPush(w, push, view)
 }

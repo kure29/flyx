@@ -60,6 +60,9 @@ type RenderOptions struct {
 	// "operation not permitted". Users then share the default outbounds and
 	// their traffic is not counted per user (which needs nftables anyway).
 	NoUserMarks bool
+	// TrackOnlineIPs enables info-level connection logging on sing-box so the
+	// agent can track active client IPs per subscription user.
+	TrackOnlineIPs bool
 }
 
 // Render produces the kernel configuration for the given enabled inbounds.

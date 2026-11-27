@@ -52,8 +52,17 @@ type Subscription struct {
 	TrafficResetTime int64 `gorm:"column:traffic_reset_time;not null;default:0"`
 	// TrafficSince is when the traffic last started from zero (creation or
 	// the last reset; unix ms). 0 on subscriptions from before it was kept.
-	TrafficSince int64  `gorm:"column:traffic_since;not null;default:0"`
-	Remark       string `gorm:"type:text;not null;default:''"`
+	TrafficSince int64 `gorm:"column:traffic_since;not null;default:0"`
+	// Online IP protection (0 = unlimited).
+	// IPAction: "" / "alert" (notify only), "suspend" (pause for IPSuspendMinutes),
+	// or "disable" (disable until re-enabled).
+	MaxOnlineIPs     int    `gorm:"column:max_online_ips;not null;default:0"`
+	IPAction         string `gorm:"column:ip_action;type:varchar(16);not null;default:''"`
+	IPSuspendMinutes int    `gorm:"column:ip_suspend_minutes;not null;default:0"`
+	IPSuspendedUntil int64  `gorm:"column:ip_suspended_until;not null;default:0"`
+	// MaxPullIPs limits distinct client IPs fetching /open_api/sub/{token} in 24h (0 = unlimited).
+	MaxPullIPs int    `gorm:"column:max_pull_ips;not null;default:0"`
+	Remark     string `gorm:"type:text;not null;default:''"`
 	// Pinned floats key subscriptions (e.g. personal/landing) to the top.
 	Pinned int `gorm:"not null;default:0"`
 	// GroupName is the admin's own folder/category name for organizing
@@ -70,6 +79,21 @@ type Subscription struct {
 }
 
 func (Subscription) TableName() string { return "subscription" }
+
+// SubscriptionPullLog records client fetches of /api/v1/open_api/sub/{token}
+// so the admin can audit link sharing and enforce 24h distinct-IP caps.
+type SubscriptionPullLog struct {
+	ID             int64  `gorm:"primaryKey;autoIncrement"`
+	SubscriptionID int64  `gorm:"column:subscription_id;not null;index:idx_sub_pull_sub_time,priority:1"`
+	IP             string `gorm:"column:ip;type:varchar(64);not null"`
+	Country        string `gorm:"column:country;type:varchar(8);not null;default:''"`
+	UserAgent      string `gorm:"column:user_agent;type:varchar(200);not null;default:''"`
+	Format         string `gorm:"column:format;type:varchar(24);not null;default:''"`
+	Blocked        int    `gorm:"column:blocked;not null;default:0"`
+	CreatedTime    int64  `gorm:"column:created_time;not null;index:idx_sub_pull_sub_time,priority:2"`
+}
+
+func (SubscriptionPullLog) TableName() string { return "subscription_pull_log" }
 
 // NodeGroup is a reusable set of nodes for subscriptions: which inbounds
 // it draws from and how their nodes are filtered, renamed and sorted
