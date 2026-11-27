@@ -23,9 +23,16 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import {
+  ArrowRight,
+  GripVertical,
+  LayoutGrid,
+  List,
+  Table2,
+} from "lucide-react";
 
 import { BatchActionResultModal } from "@/components/batch-action-result-modal";
+import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
 import { Alert } from "@/shadcn-bridge/heroui/alert";
 import { Progress } from "@/shadcn-bridge/heroui/progress";
@@ -52,11 +59,15 @@ import {
 import { ActionSheet } from "@/components/action-sheet";
 import {
   EmptyHint,
+  FilterPills,
   ListRow,
   PageHeader,
   PageToolbar,
   SelectionBar,
+  ToolbarSelect,
+  ViewModeSwitch,
 } from "@/components/page-kit";
+import { GroupHeader, groupItems, useCollapsed } from "@/pages/inbound/group";
 import {
   buildDiagnosisFallbackResult,
   type DiagnosisResult,
@@ -100,10 +111,19 @@ import { TunnelDiagnosisModal } from "@/pages/tunnel/diagnosis-modal";
 // A revisit shows the last data at once and reloads in the background.
 const PAGE = "tunnel";
 
+type TunnelViewMode = "cards" | "table" | "list";
+type TunnelGroupMode = "none" | "entry" | "type";
+type TunnelStatusFilter = "all" | "ok" | "bad";
+type TunnelTypeFilter = "all" | "1" | "2";
+
 export default function TunnelPage({
   embedded = false,
+  initialQuery = "",
+  onInitialQueryConsumed,
 }: {
   embedded?: boolean;
+  initialQuery?: string;
+  onInitialQueryConsumed?: () => void;
 }) {
   const { t: tr } = useI18n();
   const [loading, setLoading] = useState(true);
@@ -118,7 +138,25 @@ export default function TunnelPage({
     "tunnel-search-keyword",
     "",
   );
+  const [viewMode, setViewMode] = useLocalStorageState<TunnelViewMode>(
+    "tunnel-view-mode",
+    "cards",
+  );
+  const [groupMode, setGroupMode] = useLocalStorageState<TunnelGroupMode>(
+    "tunnel-group-mode",
+    "none",
+  );
+  const [statusFilter, setStatusFilter] = useState<TunnelStatusFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<TunnelTypeFilter>("all");
+  const [isGroupCollapsed, toggleGroupCollapsed] = useCollapsed();
   const [sheetTunnelId, setSheetTunnelId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (initialQuery) {
+      setSearchKeyword(initialQuery);
+      onInitialQueryConsumed?.();
+    }
+  }, [initialQuery, onInitialQueryConsumed, setSearchKeyword]);
 
   // 模态框状态
   const [modalOpen, setModalOpen] = useState(false);
@@ -1181,16 +1219,37 @@ export default function TunnelPage({
   const sortedTunnels = useMemo((): Tunnel[] => {
     if (!tunnels || tunnels.length === 0) return [];
 
+    const nameLookup = new Map(nodes.map((n) => [n.id, n.name] as const));
     let filteredTunnels = tunnels;
 
-    if (searchKeyword.trim()) {
-      const lowerKeyword = searchKeyword.toLowerCase();
-
-      filteredTunnels = filteredTunnels.filter(
-        (t) =>
-          (t.name && t.name.toLowerCase().includes(lowerKeyword)) ||
-          (t.inIp && t.inIp.toLowerCase().includes(lowerKeyword)),
+    if (statusFilter !== "all") {
+      filteredTunnels = filteredTunnels.filter((t) =>
+        statusFilter === "ok" ? t.status === 1 : t.status !== 1,
       );
+    }
+
+    if (typeFilter !== "all") {
+      const targetType = Number(typeFilter);
+
+      filteredTunnels = filteredTunnels.filter((t) => t.type === targetType);
+    }
+
+    if (searchKeyword.trim()) {
+      const lowerKeyword = searchKeyword.trim().toLowerCase();
+
+      filteredTunnels = filteredTunnels.filter((t) => {
+        if (t.name && t.name.toLowerCase().includes(lowerKeyword)) return true;
+        if (t.inIp && t.inIp.toLowerCase().includes(lowerKeyword)) return true;
+        const ids = [
+          ...(t.inNodeId ?? []).map((x) => x.nodeId),
+          ...(t.outNodeId ?? []).map((x) => x.nodeId),
+          ...(t.chainNodes ?? []).flat().map((x) => x.nodeId),
+        ];
+
+        return ids.some((id) =>
+          (nameLookup.get(id) ?? "").toLowerCase().includes(lowerKeyword),
+        );
+      });
     }
 
     const sortedByDb = [...filteredTunnels].sort((a, b) => {
@@ -1225,7 +1284,7 @@ export default function TunnelPage({
     }
 
     return sortedByDb;
-  }, [tunnels, tunnelOrder, searchKeyword]);
+  }, [tunnels, tunnelOrder, searchKeyword, statusFilter, typeFilter, nodes]);
 
   const sortableTunnelIds = useMemo(
     () => sortedTunnels.map((t) => t.id),
@@ -1449,9 +1508,193 @@ export default function TunnelPage({
       describeNodes(tunnel.outNodeId),
     ].join(" → ");
   };
-  const isSearching = searchKeyword.trim() !== "";
+  const isSearching =
+    searchKeyword.trim() !== "" ||
+    statusFilter !== "all" ||
+    typeFilter !== "all" ||
+    groupMode !== "none";
   const addAction = { key: "add", label: tr("新建隧道"), onPress: handleAdd };
   const sheetTunnel = tunnels.find((t) => t.id === sheetTunnelId) ?? null;
+
+  const statusCounts = {
+    all: tunnels.length,
+    ok: tunnels.filter((t) => t.status === 1).length,
+    bad: tunnels.filter((t) => t.status !== 1).length,
+  };
+
+  const tunnelGroups =
+    groupMode === "none" || viewMode === "table"
+      ? []
+      : groupItems(
+          sortedTunnels,
+          (t) =>
+            groupMode === "type" ? String(t.type) : describeNodes(t.inNodeId),
+          (_key, first) =>
+            groupMode === "type"
+              ? getTunnelTypeDisplay(first.type).text
+              : describeNodes(first.inNodeId),
+        );
+
+  const renderTunnelBadges = (tunnel: Tunnel) => {
+    const bestExit = tunnel.bestExitState?.enabled
+      ? tunnel.bestExitState
+      : undefined;
+
+    return (
+      <>
+        <Chip
+          className="shrink-0 whitespace-nowrap"
+          color="secondary"
+          size="sm"
+          variant="flat"
+        >
+          {getTunnelTypeDisplay(tunnel.type).text}
+        </Chip>
+        {tunnel.forwardMode === "nftables" && (
+          <Chip className="shrink-0" size="sm" variant="flat">
+            nftables
+          </Chip>
+        )}
+        {tunnel.engine === "realm" && (
+          <Chip className="shrink-0" color="primary" size="sm" variant="flat">
+            realm
+          </Chip>
+        )}
+        {bestExit && (
+          <Chip
+            className="shrink-0"
+            color={bestExit.status === "waiting" ? "warning" : "success"}
+            size="sm"
+            variant="flat"
+          >
+            {tr("最优出口")}
+          </Chip>
+        )}
+      </>
+    );
+  };
+
+  const renderTunnelCard = (tunnel: Tunnel, listeners?: any) => {
+    const selected = selectMode && selectedIds.has(tunnel.id);
+    const hops = tunnel.chainNodes?.length || 0;
+    const activate = () =>
+      selectMode ? toggleSelect(tunnel.id) : setSheetTunnelId(tunnel.id);
+
+    return (
+      <div
+        aria-pressed={selectMode ? selected : undefined}
+        className={`phone-card phone-card-fill group flex h-full cursor-pointer flex-col justify-between gap-2.5 rounded-xl border p-3.5 text-left transition-colors ${
+          selected
+            ? "border-foreground bg-default-100"
+            : "border-divider bg-content1 hover:border-default-400"
+        }`}
+        role="button"
+        tabIndex={0}
+        onClick={activate}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            activate();
+          }
+        }}
+      >
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              {selectMode && (
+                <div
+                  className="flex shrink-0"
+                  role="presentation"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Checkbox
+                    isSelected={selected}
+                    onValueChange={() => toggleSelect(tunnel.id)}
+                  />
+                </div>
+              )}
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  tunnel.status === 1
+                    ? "bg-success ring-[3px] ring-success/20"
+                    : "bg-danger ring-[3px] ring-danger/20"
+                }`}
+                title={tunnel.status === 1 ? tr("正常") : tr("不可用")}
+              />
+              <span className="truncate text-sm font-medium text-foreground">
+                {tunnel.name}
+              </span>
+            </div>
+            {!isSearching && listeners && (
+              <span
+                className="cursor-grab touch-none p-0.5 text-default-300 transition-opacity hover:text-default-500 active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
+                role="presentation"
+                title={tr("拖动排序")}
+                onClick={(e) => e.stopPropagation()}
+                {...listeners}
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </span>
+            )}
+          </div>
+
+          {/* Visual route path */}
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-default-50 px-2.5 py-2 text-xs dark:bg-default-100/40">
+            <span className="max-w-full truncate font-medium text-foreground">
+              {describeNodes(tunnel.inNodeId)}
+            </span>
+            {tunnel.type === 2 && (
+              <>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-default-400" />
+                {hops > 0 && (
+                  <>
+                    <span className="shrink-0 rounded bg-content1 px-1.5 py-0.5 text-[11px] text-default-500">
+                      {tr("{count} 跳", { count: hops })}
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0 text-default-400" />
+                  </>
+                )}
+                <span className="max-w-full truncate font-medium text-foreground">
+                  {describeNodes(tunnel.outNodeId)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1 border-t border-divider/70 pt-2">
+          {renderTunnelBadges(tunnel)}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTunnelRow = (tunnel: Tunnel, listeners?: any) => (
+    <ListRow
+      badges={renderTunnelBadges(tunnel)}
+      meta={describeRoute(tunnel)}
+      right={
+        !isSearching &&
+        listeners && (
+          <span
+            className="cursor-grab touch-none p-1 text-default-300 transition-opacity hover:text-default-500 active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
+            title={tr("拖动排序")}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </span>
+        )
+      }
+      selectMode={selectMode}
+      selected={selectedIds.has(tunnel.id)}
+      status={tunnel.status === 1 ? "ok" : "bad"}
+      statusTitle={tunnel.status === 1 ? tr("正常") : tr("不可用")}
+      title={tunnel.name}
+      onPress={() => setSheetTunnelId(tunnel.id)}
+      onSelect={() => toggleSelect(tunnel.id)}
+    />
+  );
 
   if (loading && !pageCached(PAGE)) {
     return <PageLoadingState message="正在加载..." />;
@@ -1505,10 +1748,84 @@ export default function TunnelPage({
               onPress: toggleSelectMode,
             },
           ]}
-          placeholder={tr("搜索隧道名称或 IP")}
+          placeholder={tr("搜索隧道、入口/出口服务器或 IP")}
           primary={embedded ? addAction : undefined}
           search={searchKeyword}
           onSearch={setSearchKeyword}
+        >
+          {viewMode !== "table" && (
+            <ToolbarSelect
+              ariaLabel={tr("分组方式")}
+              className="max-w-[7.5rem]"
+              options={[
+                { value: "none", label: tr("不分组") },
+                { value: "entry", label: tr("按入口") },
+                { value: "type", label: tr("按类型") },
+              ]}
+              value={groupMode}
+              onChange={(v) => setGroupMode(v as TunnelGroupMode)}
+            />
+          )}
+          <ToolbarSelect
+            ariaLabel={tr("按类型筛选")}
+            className="max-w-[7.5rem]"
+            options={[
+              { value: "all", label: tr("全部类型") },
+              { value: "2", label: tr("隧道转发") },
+              { value: "1", label: tr("端口转发") },
+            ]}
+            value={typeFilter}
+            onChange={(v) => setTypeFilter(v as TunnelTypeFilter)}
+          />
+          <ViewModeSwitch
+            ariaLabel={tr("视图模式")}
+            options={[
+              {
+                key: "cards",
+                label: tr("卡片"),
+                icon: <LayoutGrid className="h-3.5 w-3.5" />,
+              },
+              {
+                key: "table",
+                label: tr("表格"),
+                icon: <Table2 className="h-3.5 w-3.5" />,
+              },
+              {
+                key: "list",
+                label: tr("列表"),
+                icon: <List className="h-3.5 w-3.5" />,
+              },
+            ]}
+            value={viewMode}
+            onChange={setViewMode}
+          />
+        </PageToolbar>
+      )}
+
+      {!selectMode && tunnels.length > 0 && (
+        <FilterPills
+          ariaLabel={tr("按状态筛选")}
+          items={[
+            { key: "all", label: tr("全部"), count: statusCounts.all },
+            {
+              key: "ok",
+              label: tr("正常"),
+              count: statusCounts.ok,
+              tone: "success",
+            },
+            ...(statusCounts.bad > 0
+              ? [
+                  {
+                    key: "bad" as const,
+                    label: tr("不可用"),
+                    count: statusCounts.bad,
+                    tone: "danger" as const,
+                  },
+                ]
+              : []),
+          ]}
+          value={statusFilter}
+          onChange={setStatusFilter}
         />
       )}
 
@@ -1538,6 +1855,122 @@ export default function TunnelPage({
         />
       ) : sortedTunnels.length === 0 ? (
         <EmptyHint text={tr("没有匹配的隧道")} />
+      ) : viewMode === "table" ? (
+        <div className="phone-card phone-card-fill overflow-x-auto rounded-xl border border-divider bg-content1">
+          <table className="w-full min-w-[640px] text-left text-xs">
+            <thead className="border-b border-divider bg-default-50/70 text-default-500">
+              <tr>
+                {selectMode && <th className="w-9 px-3 py-2.5" />}
+                <th className="px-3 py-2.5 font-medium">{tr("隧道名称")}</th>
+                <th className="px-3 py-2.5 font-medium">{tr("路由路径")}</th>
+                <th className="px-3 py-2.5 font-medium">{tr("类型 / 引擎")}</th>
+                <th className="px-3 py-2.5 text-right font-medium">
+                  {tr("状态")}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-divider">
+              {sortedTunnels.map((tunnel) => {
+                const selected = selectMode && selectedIds.has(tunnel.id);
+
+                return (
+                  <tr
+                    key={tunnel.id}
+                    className={`cursor-pointer transition-colors ${
+                      selected ? "bg-default-100" : "hover:bg-default-50"
+                    }`}
+                    onClick={() =>
+                      selectMode
+                        ? toggleSelect(tunnel.id)
+                        : setSheetTunnelId(tunnel.id)
+                    }
+                  >
+                    {selectMode && (
+                      <td
+                        className="px-3 py-2.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          isSelected={selected}
+                          onValueChange={() => toggleSelect(tunnel.id)}
+                        />
+                      </td>
+                    )}
+                    <td className="px-3 py-2.5 font-medium text-foreground">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            tunnel.status === 1 ? "bg-success" : "bg-danger"
+                          }`}
+                        />
+                        <span className="truncate">{tunnel.name}</span>
+                      </div>
+                    </td>
+                    <td className="max-w-[20rem] truncate px-3 py-2.5 text-default-600">
+                      {describeRoute(tunnel)}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        {renderTunnelBadges(tunnel)}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right text-default-500">
+                      {tunnel.status === 1 ? tr("正常") : tr("不可用")}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : groupMode !== "none" ? (
+        <div className="space-y-2">
+          {tunnelGroups.map((g) => {
+            const id = `tunnel:${groupMode}:${g.key}`;
+            const folded = isGroupCollapsed(id);
+
+            return (
+              <div key={g.key}>
+                <GroupHeader
+                  collapsed={folded}
+                  count={g.items.length}
+                  title={g.title}
+                  unit={tr("条")}
+                  onToggle={() => toggleGroupCollapsed(id)}
+                />
+                {!folded &&
+                  (viewMode === "cards" ? (
+                    <div className="mt-2.5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {g.items.map((tunnel) => (
+                        <div key={tunnel.id}>{renderTunnelCard(tunnel)}</div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col">
+                      {g.items.map((tunnel) => (
+                        <div key={tunnel.id}>{renderTunnelRow(tunnel)}</div>
+                      ))}
+                    </div>
+                  ))}
+              </div>
+            );
+          })}
+        </div>
+      ) : viewMode === "cards" ? (
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <SortableContext
+            items={sortableTunnelIds}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {sortedTunnels.map((tunnel) => (
+                <SortableItem key={tunnel.id} id={tunnel.id}>
+                  {(listeners) => renderTunnelCard(tunnel, listeners)}
+                </SortableItem>
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
@@ -1545,77 +1978,11 @@ export default function TunnelPage({
             strategy={rectSortingStrategy}
           >
             <div className="flex flex-col">
-              {sortedTunnels.map((tunnel) => {
-                const bestExit = tunnel.bestExitState?.enabled
-                  ? tunnel.bestExitState
-                  : undefined;
-
-                return (
-                  <SortableItem key={tunnel.id} id={tunnel.id}>
-                    {(listeners) => (
-                      <ListRow
-                        badges={
-                          <>
-                            <Chip
-                              className="shrink-0 whitespace-nowrap"
-                              color="secondary"
-                              size="sm"
-                              variant="flat"
-                            >
-                              {getTunnelTypeDisplay(tunnel.type).text}
-                            </Chip>
-                            {tunnel.engine === "realm" && (
-                              <Chip
-                                className="shrink-0"
-                                color="primary"
-                                size="sm"
-                                variant="flat"
-                              >
-                                realm
-                              </Chip>
-                            )}
-                            {bestExit && (
-                              <Chip
-                                className="shrink-0"
-                                color={
-                                  bestExit.status === "waiting"
-                                    ? "warning"
-                                    : "success"
-                                }
-                                size="sm"
-                                variant="flat"
-                              >
-                                {tr("最优出口")}
-                              </Chip>
-                            )}
-                          </>
-                        }
-                        meta={describeRoute(tunnel)}
-                        right={
-                          !isSearching && (
-                            <span
-                              className="cursor-grab touch-none p-1 text-default-300 transition-opacity hover:text-default-500 active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
-                              title={tr("拖动排序")}
-                              {...listeners}
-                            >
-                              <GripVertical className="h-4 w-4" />
-                            </span>
-                          )
-                        }
-                        selectMode={selectMode}
-                        selected={selectedIds.has(tunnel.id)}
-                        status={tunnel.status === 1 ? "ok" : "bad"}
-                        statusTitle={
-                          tunnel.status === 1 ? tr("正常") : tr("不可用")
-                        }
-                        title={tunnel.name}
-                        onPress={() => setSheetTunnelId(tunnel.id)}
-                        onSelect={() => toggleSelect(tunnel.id)}
-                      />
-                    )}
-                  </SortableItem>
-                );
-              })}
+              {sortedTunnels.map((tunnel) => (
+                <SortableItem key={tunnel.id} id={tunnel.id}>
+                  {(listeners) => renderTunnelRow(tunnel, listeners)}
+                </SortableItem>
+              ))}
             </div>
           </SortableContext>
         </DndContext>

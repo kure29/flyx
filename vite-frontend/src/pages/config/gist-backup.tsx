@@ -42,7 +42,7 @@ function formatTime(ms: number): string {
 }
 
 /** 备份与恢复 → 上传到 GitHub Gist. */
-export function GistBackup() {
+export function GistBackup({ hideHeading = false }: { hideHeading?: boolean }) {
   const [status, setStatus] = useState<GistBackupStatus | null>(null);
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
@@ -124,7 +124,7 @@ export function GistBackup() {
 
   return (
     <>
-      <SubHeading>上传到 GitHub Gist</SubHeading>
+      {!hideHeading && <SubHeading>上传到 GitHub Gist</SubHeading>}
       {status.configured && status.lastAt > 0 && (
         <p className="flex flex-wrap items-center gap-x-1 text-xs text-default-500">
           <span

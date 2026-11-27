@@ -1,7 +1,7 @@
 import type * as React from "react";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { MoreHorizontal, Search, X } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Search, X } from "lucide-react";
 
 import { AnimatedPage } from "@/components/animated-page";
 import { useI18n } from "@/i18n";
@@ -540,5 +540,403 @@ export function PageShell({
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
       {children}
     </AnimatedPage>
+  );
+}
+
+export interface ViewModeOption<T extends string> {
+  key: T;
+  label: string;
+  icon?: React.ReactNode;
+}
+
+/** Compact segmented view switcher (e.g. workbench / cards / table / list). */
+export function ViewModeSwitch<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T;
+  options: Array<ViewModeOption<T>>;
+  onChange: (next: T) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <div
+      aria-label={ariaLabel}
+      className="inline-flex h-8 shrink-0 items-center rounded-md border border-divider bg-default-50/70 p-0.5 dark:bg-default-100/40"
+      role="group"
+    >
+      {options.map((opt) => {
+        const active = value === opt.key;
+
+        return (
+          <button
+            key={opt.key}
+            aria-pressed={active}
+            className={`inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-xs transition-colors ${
+              active
+                ? "bg-background font-medium text-foreground shadow-sm dark:bg-default-200"
+                : "text-default-500 hover:text-foreground"
+            }`}
+            title={opt.label}
+            type="button"
+            onClick={() => onChange(opt.key)}
+          >
+            {opt.icon}
+            <span className={opt.icon ? "hidden sm:inline" : ""}>
+              {opt.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Native compact select styled to match PageToolbar controls. */
+export function ToolbarSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  className = "max-w-[9.5rem]",
+}: {
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <div className={`relative shrink-0 ${className}`}>
+      <select
+        aria-label={ariaLabel}
+        className="h-8 w-full appearance-none truncate rounded-md border border-transparent bg-transparent pl-2.5 pr-7 text-xs text-default-600 outline-none transition-colors hover:bg-default-100 hover:text-foreground focus:border-divider"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-default-400" />
+    </div>
+  );
+}
+
+export interface FilterPillItem<T extends string> {
+  key: T;
+  label: string;
+  count?: number;
+  tone?: "default" | "success" | "warning" | "danger";
+}
+
+const PILL_DOT: Record<NonNullable<FilterPillItem<string>["tone"]>, string> = {
+  default: "bg-default-400",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-danger",
+};
+
+/** Horizontal filter chip strip; wraps cleanly on desktop and scrolls on phones. */
+export function FilterPills<T extends string>({
+  value,
+  items,
+  onChange,
+  ariaLabel,
+  className = "mb-3",
+}: {
+  value: T;
+  items: Array<FilterPillItem<T>>;
+  onChange: (key: T) => void;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <nav
+      aria-label={ariaLabel}
+      className={`flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide sm:flex-wrap ${className}`}
+    >
+      {items.map((item) => {
+        const active = value === item.key;
+
+        return (
+          <button
+            key={item.key || "__all__"}
+            aria-pressed={active}
+            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+              active
+                ? "border-foreground bg-foreground text-background dark:border-default-300 dark:bg-default-200 dark:text-foreground"
+                : "border-divider bg-content1/70 text-default-600 hover:bg-default-100 hover:text-foreground"
+            }`}
+            type="button"
+            onClick={() => onChange(item.key)}
+          >
+            {item.tone && item.tone !== "default" && (
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  active
+                    ? item.tone === "success"
+                      ? "bg-background dark:bg-success"
+                      : item.tone === "warning"
+                        ? "bg-background dark:bg-warning"
+                        : "bg-background dark:bg-danger"
+                    : PILL_DOT[item.tone]
+                }`}
+              />
+            )}
+            <span className="truncate">{item.label}</span>
+            {item.count !== undefined && (
+              <span className="tabular-nums opacity-65">{item.count}</span>
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+export interface SummaryStatItem {
+  key: string;
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  tone?: "default" | "success" | "warning" | "danger";
+  active?: boolean;
+  onPress?: () => void;
+}
+
+const STAT_TONE: Record<NonNullable<SummaryStatItem["tone"]>, string> = {
+  default: "text-foreground",
+  success: "text-success",
+  warning: "text-warning-600 dark:text-warning",
+  danger: "text-danger",
+};
+
+/** Compact KPI summary strip above lists/grids; items can act as quick filters. */
+export function SummaryStrip({
+  items,
+  className = "mb-3",
+}: {
+  items: SummaryStatItem[];
+  className?: string;
+}) {
+  return (
+    <div
+      className={`grid grid-cols-2 gap-2 sm:gap-2.5 lg:grid-cols-4 ${className}`}
+    >
+      {items.map((item) => {
+        const interactive = Boolean(item.onPress);
+        const cls = `phone-card phone-card-fill rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+          item.active
+            ? "border-foreground bg-default-100/80 dark:border-default-300 dark:bg-default-100/50"
+            : "border-divider bg-content1"
+        } ${
+          interactive
+            ? "cursor-pointer hover:border-default-400"
+            : "cursor-default"
+        }`;
+
+        const inner = (
+          <>
+            <div className="truncate text-xs text-default-500">
+              {item.label}
+            </div>
+            <div
+              className={`mt-0.5 truncate text-base font-semibold tabular-nums ${
+                STAT_TONE[item.tone ?? "default"]
+              }`}
+            >
+              {item.value}
+            </div>
+            {item.sub && (
+              <div className="mt-0.5 truncate text-[11px] tabular-nums text-default-400">
+                {item.sub}
+              </div>
+            )}
+          </>
+        );
+
+        if (interactive) {
+          return (
+            <button
+              key={item.key}
+              aria-pressed={item.active}
+              className={cls}
+              type="button"
+              onClick={item.onPress}
+            >
+              {inner}
+            </button>
+          );
+        }
+
+        return (
+          <div key={item.key} className={cls}>
+            {inner}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export interface WorkbenchNavItem {
+  key: string;
+  label: string;
+  count: number;
+  meta?: string;
+  status?: RowStatus;
+}
+
+/**
+ * Responsive master-detail workbench: sticky group sidebar on lg+ screens,
+ * horizontal scrollable pill bar on smaller screens.
+ */
+export function WorkbenchLayout({
+  navTitle,
+  navSummary,
+  items,
+  value,
+  onChange,
+  allLabel,
+  allCount,
+  children,
+}: {
+  navTitle: string;
+  navSummary?: string;
+  items: WorkbenchNavItem[];
+  value: string;
+  onChange: (key: string) => void;
+  allLabel: string;
+  allCount: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
+      {/* Mobile / tablet horizontal rail */}
+      <nav
+        aria-label={navTitle}
+        className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide lg:hidden"
+      >
+        <button
+          aria-pressed={value === ""}
+          className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+            value === ""
+              ? "border-foreground bg-foreground text-background dark:border-default-300 dark:bg-default-200 dark:text-foreground"
+              : "border-divider bg-content1 text-default-600"
+          }`}
+          type="button"
+          onClick={() => onChange("")}
+        >
+          <span>{allLabel}</span>
+          <span className="tabular-nums opacity-70">{allCount}</span>
+        </button>
+        {items.map((item) => {
+          const active = value === item.key;
+
+          return (
+            <button
+              key={item.key}
+              aria-pressed={active}
+              className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${
+                active
+                  ? "border-foreground bg-foreground text-background dark:border-default-300 dark:bg-default-200 dark:text-foreground"
+                  : "border-divider bg-content1 text-default-600"
+              }`}
+              type="button"
+              onClick={() => onChange(item.key)}
+            >
+              {item.status && (
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    active ? "bg-background" : STATUS_DOT[item.status]
+                  }`}
+                />
+              )}
+              <span className="max-w-[10rem] truncate">{item.label}</span>
+              <span className="tabular-nums opacity-70">{item.count}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Desktop sticky sidebar */}
+      <aside
+        aria-label={navTitle}
+        className="hidden w-56 shrink-0 rounded-xl border border-divider bg-content1 p-2 lg:sticky lg:top-4 lg:block xl:w-60"
+      >
+        <div className="mb-1 flex items-center justify-between px-2 py-1 text-xs font-medium text-default-500">
+          <span className="truncate">{navTitle}</span>
+          {navSummary && (
+            <span className="shrink-0 tabular-nums text-default-400">
+              {navSummary}
+            </span>
+          )}
+        </div>
+        <div className="max-h-[calc(100vh-14rem)] space-y-0.5 overflow-y-auto pr-0.5">
+          <button
+            aria-pressed={value === ""}
+            className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+              value === ""
+                ? "bg-foreground font-medium text-background dark:bg-default-200 dark:text-foreground"
+                : "text-default-700 hover:bg-default-100"
+            }`}
+            type="button"
+            onClick={() => onChange("")}
+          >
+            <span className="truncate">{allLabel}</span>
+            <span className="shrink-0 tabular-nums opacity-75">{allCount}</span>
+          </button>
+          {items.map((item) => {
+            const active = value === item.key;
+
+            return (
+              <button
+                key={item.key}
+                aria-pressed={active}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                  active
+                    ? "bg-foreground font-medium text-background dark:bg-default-200 dark:text-foreground"
+                    : "text-default-700 hover:bg-default-100"
+                }`}
+                title={item.label}
+                type="button"
+                onClick={() => onChange(item.key)}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {item.status && (
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        active
+                          ? "bg-background"
+                          : item.status === "bad"
+                            ? "bg-danger"
+                            : item.status === "warn"
+                              ? "bg-warning"
+                              : item.status === "ok"
+                                ? "bg-success"
+                                : "bg-default-300"
+                      }`}
+                    />
+                  )}
+                  <span className="truncate">{item.label}</span>
+                </span>
+                <span className="shrink-0 tabular-nums opacity-75">
+                  {item.meta ? `${item.count} · ${item.meta}` : item.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
   );
 }

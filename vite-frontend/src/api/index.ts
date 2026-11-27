@@ -1026,6 +1026,7 @@ export interface SubscriptionItem {
   active: boolean;
   remark: string;
   pinned?: boolean;
+  group?: string;
   tags?: string[];
   nodeCount: number;
   uploadBytes: number;
@@ -1051,6 +1052,7 @@ export interface SubscriptionDraft {
   enabled?: boolean;
   remark: string;
   pinned?: boolean;
+  group?: string;
   tags?: string[];
   trafficLimit: number;
   resetDay: number;
@@ -1060,6 +1062,7 @@ export type SubscriptionBatchAction =
   | "disable"
   | "reset-traffic"
   | "extend-days"
+  | "set-group"
   | "set-tags"
   | "add-tag"
   | "remove-tag"
@@ -1094,6 +1097,7 @@ export const batchSubscriptions = (data: {
   ids: number[];
   action: SubscriptionBatchAction;
   days?: number;
+  group?: string;
   tags?: string[];
 }) => Network.post<{ updated: number }>("/subscription/batch", data);
 export const resetSubscription = (id: number) =>

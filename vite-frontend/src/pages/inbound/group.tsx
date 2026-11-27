@@ -115,6 +115,7 @@ function readCollapsed(): Set<string> {
 export function useCollapsed(): [
   (id: string) => boolean,
   (id: string) => void,
+  (ids: string[], fold: boolean) => void,
 ] {
   const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
 
@@ -126,6 +127,19 @@ export function useCollapsed(): [
 
         if (next.has(id)) next.delete(id);
         else next.add(id);
+        writeStorage(COLLAPSED_KEY, JSON.stringify([...next]));
+
+        return next;
+      });
+    },
+    (ids, fold) => {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+
+        for (const id of ids) {
+          if (fold) next.add(id);
+          else next.delete(id);
+        }
         writeStorage(COLLAPSED_KEY, JSON.stringify([...next]));
 
         return next;

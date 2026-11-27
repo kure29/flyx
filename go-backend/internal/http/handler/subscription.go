@@ -470,6 +470,7 @@ type subscriptionView struct {
 	Active     bool        `json:"active"`
 	Remark     string      `json:"remark"`
 	Pinned     bool        `json:"pinned"`
+	Group      string      `json:"group"`
 	Tags       []string    `json:"tags"`
 	NodeCount  int         `json:"nodeCount"`
 	// Traffic (share subscriptions; bytes).
@@ -483,6 +484,14 @@ type subscriptionView struct {
 	// UserID / UserName: the panel user it is assigned to (0 = none).
 	UserID   int64  `json:"userId"`
 	UserName string `json:"userName,omitempty"`
+}
+
+func normalizeSubscriptionGroup(raw string) (string, error) {
+	g := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(raw, "\n", ""), "\r", ""))
+	if len([]rune(g)) > 50 {
+		return "", errText("分组名称最多 50 个字")
+	}
+	return g, nil
 }
 
 func parseSubscriptionTags(raw string) []string {
@@ -565,7 +574,7 @@ func (h *Handler) subscriptionView(s *model.Subscription, c *subContext, now tim
 		ID: s.ID, Name: s.Name, Kind: s.Kind, Token: s.Token, Path: "/api/v1/open_api/sub/" + s.Token,
 		GroupIDs: groupIDs, SharedIDs: shared, Options: pipe,
 		ExpireTime: s.ExpireTime, Enabled: s.Enabled == 1, Active: subActive(s, now), Remark: s.Remark,
-		Pinned: s.Pinned == 1, Tags: parseSubscriptionTags(s.Tags),
+		Pinned: s.Pinned == 1, Group: s.GroupName, Tags: parseSubscriptionTags(s.Tags),
 		NodeCount:   len(kernel.ApplySubOptions(h.subNodes(c, s), pipe.options())),
 		UploadBytes: s.UploadBytes, DownloadBytes: s.DownloadBytes, TrafficLimit: s.TrafficLimit,
 		ResetDay: s.ResetDay, OverQuota: subOverQuota(s), UserID: s.UserID, TrafficSince: subTrafficSince(s),
@@ -619,6 +628,7 @@ type subscriptionRequest struct {
 	Enabled    *bool       `json:"enabled"`
 	Remark     string      `json:"remark"`
 	Pinned     *bool       `json:"pinned"`
+	Group      *string     `json:"group"`
 	Tags       *[]string   `json:"tags"`
 	// TrafficLimit is in bytes (0 = unlimited); ResetDay 1-28 (0 = never).
 	TrafficLimit int64  `json:"trafficLimit"`
@@ -642,6 +652,13 @@ func (req *subscriptionRequest) validate(c *subContext) error {
 	}
 	if req.ResetDay < 0 || req.ResetDay > 28 {
 		return errText("每月重置日只能是 1–28 号")
+	}
+	if req.Group != nil {
+		norm, err := normalizeSubscriptionGroup(*req.Group)
+		if err != nil {
+			return err
+		}
+		req.Group = &norm
 	}
 	if req.Tags != nil {
 		norm, err := normalizeSubscriptionTags(*req.Tags)
@@ -721,6 +738,9 @@ func (h *Handler) subscriptionSave(w http.ResponseWriter, r *http.Request) {
 	s.Remark = strings.TrimSpace(req.Remark)
 	if req.Pinned != nil {
 		s.Pinned = boolToInt(*req.Pinned)
+	}
+	if req.Group != nil {
+		s.GroupName = *req.Group
 	}
 	if req.Tags != nil {
 		s.Tags = formatSubscriptionTags(*req.Tags)
@@ -1029,6 +1049,7 @@ type subscriptionBatchRequest struct {
 	IDs    []int64  `json:"ids"`
 	Action string   `json:"action"`
 	Days   int      `json:"days,omitempty"`
+	Group  string   `json:"group,omitempty"`
 	Tags   []string `json:"tags,omitempty"`
 }
 
@@ -1058,12 +1079,19 @@ func (h *Handler) subscriptionBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var normTags []string
+	var normGroup string
 	var err error
 	switch req.Action {
 	case "enable", "disable", "reset-traffic", "pin", "unpin":
 	case "extend-days":
 		if req.Days <= 0 || req.Days > 3650 {
 			response.WriteJSON(w, response.ErrDefault("续期天数需在 1–3650 之间"))
+			return
+		}
+	case "set-group":
+		normGroup, err = normalizeSubscriptionGroup(req.Group)
+		if err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
 			return
 		}
 	case "set-tags", "add-tag", "remove-tag":
@@ -1131,6 +1159,8 @@ func (h *Handler) subscriptionBatch(w http.ResponseWriter, r *http.Request) {
 			s.Pinned = 1
 		case "unpin":
 			s.Pinned = 0
+		case "set-group":
+			s.GroupName = normGroup
 		case "set-tags":
 			s.Tags = formatSubscriptionTags(normTags)
 		case "add-tag":

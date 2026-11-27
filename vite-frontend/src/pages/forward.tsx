@@ -19,28 +19,35 @@ import {
   rectSortingStrategy,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { List, Table2 } from "lucide-react";
 
 import { copyWithToast } from "@/utils/clipboard";
 import { ActionSheet } from "@/components/action-sheet";
 import { useI18n } from "@/i18n";
+import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import {
   EmptyHint,
+  FilterPills,
   ListGroup,
   ListRow,
   PageHeader,
   PageToolbar,
   SelectionBar,
+  ViewModeSwitch,
   formatDate,
 } from "@/components/page-kit";
 import { formatTraffic } from "@/utils/traffic";
 import { BatchActionResultModal } from "@/components/batch-action-result-modal";
 import { Button } from "@/shadcn-bridge/heroui/button";
+import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
 import { Alert } from "@/shadcn-bridge/heroui/alert";
 import { Progress } from "@/shadcn-bridge/heroui/progress";
+import { Switch } from "@/shadcn-bridge/heroui/switch";
 import {
   createForward,
   getForwardList,
+  getInboundRelays,
   getPeerShareList,
   getPeerRemoteUsageList,
   updateForward,
@@ -176,6 +183,30 @@ export default function ForwardPage({
       .then((res) => {
         if (res.code === 0 && res.data?.userInfo) {
           setUserQuota(res.data.userInfo);
+        }
+      })
+      .catch(() => {});
+  }, [isAdmin]);
+
+  const [viewMode, setViewMode] = useLocalStorageState<"list" | "table">(
+    "forward-view-mode",
+    "list",
+  );
+  const [sourceFilter, setSourceFilter] = useState<
+    "all" | "managed" | "manual"
+  >("all");
+  const [managedForwardIds, setManagedForwardIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    getInboundRelays(0)
+      .then((res) => {
+        if (res.code === 0 && Array.isArray(res.data)) {
+          setManagedForwardIds(
+            new Set(res.data.filter((r) => r.managed).map((r) => r.forwardId)),
+          );
         }
       })
       .catch(() => {});
@@ -2300,6 +2331,14 @@ export default function ForwardPage({
 
     let filteredForwards = forwards;
 
+    if (isAdmin && sourceFilter !== "all") {
+      filteredForwards = filteredForwards.filter((f) =>
+        sourceFilter === "managed"
+          ? managedForwardIds.has(f.id)
+          : !managedForwardIds.has(f.id),
+      );
+    }
+
     if (searchParams.userId !== "all") {
       const targetUserId = parseInt(searchParams.userId);
 
@@ -2383,7 +2422,14 @@ export default function ForwardPage({
     }
 
     return sortedByDb;
-  }, [forwards, forwardOrder, searchParams]);
+  }, [
+    forwards,
+    forwardOrder,
+    searchParams,
+    isAdmin,
+    sourceFilter,
+    managedForwardIds,
+  ]);
 
   const availableGroupData = useMemo(
     () => buildAvailableGroupData(forwards),
@@ -2648,6 +2694,8 @@ export default function ForwardPage({
   // 渲染规则行
   const renderForwardRow = (forward: Forward, showTunnel: boolean) => {
     const statusDisplay = getStatusDisplay(forward.status);
+    const isManaged = isAdmin && managedForwardIds.has(forward.id);
+    const canToggle = forward.status === 1 || forward.status === 0;
     const meta = [
       `${formatInAddress(forward.inIp, forward.inPort) || "-"} → ${
         formatRemoteAddress(forward.remoteAddr) || "-"
@@ -2662,6 +2710,16 @@ export default function ForwardPage({
           <ListRow
             badges={
               <>
+                {isManaged && (
+                  <Chip
+                    className="shrink-0"
+                    color="secondary"
+                    size="sm"
+                    variant="flat"
+                  >
+                    {tr("节点托管")}
+                  </Chip>
+                )}
                 {forward.status !== 1 && (
                   <Chip
                     className="shrink-0"
@@ -2680,7 +2738,18 @@ export default function ForwardPage({
               </>
             }
             meta={meta.filter(Boolean).join(" · ")}
-            right={handle}
+            right={
+              <>
+                {canToggle && (
+                  <Switch
+                    isSelected={Boolean(forward.serviceRunning)}
+                    size="sm"
+                    onValueChange={() => void handleServiceToggle(forward)}
+                  />
+                )}
+                {handle}
+              </>
+            }
             selectMode={selectMode}
             selected={selectedIds.has(forward.id)}
             status={getForwardRowStatus(forward.status)}
@@ -2827,7 +2896,46 @@ export default function ForwardPage({
               ? tr("筛选 · {count}", { count: filterCount })
               : tr("筛选")}
           </Button>
+          <ViewModeSwitch
+            ariaLabel={tr("视图模式")}
+            options={[
+              {
+                key: "list",
+                label: tr("分组"),
+                icon: <List className="h-3.5 w-3.5" />,
+              },
+              {
+                key: "table",
+                label: tr("表格"),
+                icon: <Table2 className="h-3.5 w-3.5" />,
+              },
+            ]}
+            value={viewMode}
+            onChange={setViewMode}
+          />
         </PageToolbar>
+      )}
+
+      {!selectMode && isAdmin && managedForwardIds.size > 0 && (
+        <FilterPills
+          ariaLabel={tr("按规则来源筛选")}
+          items={[
+            { key: "all", label: tr("全部规则"), count: forwards.length },
+            {
+              key: "managed",
+              label: tr("节点托管"),
+              count: forwards.filter((f) => managedForwardIds.has(f.id)).length,
+            },
+            {
+              key: "manual",
+              label: tr("手工规则"),
+              count: forwards.filter((f) => !managedForwardIds.has(f.id))
+                .length,
+            },
+          ]}
+          value={sourceFilter}
+          onChange={setSourceFilter}
+        />
       )}
 
       {batchProgress.active && (
@@ -2857,10 +2965,128 @@ export default function ForwardPage({
           action={{
             key: "reset",
             label: tr("清空条件"),
-            onPress: resetSearchParams,
+            onPress: () => {
+              setSourceFilter("all");
+              resetSearchParams();
+            },
           }}
           text={tr("没有匹配的规则")}
         />
+      ) : viewMode === "table" ? (
+        <div className="phone-card phone-card-fill overflow-x-auto rounded-xl border border-divider bg-content1">
+          <table className="w-full min-w-[740px] text-left text-xs">
+            <thead className="border-b border-divider bg-default-50/70 text-default-500">
+              <tr>
+                {selectMode && <th className="w-9 px-3 py-2.5" />}
+                <th className="px-3 py-2.5 font-medium">{tr("规则名称")}</th>
+                <th className="px-3 py-2.5 font-medium">{tr("所属隧道")}</th>
+                <th className="px-3 py-2.5 font-medium">{tr("入口 → 目标")}</th>
+                <th className="px-3 py-2.5 text-right font-medium">
+                  {tr("流量")}
+                </th>
+                {!selectMode && (
+                  <th className="px-3 py-2.5 text-right font-medium">
+                    {tr("状态")}
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-divider">
+              {sortedForwards.map((forward) => {
+                const statusDisplay = getStatusDisplay(forward.status);
+                const isManaged = isAdmin && managedForwardIds.has(forward.id);
+                const canToggle = forward.status === 1 || forward.status === 0;
+                const selected = selectMode && selectedIds.has(forward.id);
+                const rowStatus = getForwardRowStatus(forward.status);
+
+                return (
+                  <tr
+                    key={forward.id}
+                    className={`cursor-pointer transition-colors ${
+                      selected ? "bg-default-100" : "hover:bg-default-50"
+                    }`}
+                    onClick={() =>
+                      selectMode
+                        ? toggleSelect(forward.id)
+                        : setSheetForwardId(forward.id)
+                    }
+                  >
+                    {selectMode && (
+                      <td
+                        className="px-3 py-2.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          isSelected={selected}
+                          onValueChange={() => toggleSelect(forward.id)}
+                        />
+                      </td>
+                    )}
+                    <td className="max-w-[14rem] px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            rowStatus === "ok"
+                              ? "bg-success"
+                              : rowStatus === "bad"
+                                ? "bg-danger"
+                                : rowStatus === "warn"
+                                  ? "bg-warning"
+                                  : "bg-default-300"
+                          }`}
+                          title={statusDisplay.text}
+                        />
+                        <span className="truncate font-medium text-foreground">
+                          {forward.name}
+                        </span>
+                        {isManaged && (
+                          <Chip
+                            className="shrink-0"
+                            color="secondary"
+                            size="sm"
+                            variant="flat"
+                          >
+                            {tr("节点托管")}
+                          </Chip>
+                        )}
+                      </div>
+                    </td>
+                    <td className="max-w-[10rem] truncate px-3 py-2.5 text-default-500">
+                      {forward.tunnelName || UNCATEGORIZED_FORWARD_TUNNEL_NAME}
+                    </td>
+                    <td className="max-w-[18rem] truncate px-3 py-2.5 font-mono text-default-500">
+                      {formatInAddress(forward.inIp, forward.inPort) || "-"} →{" "}
+                      {formatRemoteAddress(forward.remoteAddr) || "-"}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-foreground">
+                      {formatFlow(getForwardDisplayFlow(forward))}
+                    </td>
+                    {!selectMode && (
+                      <td
+                        className="whitespace-nowrap px-3 py-2.5 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {canToggle ? (
+                          <Switch
+                            isSelected={Boolean(forward.serviceRunning)}
+                            size="sm"
+                            onValueChange={() =>
+                              void handleServiceToggle(forward)
+                            }
+                          />
+                        ) : (
+                          <span className="text-default-400">
+                            {statusDisplay.text}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       ) : compactMode ? (
         <DndContext
           collisionDetection={pointerWithin}

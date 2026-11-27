@@ -62,7 +62,7 @@ export const ThemeSettings: React.FC = () => {
   return (
     <Card>
       <CardBody className="p-6">
-        <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-5">
+        <h2 className="text-lg font-medium text-foreground mb-5">
           {t("主题设置")}
         </h2>
 
@@ -140,7 +140,7 @@ export const ThemeSettings: React.FC = () => {
                   {/* Info */}
                   <div className="p-3">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                      <p className="text-sm font-semibold text-foreground truncate">
                         {theme.name}
                       </p>
                       {isActive && (

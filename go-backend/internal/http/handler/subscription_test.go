@@ -431,23 +431,29 @@ func TestSubscriptionTagsPinAndBatch(t *testing.T) {
 		t.Fatalf("save group: %v", err)
 	}
 
-	// Create two subscriptions with pinned and tags (including Chinese comma + dupes).
-	res1 := post(h.subscriptionSave, fmt.Sprintf(`{"name":"车友A","groupIds":[%d],"pinned":true,"tags":["拼车，月付"," 拼车 ","VIP"]}`, g.ID))
+	// Create two subscriptions with group, pinned and tags (including Chinese comma + dupes).
+	res1 := post(h.subscriptionSave, fmt.Sprintf(`{"name":"车友A","groupIds":[%d],"group":" 拼车客户 ","pinned":true,"tags":["拼车，月付"," 拼车 ","VIP"]}`, g.ID))
 	data1 := res1["data"].(map[string]interface{})
 	id1 := int64(data1["id"].(float64))
 	if pinned, _ := data1["pinned"].(bool); !pinned {
 		t.Fatalf("expected pinned=true, got %+v", data1)
+	}
+	if grp, _ := data1["group"].(string); grp != "拼车客户" {
+		t.Fatalf("expected trimmed group=拼车客户, got %q", grp)
 	}
 	rawTags := data1["tags"].([]interface{})
 	if len(rawTags) != 3 || rawTags[0] != "拼车" || rawTags[1] != "月付" || rawTags[2] != "VIP" {
 		t.Fatalf("unexpected normalized tags: %+v", rawTags)
 	}
 
-	// Partial save omitting pinned & tags must preserve existing values.
+	// Partial save omitting group, pinned & tags must preserve existing values.
 	res1b := post(h.subscriptionSave, fmt.Sprintf(`{"id":%d,"name":"车友A改名","groupIds":[%d]}`, id1, g.ID))
 	data1b := res1b["data"].(map[string]interface{})
 	if pinned, _ := data1b["pinned"].(bool); !pinned {
 		t.Fatalf("expected pinned preserved on partial save: %+v", data1b)
+	}
+	if grp, _ := data1b["group"].(string); grp != "拼车客户" {
+		t.Fatalf("expected group preserved on partial save, got %q", grp)
 	}
 	if len(data1b["tags"].([]interface{})) != 3 {
 		t.Fatalf("expected tags preserved on partial save: %+v", data1b["tags"])
@@ -456,7 +462,7 @@ func TestSubscriptionTagsPinAndBatch(t *testing.T) {
 	res2 := post(h.subscriptionSave, fmt.Sprintf(`{"name":"车友B","groupIds":[%d]}`, g.ID))
 	id2 := int64(res2["data"].(map[string]interface{})["id"].(float64))
 
-	// Batch disable, extend-days, add-tag, remove-tag, pin/unpin.
+	// Batch disable, extend-days, add-tag, remove-tag, set-group, pin/unpin.
 	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d,%d],"action":"disable"}`, id1, id2))
 	s1, _ := r.GetSubscription(id1)
 	s2, _ := r.GetSubscription(id2)
@@ -475,6 +481,18 @@ func TestSubscriptionTagsPinAndBatch(t *testing.T) {
 	s1, _ = r.GetSubscription(id1)
 	if s1.ExpireTime != prevExp+30*86400*1000 {
 		t.Fatalf("expected active expiry extended by exact 30d: got %d want %d", s1.ExpireTime, prevExp+30*86400*1000)
+	}
+
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d,%d],"action":"set-group","group":" 自用分组 "}`, id1, id2))
+	s1, _ = r.GetSubscription(id1)
+	s2, _ = r.GetSubscription(id2)
+	if s1.GroupName != "自用分组" || s2.GroupName != "自用分组" {
+		t.Fatalf("batch set-group failed: s1=%q s2=%q", s1.GroupName, s2.GroupName)
+	}
+	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d],"action":"set-group","group":""}`, id2))
+	s2, _ = r.GetSubscription(id2)
+	if s2.GroupName != "" {
+		t.Fatalf("expected batch set-group empty to clear group, got %q", s2.GroupName)
 	}
 
 	post(h.subscriptionBatch, fmt.Sprintf(`{"ids":[%d,%d],"action":"add-tag","tags":["续费提醒"]}`, id1, id2))
