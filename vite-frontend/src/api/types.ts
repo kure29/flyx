@@ -596,6 +596,8 @@ export interface InboundSettings {
   peerPublicKey?: string;
   peerAddress?: string;
   mtu?: number;
+  mieruMultiplexing?: string;
+  mieruHandshakeMode?: string;
 }
 
 export interface InboundTransport {

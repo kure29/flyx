@@ -308,6 +308,8 @@ func chainTargetFromProxy(e Endpoint) (chainTarget, error) {
 		}
 	case "wireguard":
 		return t, errors.New("WireGuard 节点不能用作出站，请选其他节点")
+	case "mieru":
+		return t, errors.New("Xray 和 sing-box 均不支持以 Mieru 节点作为出站，请选其他节点")
 	case "vmess":
 		t.Protocol, t.UUID, t.Cipher = "vmess", p.str("uuid"), firstNonEmptyString(p.str("cipher"), "auto")
 	case "trojan":

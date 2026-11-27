@@ -159,6 +159,39 @@ func proxyURI(e Endpoint) (string, bool) {
 		q.Set("address", p.str("ip")+"/32")
 		setIf(q, "mtu", p.str("mtu"))
 		return "wireguard://" + url.QueryEscape(p.str("private-key")) + "@" + hp + "?" + q.Encode() + frag, true
+	case "mieru":
+		// Official enfein/mieru simple share link (mierus://).
+		host := strings.Trim(e.Host, "[]")
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		u := &url.URL{
+			Scheme: "mierus",
+			User:   url.UserPassword(p.str("username"), p.str("password")),
+			Host:   host,
+		}
+		q := url.Values{}
+		q.Set("profile", e.Name)
+		if mtu := p.num("mtu"); mtu > 0 {
+			q.Set("mtu", strconv.Itoa(mtu))
+		}
+		setIf(q, "multiplexing", p.str("multiplexing"))
+		if hm := p.str("handshake-mode"); hm != "" && hm != MieruHandshakeStandard {
+			q.Set("handshake-mode", hm)
+		}
+		setIf(q, "traffic-pattern", p.str("traffic-pattern"))
+		if pr := p.str("port-range"); pr != "" {
+			q.Set("port", pr)
+		} else {
+			q.Set("port", strconv.Itoa(e.Port))
+		}
+		tr := strings.ToUpper(p.str("transport"))
+		if tr == "" {
+			tr = "TCP"
+		}
+		q.Set("protocol", tr)
+		u.RawQuery = q.Encode()
+		return u.String(), true
 	}
 	// Snell and HTTP proxies have no common share link.
 	return "", false
@@ -271,7 +304,18 @@ func proxyClash(e Endpoint) (yamlNode, bool) {
 		return nil, false
 	}
 	delete(p, "shadow-tls") // panel-only key for Snell over ShadowTLS
-	node := yamlNode{{"name", e.Name}, {"type", p.Type()}, {"server", p.str("server")}, {"port", e.Port}}
+	omitPort := false
+	if p.Type() == "mieru" {
+		// Mihomo's MieruOption has no mtu field and rejects having both port and port-range.
+		delete(p, "mtu")
+		if p.str("port-range") != "" {
+			omitPort = true
+		}
+	}
+	node := yamlNode{{"name", e.Name}, {"type", p.Type()}, {"server", p.str("server")}}
+	if !omitPort {
+		node = append(node, yamlField{"port", e.Port})
+	}
 	keys := make([]string, 0, len(p))
 	for k := range p {
 		if k != "name" && k != "type" && k != "server" && k != "port" {

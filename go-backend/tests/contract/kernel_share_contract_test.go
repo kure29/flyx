@@ -549,3 +549,83 @@ func TestACMEAndNaiveContract(t *testing.T) {
 		t.Fatalf("naive share: %s", uri)
 	}
 }
+
+func TestMieruInboundAndSubscriptionContract(t *testing.T) {
+	secret := "contract-jwt-secret"
+	router, r := setupContractRouter(t, secret)
+	admin, _ := auth.GenerateToken(1, "admin_user", 0, secret)
+	nodeID := seedKernelNode(t, r, "tokyo")
+	n := jsonInt64(nodeID)
+
+	// Install Mieru kernel (node is offline so DB record is created in pending state).
+	kernelContractPost(t, router, admin, "/api/v1/kernel/install", `{"nodeId":`+n+`,"kernelType":"mieru"}`)
+
+	create := func(body string) (int64, string) {
+		out := kernelContractPost(t, router, admin, "/api/v1/inbound/create", body)
+		if out.Code != 0 {
+			return 0, out.Msg
+		}
+		return int64(out.Data.(map[string]interface{})["id"].(float64)), out.Msg
+	}
+
+	// Create TCP and UDP Mieru inbounds on the same port 20120 (disjoint L4 protocols).
+	tcpID, msg := create(`{"nodeId":` + n + `,"kernelType":"mieru","name":"Mieru TCP","protocol":"mieru","port":20120,"transport":{"type":"tcp"},"settings":{"username":"alice","password":"secret-tcp","mtu":1400,"mieruMultiplexing":"MULTIPLEXING_MIDDLE","mieruHandshakeMode":"HANDSHAKE_NO_WAIT"},"outboundIpStrategy":"ipv4_only"}`)
+	if tcpID == 0 {
+		t.Fatalf("create mieru tcp failed: %s", msg)
+	}
+	udpID, msg := create(`{"nodeId":` + n + `,"kernelType":"mieru","name":"Mieru UDP","protocol":"mieru","port":20120,"transport":{"type":"udp"},"settings":{"username":"bob","password":"secret-udp","mtu":1380}}`)
+	if udpID == 0 {
+		t.Fatalf("create mieru udp on same port failed: %s", msg)
+	}
+	// Duplicate TCP on port 20120 must be rejected.
+	if dupID, dupMsg := create(`{"nodeId":` + n + `,"kernelType":"mieru","name":"Mieru TCP Dup","protocol":"mieru","port":20120,"transport":{"type":"tcp"}}`); dupID != 0 || !strings.Contains(dupMsg, "Mieru TCP") {
+		t.Fatalf("duplicate TCP mieru on port 20120 should fail: id=%d msg=%s", dupID, dupMsg)
+	}
+	// Split rules on Mieru must be rejected.
+	if badSplit := kernelContractPost(t, router, admin, "/api/v1/inbound/split", `{"id":`+jsonInt64(tcpID)+`,"splitRules":[{"domains":["example.com"],"action":"block"}]}`); badSplit.Code == 0 {
+		t.Fatalf("split rules on Mieru should be rejected: %+v", badSplit)
+	}
+
+	// Verify /api/v1/inbound/share returns mierus:// URI and no Surge line.
+	shareTCP := kernelContractPost(t, router, admin, "/api/v1/inbound/share", `{"id":`+jsonInt64(tcpID)+`}`)
+	tcpEntry := shareTCP.Data.([]interface{})[0].(map[string]interface{})
+	uriTCP := tcpEntry["uri"].(string)
+	if !strings.HasPrefix(uriTCP, "mierus://alice:secret-tcp@203.0.113.10?") ||
+		!strings.Contains(uriTCP, "port=20120") ||
+		!strings.Contains(uriTCP, "protocol=TCP") ||
+		!strings.Contains(uriTCP, "handshake-mode=HANDSHAKE_NO_WAIT") {
+		t.Fatalf("unexpected TCP share uri: %s", uriTCP)
+	}
+	if s, _ := tcpEntry["surge"].(string); s != "" {
+		t.Fatalf("mieru must not emit Surge line: %q", s)
+	}
+
+	// Verify subscription formats.
+	info := kernelContractPost(t, router, admin, "/api/v1/inbound/sub/info", `{}`)
+	token := info.Data.(map[string]interface{})["token"].(string)
+
+	for _, ua := range []string{"clash-verge/v2.0", "Stash/2.4"} {
+		body := getSub(t, router, "/api/v1/open_api/sub/"+token, ua).Body.String()
+		for _, want := range []string{`type: "mieru"`, `transport: "TCP"`, `transport: "UDP"`, `username: "alice"`, `handshake-mode: "HANDSHAKE_NO_WAIT"`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s subscription missing %q:\n%s", ua, want, body)
+			}
+		}
+		if strings.Contains(body, "mtu:") {
+			t.Fatalf("%s subscription must omit mtu for mieru:\n%s", ua, body)
+		}
+	}
+	b64Body, err := base64.StdEncoding.DecodeString(getSub(t, router, "/api/v1/open_api/sub/"+token, "v2rayN/7.0").Body.String())
+	if err != nil {
+		t.Fatalf("decode base64 sub: %v", err)
+	}
+	if strings.Count(string(b64Body), "mierus://") != 2 {
+		t.Fatalf("base64 sub must contain 2 mierus:// URIs:\n%s", string(b64Body))
+	}
+	for _, format := range []string{"singbox", "surge", "shadowrocket", "loon", "qx"} {
+		body := getSub(t, router, "/api/v1/open_api/sub/"+token+"?format="+format, "").Body.String()
+		if strings.Contains(body, "Mieru TCP") || strings.Contains(body, "Mieru UDP") {
+			t.Fatalf("format %s must skip Mieru nodes:\n%s", format, body)
+		}
+	}
+}

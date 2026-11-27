@@ -12,6 +12,8 @@ import toast from "react-hot-toast";
 import {
   ACME_DNS_LABELS,
   CERT_MODE_LABELS,
+  MIERU_HANDSHAKE_LABELS,
+  MIERU_MUX_LABELS,
   PROTOCOL_LABELS,
   SECURITY_LABELS,
   TRANSPORT_LABELS,
@@ -172,7 +174,9 @@ export function InboundFormModal({
         kernelType,
         ssSubscriptionUsers: kernelType === "xray" && prev.ssSubscriptionUsers,
         outboundIpStrategy:
-          kernelType === "xray" || kernelType === "singbox"
+          kernelType === "xray" ||
+          kernelType === "singbox" ||
+          kernelType === "mieru"
             ? prev.outboundIpStrategy
             : "auto",
       };
@@ -302,6 +306,13 @@ export function InboundFormModal({
 
       if (pw.length > 128 || /[\s,"]/.test(pw)) {
         return "Salamander 混淆密码不能包含空白、逗号或引号，且长度不超过 128";
+      }
+    }
+    if (form.protocol === "mieru" && form.mieruMtu.trim()) {
+      const mtu = Number(form.mieruMtu);
+
+      if (!Number.isInteger(mtu) || mtu < 1280 || mtu > 1500) {
+        return "Mieru MTU 应在 1280-1500 之间";
       }
     }
     if (form.securityType === "tls" && certMode === "file") {
@@ -931,6 +942,74 @@ export function InboundFormModal({
                         </div>
                         <p className="text-xs text-default-500">
                           密钥自动生成，所有人共用一份客户端配置（在“分享”里）；需要更换时用“换密钥”
+                        </p>
+                      </div>
+                    )}
+                    {form.protocol === "mieru" && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <Input
+                            description="范围 1280-1500（仅 UDP 生效）"
+                            label="MTU"
+                            placeholder="1400"
+                            type="number"
+                            value={form.mieruMtu}
+                            variant="bordered"
+                            onChange={(e) => set("mieruMtu", e.target.value)}
+                          />
+                          <Select
+                            description="写入分享链接与 Clash 配置"
+                            label="多路复用"
+                            selectedKeys={[
+                              form.mieruMultiplexing || "MULTIPLEXING_LOW",
+                            ]}
+                            onSelectionChange={(keys) =>
+                              set(
+                                "mieruMultiplexing",
+                                String(
+                                  Array.from(keys)[0] ?? "MULTIPLEXING_LOW",
+                                ),
+                              )
+                            }
+                          >
+                            {Object.entries(MIERU_MUX_LABELS).map(
+                              ([k, label]) => (
+                                <SelectItem key={k} textValue={label}>
+                                  {label}
+                                </SelectItem>
+                              ),
+                            )}
+                          </Select>
+                          <Select
+                            description="客户端握手模式"
+                            label="握手模式"
+                            selectedKeys={[
+                              form.mieruHandshakeMode || "HANDSHAKE_STANDARD",
+                            ]}
+                            onSelectionChange={(keys) =>
+                              set(
+                                "mieruHandshakeMode",
+                                String(
+                                  Array.from(keys)[0] ?? "HANDSHAKE_STANDARD",
+                                ),
+                              )
+                            }
+                          >
+                            {Object.entries(MIERU_HANDSHAKE_LABELS).map(
+                              ([k, label]) => (
+                                <SelectItem key={k} textValue={label}>
+                                  {label}
+                                </SelectItem>
+                              ),
+                            )}
+                          </Select>
+                        </div>
+                        <p className="text-xs text-default-500">
+                          无需域名与证书；支持 Mihomo / Stash / Mieru
+                          官方客户端（mierus://），sing-box / Surge /
+                          Shadowrocket / Loon
+                          订阅会自动跳过。服务端与客户端系统时钟误差需在 1
+                          分钟内。
                         </p>
                       </div>
                     )}

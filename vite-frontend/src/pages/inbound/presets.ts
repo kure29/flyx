@@ -15,6 +15,7 @@ export const PROTOCOL_LABELS: Record<string, string> = {
   tuic: "TUIC v5",
   anytls: "AnyTLS",
   snell: "Snell",
+  mieru: "Mieru",
   naive: "NaïveProxy",
   socks: "SOCKS5",
   http: "HTTP",
@@ -25,6 +26,19 @@ export const KERNEL_LABELS: Record<string, string> = {
   xray: "Xray",
   singbox: "sing-box",
   snell: "Snell",
+  mieru: "Mieru",
+};
+
+export const MIERU_MUX_LABELS: Record<string, string> = {
+  MULTIPLEXING_OFF: "关闭 (OFF)",
+  MULTIPLEXING_LOW: "低 (LOW，默认)",
+  MULTIPLEXING_MIDDLE: "中 (MIDDLE)",
+  MULTIPLEXING_HIGH: "高 (HIGH)",
+};
+
+export const MIERU_HANDSHAKE_LABELS: Record<string, string> = {
+  HANDSHAKE_STANDARD: "标准 1-RTT（默认）",
+  HANDSHAKE_NO_WAIT: "0-RTT 免等待 (NO_WAIT)",
 };
 
 export const TRANSPORT_LABELS: Record<string, string> = {
@@ -101,6 +115,9 @@ export interface InboundForm {
   wgPeerPrivateKey: string;
   wgPeerAddress: string;
   wgMtu: string;
+  mieruMtu: string;
+  mieruMultiplexing: string;
+  mieruHandshakeMode: string;
   transportType: string;
   path: string;
   host: string;
@@ -312,6 +329,25 @@ export const PRESETS: Preset[] = [
     transport: "tcp",
     security: "shadowtls",
   },
+  {
+    key: "mieru-tcp",
+    label: "Mieru (TCP)",
+    description:
+      "高强度加密防探测，无需域名和证书；支持 Mihomo / Stash / Mieru 客户端",
+    kernel: "mieru",
+    protocol: "mieru",
+    transport: "tcp",
+    security: "none",
+  },
+  {
+    key: "mieru-udp",
+    label: "Mieru (UDP)",
+    description: "基于 UDP 的 Mieru，无需域名和证书；弱网/丢包环境下延迟更低",
+    kernel: "mieru",
+    protocol: "mieru",
+    transport: "udp",
+    security: "none",
+  },
 ];
 
 /** Presets the given kernel can serve with its exact transport + security. */
@@ -360,6 +396,9 @@ export function emptyForm(
     wgPeerPrivateKey: "",
     wgPeerAddress: "",
     wgMtu: "",
+    mieruMtu: "",
+    mieruMultiplexing: "MULTIPLEXING_LOW",
+    mieruHandshakeMode: "HANDSHAKE_STANDARD",
     transportType: "tcp",
     path: "",
     host: "",
@@ -471,7 +510,17 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     wgPrivateKey: item.settings.privateKey ?? "",
     wgPeerPrivateKey: item.settings.peerPrivateKey ?? "",
     wgPeerAddress: item.settings.peerAddress ?? "",
-    wgMtu: item.settings.mtu ? String(item.settings.mtu) : "",
+    wgMtu:
+      item.protocol === "wireguard" && item.settings.mtu
+        ? String(item.settings.mtu)
+        : "",
+    mieruMtu:
+      item.protocol === "mieru" && item.settings.mtu
+        ? String(item.settings.mtu)
+        : "",
+    mieruMultiplexing: item.settings.mieruMultiplexing || "MULTIPLEXING_LOW",
+    mieruHandshakeMode:
+      item.settings.mieruHandshakeMode || "HANDSHAKE_STANDARD",
     transportType: item.transport.type || "tcp",
     path: item.transport.path ?? "",
     host: item.transport.host ?? "",
@@ -543,13 +592,14 @@ export const passwordProtocols = [
   "tuic",
   "anytls",
   "snell",
+  "mieru",
   "naive",
   "socks",
   "http",
 ];
 
 /** Protocols with a username next to the password. */
-export const usernameProtocols = ["naive", "socks", "http"];
+export const usernameProtocols = ["mieru", "naive", "socks", "http"];
 
 /** TLS on these protocols defaults its SNI server-side, so it is optional. */
 export const sniOptionalProtocols = ["hysteria2", "tuic", "anytls"];
@@ -651,6 +701,16 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
       mtu:
         form.protocol === "wireguard" && form.wgMtu.trim()
           ? Number(form.wgMtu)
+          : form.protocol === "mieru" && form.mieruMtu.trim()
+            ? Number(form.mieruMtu)
+            : undefined,
+      mieruMultiplexing:
+        form.protocol === "mieru"
+          ? form.mieruMultiplexing || undefined
+          : undefined,
+      mieruHandshakeMode:
+        form.protocol === "mieru"
+          ? form.mieruHandshakeMode || undefined
           : undefined,
     },
     transport: {

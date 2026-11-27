@@ -164,8 +164,19 @@ func (s *reachProbeStore) replaceRound(results map[int64]reachProbe, all bool, s
 // builtNode reports a built inbound's node server IP and whether its node is
 // online with the kernel running.
 func reachProbeHost(row *model.NodeInbound, builtNode func(row *model.NodeInbound) (ip string, live bool)) string {
-	if row.Protocol == kernel.ProtocolHysteria2 || row.Protocol == kernel.ProtocolTUIC {
+	if row.Protocol == kernel.ProtocolHysteria2 || row.Protocol == kernel.ProtocolTUIC || row.Protocol == kernel.ProtocolWireGuard {
 		return ""
+	}
+	if row.Protocol == kernel.ProtocolMieru {
+		if isExternalInbound(row) {
+			if p := importedProxy(row); p != nil {
+				if tr, _ := p["transport"].(string); strings.EqualFold(strings.TrimSpace(tr), "UDP") {
+					return ""
+				}
+			}
+		} else if in, err := inboundFromModel(*row); err == nil && in.Transport.Type == kernel.TransportUDP {
+			return ""
+		}
 	}
 	if isExternalInbound(row) {
 		return row.Listen // imports store the node's address here

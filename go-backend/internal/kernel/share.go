@@ -213,6 +213,21 @@ func clientProxy(e Endpoint) (Proxy, bool) {
 		p["allowed-ips"] = []interface{}{"0.0.0.0/0", "::/0"}
 		p["mtu"] = s.MTU
 		p["udp"] = true
+	case ProtocolMieru:
+		transport := "TCP"
+		if e.Inbound.Transport.Type == TransportUDP {
+			transport = "UDP"
+		}
+		p["type"] = "mieru"
+		p["transport"] = transport
+		p["username"] = s.Username
+		p["password"] = s.Password
+		p["udp"] = true
+		p.set("multiplexing", s.MieruMultiplexing)
+		if s.MieruHandshakeMode != "" && s.MieruHandshakeMode != MieruHandshakeStandard {
+			p["handshake-mode"] = s.MieruHandshakeMode
+		}
+		p.set("mtu", s.MTU)
 	default:
 		return nil, false
 	}

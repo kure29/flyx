@@ -377,6 +377,24 @@ func expandArgs(args []string, runDir, binDir string) []string {
 	return out
 }
 
+func expandEnv(env map[string]string, runDir, binDir string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		v := strings.ReplaceAll(env[k], "{RUN_DIR}", runDir)
+		v = strings.ReplaceAll(v, "{BIN_DIR}", binDir)
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
 func lastLines(r *logRing, n int) string {
 	lines := r.tail(n)
 	if len(lines) == 0 {
@@ -408,7 +426,9 @@ func (m *Manager) startProcesses(inst *instance) {
 		if len(specs) > 1 {
 			prefix = "[" + spec.Name + "] "
 		}
-		p := newProcess(bin, expandArgs(spec.Args, runDir, filepath.Dir(bin)), runDir, inst.logs)
+		binDir := filepath.Dir(bin)
+		p := newProcess(bin, expandArgs(spec.Args, runDir, binDir), runDir, inst.logs)
+		p.env = expandEnv(spec.Env, runDir, binDir)
 		p.prefix = prefix
 		if m.onlineIPs != nil && (kernelType == "xray" || kernelType == "singbox") {
 			kt := kernelType

@@ -99,6 +99,24 @@ func finishProxy(p Proxy) (ImportedNode, error) {
 		return ImportedNode{}, err
 	}
 	port := p.num("port")
+	if t == "mieru" {
+		if pr := p.str("port-range"); pr != "" {
+			begin, end, err := parseMieruPortRange(pr)
+			if err != nil {
+				return ImportedNode{}, err
+			}
+			p["port-range"] = fmt.Sprintf("%d-%d", begin, end)
+			if port == 0 {
+				port = begin
+			}
+		}
+		if tr := strings.ToUpper(p.str("transport")); tr != "" {
+			p["transport"] = tr
+		}
+		if _, hasUDP := p["udp"]; !hasUDP {
+			p["udp"] = true
+		}
+	}
 	if port < 1 || port > 65535 {
 		return ImportedNode{}, errors.New("端口不正确")
 	}
@@ -137,6 +155,13 @@ func validateProxyCredentials(p Proxy) error {
 		if p.str("psk") == "" {
 			return errors.New("缺少 PSK")
 		}
+	case "mieru":
+		if p.str("username") == "" || p.str("password") == "" {
+			return errors.New("缺少用户名或密码")
+		}
+		if tr := strings.ToUpper(p.str("transport")); tr != "TCP" && tr != "UDP" {
+			return errors.New("Mieru 传输协议必须是 TCP 或 UDP")
+		}
 	}
 	return nil
 }
@@ -160,6 +185,8 @@ func parseURI(line string) (Proxy, error) {
 		return parseUserURI("tuic", rest)
 	case "anytls":
 		return parseUserURI("anytls", rest)
+	case "mierus":
+		return parseMieruURI(rest)
 	case "socks", "socks5":
 		return parseSocksURI(rest)
 	case "http", "https":
@@ -482,6 +509,83 @@ func parseSocksURI(rest string) (Proxy, error) {
 		p.set("password", pw)
 	}
 	return p, nil
+}
+
+// parseMieruURI parses official mierus://user:pass@host?profile=...&port=...&protocol=TCP|UDP links.
+func parseMieruURI(rest string) (Proxy, error) {
+	u, err := url.Parse("mierus://" + rest)
+	if err != nil {
+		return nil, errors.New("mierus 链接格式不正确")
+	}
+	if u.User == nil {
+		return nil, errors.New("mierus 链接缺少用户名或密码")
+	}
+	username := u.User.Username()
+	password, _ := u.User.Password()
+	if username == "" || password == "" {
+		return nil, errors.New("mierus 链接缺少用户名或密码")
+	}
+	host := strings.TrimSpace(u.Hostname())
+	if host == "" {
+		return nil, errors.New("mierus 链接缺少服务器地址")
+	}
+	q := u.Query()
+	name := firstNonEmptyString(q.Get("profile"), u.Fragment)
+	portSpec := firstNonEmptyString(q.Get("port"), u.Port())
+	if portSpec == "" {
+		return nil, errors.New("mierus 链接缺少端口")
+	}
+	p := Proxy{
+		"type":     "mieru",
+		"name":     name,
+		"server":   host,
+		"username": username,
+		"password": password,
+		"udp":      true,
+	}
+	if strings.Contains(portSpec, "-") {
+		begin, end, err := parseMieruPortRange(portSpec)
+		if err != nil {
+			return nil, err
+		}
+		p["port"] = begin
+		p["port-range"] = fmt.Sprintf("%d-%d", begin, end)
+	} else {
+		port, err := strconv.Atoi(portSpec)
+		if err != nil || port < 1 || port > 65535 {
+			return nil, errors.New("端口不正确")
+		}
+		p["port"] = port
+	}
+	tr := strings.ToUpper(firstNonEmptyString(q.Get("protocol"), "TCP"))
+	if tr != "TCP" && tr != "UDP" {
+		return nil, errors.New("Mieru 传输协议必须是 TCP 或 UDP")
+	}
+	p["transport"] = tr
+	if mtuStr := strings.TrimSpace(q.Get("mtu")); mtuStr != "" {
+		if mtu, err := strconv.Atoi(mtuStr); err == nil && mtu >= 1280 && mtu <= 1500 {
+			p["mtu"] = mtu
+		}
+	}
+	p.set("multiplexing", strings.TrimSpace(q.Get("multiplexing")))
+	if hm := strings.TrimSpace(q.Get("handshake-mode")); hm != "" && hm != MieruHandshakeStandard {
+		p["handshake-mode"] = hm
+	}
+	p.set("traffic-pattern", strings.TrimSpace(q.Get("traffic-pattern")))
+	return p, nil
+}
+
+func parseMieruPortRange(spec string) (int, int, error) {
+	parts := strings.Split(strings.TrimSpace(spec), "-")
+	if len(parts) != 2 {
+		return 0, 0, errors.New("Mieru 端口范围格式应为 起始-结束")
+	}
+	begin, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	end, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || begin < 1 || end > 65535 || begin > end {
+		return 0, 0, errors.New("Mieru 端口范围不正确")
+	}
+	return begin, end, nil
 }
 
 func firstNonEmptyString(values ...string) string {
