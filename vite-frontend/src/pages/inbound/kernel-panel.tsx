@@ -21,6 +21,7 @@ import {
   Plus,
   RefreshCw,
   RotateCw,
+  Shield,
   Terminal,
   Zap,
 } from "lucide-react";
@@ -102,6 +103,7 @@ function kernelIcon(type: string, isRelay?: boolean) {
   if (isRelay) return ArrowLeftRight;
   if (type === "singbox") return Layers;
   if (type === "snell") return Zap;
+  if (type === "mieru") return Shield;
 
   return Cpu;
 }

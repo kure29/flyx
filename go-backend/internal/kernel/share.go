@@ -138,6 +138,10 @@ func ShareURI(e Endpoint) (string, bool) {
 		if e.selfSigned() {
 			q.Set("insecure", "1")
 		}
+		if in.Settings.ObfsPassword != "" {
+			q.Set("obfs", "salamander")
+			q.Set("obfs-password", in.Settings.ObfsPassword)
+		}
 		if lo, hi := e.hopRange(); lo > 0 {
 			q.Set("mport", fmt.Sprintf("%d-%d", lo, hi)) // v2rayN / NekoBox convention
 		}
@@ -209,6 +213,21 @@ func clientProxy(e Endpoint) (Proxy, bool) {
 		p["allowed-ips"] = []interface{}{"0.0.0.0/0", "::/0"}
 		p["mtu"] = s.MTU
 		p["udp"] = true
+	case ProtocolMieru:
+		transport := "TCP"
+		if e.Inbound.Transport.Type == TransportUDP {
+			transport = "UDP"
+		}
+		p["type"] = "mieru"
+		p["transport"] = transport
+		p["username"] = s.Username
+		p["password"] = s.Password
+		p["udp"] = true
+		p.set("multiplexing", s.MieruMultiplexing)
+		if s.MieruHandshakeMode != "" && s.MieruHandshakeMode != MieruHandshakeStandard {
+			p["handshake-mode"] = s.MieruHandshakeMode
+		}
+		p.set("mtu", s.MTU)
 	default:
 		return nil, false
 	}
@@ -243,6 +262,9 @@ func addSecurityQuery(q url.Values, e Endpoint) {
 		q.Set("pbk", sec.RealityPublicKey)
 		if len(sec.RealityShortIDs) > 0 {
 			q.Set("sid", sec.RealityShortIDs[0])
+		}
+		if e.Inbound.Protocol == ProtocolVLESS && e.PostQuantumReality {
+			q.Set("support-x25519mlkem768", "true")
 		}
 	case SecurityTLS:
 		q.Set("sni", sec.SNI)
@@ -461,6 +483,9 @@ func singboxOutbound(e Endpoint) (map[string]interface{}, bool) {
 	case ProtocolHysteria2:
 		o["type"] = "hysteria2"
 		o["password"] = in.Settings.Password
+		if in.Settings.ObfsPassword != "" {
+			o["obfs"] = map[string]interface{}{"type": "salamander", "password": in.Settings.ObfsPassword}
+		}
 		if lo, hi := e.hopRange(); lo > 0 {
 			// server_ports replaces server_port; every port in it reaches the inbound.
 			delete(o, "server_port")
@@ -525,8 +550,8 @@ func singboxOutbound(e Endpoint) (map[string]interface{}, bool) {
 	return o, true
 }
 
-// SurgeLine renders a Surge [Proxy] line. Surge has no VLESS, Reality,
-// gRPC or XHTTP support, so those endpoints are skipped.
+// SurgeLine renders a Surge [Proxy] line. VLESS (Reality, XHTTP, gRPC, WS,
+// TLS, Encryption) requires Surge iOS 6.0.0+ / Mac 6.12.0+.
 func SurgeLine(e Endpoint) (string, bool) {
 	if e.Proxy != nil {
 		return proxySurge(e)
@@ -536,7 +561,7 @@ func SurgeLine(e Endpoint) (string, bool) {
 		return proxySurge(e)
 	}
 	in := e.Inbound
-	if in.Security.Type == SecurityReality || in.Transport.Type == TransportGRPC || in.Transport.Type == TransportXHTTP {
+	if in.Protocol != ProtocolVLESS && (in.Security.Type == SecurityReality || in.Transport.Type == TransportGRPC || in.Transport.Type == TransportXHTTP) {
 		return "", false
 	}
 	name := strings.NewReplacer(",", " ", "=", " ", "\n", " ").Replace(e.Name)
@@ -576,6 +601,9 @@ func SurgeLine(e Endpoint) (string, bool) {
 		return name + " = " + strings.Join(parts, ", "), true
 	case ProtocolHysteria2:
 		parts = append(parts, "hysteria2", host, strconv.Itoa(e.Port), "password="+in.Settings.Password)
+		if in.Settings.ObfsPassword != "" {
+			parts = append(parts, "salamander-password="+in.Settings.ObfsPassword)
+		}
 		if lo, hi := e.hopRange(); lo > 0 {
 			parts = append(parts, fmt.Sprintf("port-hopping=\"%d-%d\"", lo, hi), "port-hopping-interval=30")
 		}
@@ -587,6 +615,62 @@ func SurgeLine(e Endpoint) (string, bool) {
 	case ProtocolAnyTLS:
 		parts = append(parts, "anytls", host, strconv.Itoa(e.Port), "password="+in.Settings.Password)
 		return name + " = " + strings.Join(append(parts, tlsTail()...), ", "), true
+	case ProtocolVLESS:
+		parts = append(parts, "vless", host, strconv.Itoa(e.Port), "username="+in.Settings.UUID)
+		if in.Settings.Flow != "" {
+			parts = append(parts, "flow="+in.Settings.Flow)
+		}
+		if in.Settings.Encryption != "" {
+			parts = append(parts, "encryption="+in.Settings.Encryption)
+		}
+		switch in.Security.Type {
+		case SecurityReality:
+			if in.Security.SNI != "" {
+				parts = append(parts, "sni="+in.Security.SNI)
+			}
+			parts = append(parts, "reality-public-key="+in.Security.RealityPublicKey)
+			if len(in.Security.RealityShortIDs) > 0 && in.Security.RealityShortIDs[0] != "" {
+				parts = append(parts, "reality-short-id="+in.Security.RealityShortIDs[0])
+			}
+		case SecurityTLS:
+			parts = append(parts, "tls=true")
+			if in.Security.SNI != "" {
+				parts = append(parts, "sni="+in.Security.SNI)
+			}
+			if e.selfSigned() {
+				parts = append(parts, "skip-cert-verify=true")
+			}
+			if len(in.Security.ALPN) > 0 {
+				parts = append(parts, "alpn="+strings.Join(in.Security.ALPN, ","))
+			}
+		}
+		switch in.Transport.Type {
+		case TransportTCP:
+		case TransportWS:
+			parts = append(parts, "ws=true", "ws-path="+firstNonEmptyString(in.Transport.Path, "/"))
+			if in.Transport.Host != "" {
+				parts = append(parts, "ws-headers=Host:"+in.Transport.Host)
+			}
+		case TransportGRPC:
+			if in.Security.Type == SecurityNone {
+				return "", false
+			}
+			parts = append(parts, "grpc=true")
+			if in.Transport.ServiceName != "" {
+				parts = append(parts, "grpc-service-name="+in.Transport.ServiceName)
+			}
+		case TransportXHTTP:
+			parts = append(parts, "xhttp=true", "xhttp-path="+firstNonEmptyString(in.Transport.Path, "/"))
+			if in.Transport.Host != "" {
+				parts = append(parts, "xhttp-host="+in.Transport.Host)
+			}
+			if in.Transport.Mode != "" && in.Transport.Mode != defaultXHTTPMode {
+				parts = append(parts, "xhttp-mode="+in.Transport.Mode)
+			}
+		default:
+			return "", false
+		}
+		return name + " = " + strings.Join(parts, ", "), true
 	case ProtocolVMess:
 		parts = append(parts, "vmess", host, strconv.Itoa(e.Port), "username="+in.Settings.UUID, "vmess-aead=true")
 	case ProtocolTrojan:
@@ -1020,6 +1104,9 @@ func clashQUICFamily(e Endpoint) yamlNode {
 	switch in.Protocol {
 	case ProtocolHysteria2:
 		p = append(p, yamlField{"password", in.Settings.Password}, yamlField{"alpn", []string{"h3"}})
+		if in.Settings.ObfsPassword != "" {
+			p = append(p, yamlField{"obfs", "salamander"}, yamlField{"obfs-password", in.Settings.ObfsPassword})
+		}
 		if lo, hi := e.hopRange(); lo > 0 {
 			p = append(p, yamlField{"ports", fmt.Sprintf("%d-%d", lo, hi)}, yamlField{"hop-interval", 30})
 		}

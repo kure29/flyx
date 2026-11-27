@@ -67,7 +67,7 @@ export default function NodeHubPage() {
         description={
           tab === "kernels"
             ? t(
-                "服务器上安装的 Xray / sing-box / Snell 等内核，节点（入站）跑在内核上",
+                "服务器上安装的 Xray / sing-box / Snell / Mieru 等内核，节点（入站）跑在内核上",
               )
             : t("装了 agent 的服务器：实时状态、监控和管理都在这里")
         }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -57,6 +58,7 @@ func (r *logRing) tail(n int) []string {
 type process struct {
 	bin    string
 	args   []string
+	env    []string
 	dir    string
 	logs   *logRing
 	prefix string            // prepended to output lines when a kernel runs several processes
@@ -126,8 +128,17 @@ func (p *process) supervise() {
 }
 
 func (p *process) runOnce() error {
+	select {
+	case <-p.stopCh:
+		return nil
+	default:
+	}
+
 	cmd := exec.Command(p.bin, p.args...)
 	cmd.Dir = p.dir
+	if len(p.env) > 0 {
+		cmd.Env = append(os.Environ(), p.env...)
+	}
 	cmd.SysProcAttr = sysProcAttr()
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
@@ -143,7 +154,16 @@ func (p *process) runOnce() error {
 	p.running = true
 	p.pid = cmd.Process.Pid
 	p.startedAt = time.Now().UnixMilli()
+	var stopped bool
+	select {
+	case <-p.stopCh:
+		stopped = true
+	default:
+	}
 	p.mu.Unlock()
+	if stopped {
+		signalGroup(cmd.Process.Pid, syscall.SIGTERM)
+	}
 
 	scanDone := make(chan struct{})
 	go func() {

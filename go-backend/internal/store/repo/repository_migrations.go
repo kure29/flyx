@@ -111,13 +111,14 @@ func prepareSQLiteNftablesColumns(db *gorm.DB) error {
 
 // ─── Migration ───────────────────────────────────────────────────────
 
-const currentSchemaVersion = 6
+const currentSchemaVersion = 7
 
 var ensurePostgresIDDefaultsFn = ensurePostgresIDDefaults
 var migrateViteConfigValueColumnTypeFn = migrateViteConfigValueColumnType
 var migrateSpeedLimitTunnelBindingFn = migrateSpeedLimitTunnelBinding
 var migratePostgresTrafficInt64ColumnsFn = migratePostgresTrafficInt64Columns
 var migrateTunnelMetricBucketUniqueIndexFn = migrateTunnelMetricBucketUniqueIndex
+var migrateManagedRelayForwardNamesFn = migrateManagedRelayForwardNames
 
 func getSchemaVersion(db *gorm.DB) int {
 	var v model.SchemaVersion
@@ -193,8 +194,21 @@ func migrateSchema(db *gorm.DB) error {
 		}
 	}
 
+	if ver < 7 {
+		if err := migrateManagedRelayForwardNamesFn(db); err != nil {
+			return err
+		}
+	}
+
 	setSchemaVersion(db, currentSchemaVersion)
 	return nil
+}
+
+func migrateManagedRelayForwardNames(db *gorm.DB) error {
+	if db == nil {
+		return errors.New("nil db")
+	}
+	return syncManagedRelayForwardNamesTx(db, unixMilliNow())
 }
 
 func migrateViteConfigValueColumnType(db *gorm.DB) error {

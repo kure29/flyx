@@ -94,8 +94,11 @@ func TestSubscriptionFormats(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGolden(t, "surge.golden.conf", surge)
-	if strings.Contains(surge, "Reality") {
-		t.Fatal("surge has no reality support")
+	if !strings.Contains(surge, "reality-public-key=") || !strings.Contains(surge, "xhttp=true, xhttp-path=/x") {
+		t.Fatalf("surge must render VLESS Reality and XHTTP:\n%s", surge)
+	}
+	if strings.Contains(surge, "Trojan") {
+		t.Fatalf("surge must still skip Trojan gRPC:\n%s", surge)
 	}
 
 	if _, _, err := Subscription("nope", eps, SubOptions{}); err == nil {
@@ -237,5 +240,141 @@ func TestHysteria2PortHopping(t *testing.T) {
 		Transport: Transport{Type: TransportQUIC}, Security: Security{Type: SecurityTLS}}
 	if err := Normalize(TypeSingbox, &tuic); err != nil || tuic.Settings.PortHopping != "" {
 		t.Fatalf("hopping is Hysteria2 only: %v %q", err, tuic.Settings.PortHopping)
+	}
+}
+
+func TestHysteria2Salamander(t *testing.T) {
+	in := Inbound{
+		ID: 11, Protocol: ProtocolHysteria2, Port: 443,
+		Settings:  Settings{Password: "hy2-pass", ObfsPassword: "  sal-pass-123  "},
+		Transport: Transport{Type: TransportQUIC},
+		Security:  Security{Type: SecurityTLS},
+	}
+	if err := Normalize(TypeSingbox, &in); err != nil {
+		t.Fatal(err)
+	}
+	if in.Settings.ObfsPassword != "sal-pass-123" {
+		t.Fatalf("obfs password not trimmed: %q", in.Settings.ObfsPassword)
+	}
+
+	rendered, err := Render(TypeSingbox, []Inbound{in})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(rendered.Files[0].Content), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	ib := cfg["inbounds"].([]interface{})[0].(map[string]interface{})
+	obfs, _ := ib["obfs"].(map[string]interface{})
+	if obfs["type"] != "salamander" || obfs["password"] != "sal-pass-123" {
+		t.Fatalf("sing-box server obfs: %v", ib["obfs"])
+	}
+
+	ep := Endpoint{Name: "hy2-sal", Host: "203.0.113.10", Port: 443, Inbound: in, Direct: true}
+	if uri, ok := ShareURI(ep); !ok || !strings.Contains(uri, "obfs=salamander") || !strings.Contains(uri, "obfs-password=sal-pass-123") {
+		t.Fatalf("share uri: %v %s", ok, uri)
+	}
+	if clash := marshalYAML(clashQUICFamily(ep)); !strings.Contains(clash, `obfs: "salamander"`) || !strings.Contains(clash, `obfs-password: "sal-pass-123"`) {
+		t.Fatalf("clash:\n%s", clash)
+	}
+	o, ok := singboxOutbound(ep)
+	if !ok {
+		t.Fatal("sing-box outbound rejected")
+	}
+	outObfs, _ := o["obfs"].(map[string]interface{})
+	if outObfs["type"] != "salamander" || outObfs["password"] != "sal-pass-123" {
+		t.Fatalf("sing-box outbound obfs: %v", o["obfs"])
+	}
+	if surge, ok := SurgeLine(ep); !ok || !strings.Contains(surge, "salamander-password=sal-pass-123") {
+		t.Fatalf("surge: %v %s", ok, surge)
+	}
+	if loon, _, err := Subscription(FormatLoon, []Endpoint{ep}, SubOptions{}); err != nil || !strings.Contains(loon, "salamander-password=sal-pass-123") {
+		t.Fatalf("loon: %v %s", err, loon)
+	}
+
+	// Empty ObfsPassword omits obfs from server config and exports.
+	plain := in
+	plain.Settings.ObfsPassword = ""
+	if r, err := Render(TypeSingbox, []Inbound{plain}); err != nil || strings.Contains(r.Files[0].Content, `"obfs"`) {
+		t.Fatalf("plain hy2 must omit obfs: %v\n%s", err, r.Files[0].Content)
+	}
+
+	// Validation: whitespace/comma/quote rejected, non-hy2 cleared.
+	for _, badPW := range []string{"a b", "a,b", `a"b`, strings.Repeat("x", 129)} {
+		bad := in
+		bad.Settings.ObfsPassword = badPW
+		if err := Normalize(TypeSingbox, &bad); err == nil {
+			t.Fatalf("bad obfsPassword %q must be rejected", badPW)
+		}
+	}
+	tuic := Inbound{
+		ID: 12, Protocol: ProtocolTUIC, Port: 8443,
+		Settings:  Settings{ObfsPassword: "ignored"},
+		Transport: Transport{Type: TransportQUIC},
+		Security:  Security{Type: SecurityTLS},
+	}
+	if err := Normalize(TypeSingbox, &tuic); err != nil || tuic.Settings.ObfsPassword != "" {
+		t.Fatalf("obfsPassword is Hysteria2 only: %v %q", err, tuic.Settings.ObfsPassword)
+	}
+}
+
+func TestSurgeVLESSVariants(t *testing.T) {
+	norm := func(in Inbound) Inbound {
+		if err := Normalize(TypeXray, &in); err != nil {
+			t.Fatal(err)
+		}
+		return in
+	}
+	xhttpTLS := norm(Inbound{
+		ID: 1, Protocol: ProtocolVLESS, Port: 443,
+		Settings:  Settings{UUID: testUUID},
+		Transport: Transport{Type: TransportXHTTP, Path: "/cdn", Host: "cdn.example.com", Mode: "packet-up"},
+		Security:  Security{Type: SecurityTLS, SNI: "cdn.example.com", CertMode: CertModeSelf},
+	})
+	line, ok := SurgeLine(Endpoint{Name: "CDN XHTTP", Host: "203.0.113.10", Port: 443, Inbound: xhttpTLS})
+	if !ok {
+		t.Fatal("xhttp+tls must render in Surge")
+	}
+	for _, want := range []string{
+		"CDN XHTTP = vless, 203.0.113.10, 443, username=" + testUUID,
+		"tls=true", "sni=cdn.example.com", "skip-cert-verify=true",
+		"xhttp=true", "xhttp-path=/cdn", "xhttp-host=cdn.example.com", "xhttp-mode=packet-up",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("missing %q in %s", want, line)
+		}
+	}
+
+	wsTLS := norm(Inbound{
+		ID: 2, Protocol: ProtocolVLESS, Port: 8443,
+		Settings:  Settings{UUID: testUUID},
+		Transport: Transport{Type: TransportWS, Path: "/ws", Host: "ws.example.com"},
+		Security:  Security{Type: SecurityTLS, SNI: "ws.example.com", CertMode: CertModeFile, CertFile: "/a.crt", KeyFile: "/a.key"},
+	})
+	line, ok = SurgeLine(Endpoint{Name: "WS", Host: "ws.example.com", Port: 8443, Inbound: wsTLS})
+	if !ok || !strings.Contains(line, "ws=true, ws-path=/ws, ws-headers=Host:ws.example.com") || strings.Contains(line, "skip-cert-verify") {
+		t.Fatalf("ws+tls surge: %v %s", ok, line)
+	}
+
+	grpcTLS := norm(Inbound{
+		ID: 3, Protocol: ProtocolVLESS, Port: 2053,
+		Settings:  Settings{UUID: testUUID},
+		Transport: Transport{Type: TransportGRPC, ServiceName: "tun"},
+		Security:  Security{Type: SecurityTLS, SNI: "g.example.com", CertMode: CertModeSelf},
+	})
+	line, ok = SurgeLine(Endpoint{Name: "gRPC", Host: "203.0.113.10", Port: 2053, Inbound: grpcTLS})
+	if !ok || !strings.Contains(line, "grpc=true, grpc-service-name=tun") || !strings.Contains(line, "tls=true") {
+		t.Fatalf("grpc+tls surge: %v %s", ok, line)
+	}
+
+	vlessEnc := norm(Inbound{
+		ID: 4, Protocol: ProtocolVLESS, Port: 8443,
+		Settings: Settings{UUID: testUUID, Decryption: "auto", Flow: FlowVision},
+		Security: Security{Type: SecurityNone},
+	})
+	line, ok = SurgeLine(Endpoint{Name: "Enc", Host: "203.0.113.10", Port: 8443, Inbound: vlessEnc})
+	if !ok || !strings.Contains(line, "flow=xtls-rprx-vision") || !strings.Contains(line, "encryption=mlkem768x25519plus.native.0rtt.") {
+		t.Fatalf("vless encryption surge: %v %s", ok, line)
 	}
 }

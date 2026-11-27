@@ -35,6 +35,7 @@ func TestImportShareLinksRoundTrip(t *testing.T) {
 		"ss://" + base64.RawURLEncoding.EncodeToString([]byte("chacha20-ietf-poly1305:pw")) + "@1.2.3.4:80/?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dbing.com#obfs",
 		"vmess://" + base64.StdEncoding.EncodeToString(vb),
 		"vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=PUBKEY&sid=ab12&type=tcp#Reality",
+		"vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=PUBKEY&sid=ab12&support-x25519mlkem768=true&type=tcp#RealityPQ",
 		"vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?encryption=none&security=tls&sni=a.example.com&type=grpc&serviceName=svc#gRPC",
 		"trojan://pass%40word@t.example.com:443?security=tls&sni=t.example.com&type=ws&path=%2Ftr&host=t.example.com&allowInsecure=1#Trojan",
 		"hysteria2://secret@5.6.7.8:443/?sni=h.example.com&obfs=salamander&obfs-password=ob&mport=20000-30000&insecure=1#HY2",
@@ -60,6 +61,9 @@ func TestImportShareLinksRoundTrip(t *testing.T) {
 	}
 	if got := DescribeProxy(mustImportOne(t, links[4]).Proxy); got != "VLESS + Reality" {
 		t.Fatalf("describe: %q", got)
+	}
+	if !mustImportOne(t, links[5]).Proxy.sub("reality-opts").flag("support-x25519mlkem768") {
+		t.Fatal("support-x25519mlkem768 must be parsed into reality-opts")
 	}
 }
 
@@ -123,6 +127,40 @@ DIRECT-ish = direct
 	b64 := base64.StdEncoding.EncodeToString([]byte("ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-256-gcm:x")) + "@1.2.3.4:80#a\ntrojan://p@5.6.7.8:443#b\n"))
 	if nodes, errs := ParseImport(b64); len(nodes) != 2 || len(errs) != 0 {
 		t.Fatalf("base64 subscription: %v %v", nodes, errs)
+	}
+}
+
+func TestSurgeVLESSImportExport(t *testing.T) {
+	input := `[Proxy]
+Reality = vless, 1.2.3.4, 443, username=11111111-2222-3333-4444-555555555555, flow=xtls-rprx-vision, sni=www.microsoft.com, reality-public-key=PUBKEY, reality-short-id=ab12
+XHTTP-Reality = vless, 1.2.3.4, 8443, username=11111111-2222-3333-4444-555555555555, sni=www.microsoft.com, reality-public-key=PUBKEY, xhttp=true, xhttp-path=/x, xhttp-host=cdn.example.com, xhttp-mode=packet-up
+XHTTP-CDN = vless, cdn.example.com, 443, username=11111111-2222-3333-4444-555555555555, tls=true, sni=cdn.example.com, skip-cert-verify=true, xhttp=true, xhttp-path=/xhttp
+HTTPUp = vless, up.example.com, 443, username=11111111-2222-3333-4444-555555555555, tls=true, sni=up.example.com, ws=true, ws-http-upgrade=true, ws-path=/up, ws-headers=Host:up.example.com
+GRPC = vless, g.example.com, 443, username=11111111-2222-3333-4444-555555555555, tls=true, sni=g.example.com, grpc=true, grpc-service-name=svc
+LoonVLESS = vless, 9.9.9.9, 443, "11111111-2222-3333-4444-555555555555", transport=tcp, over-tls=true, flow=xtls-rprx-vision, sni=www.bing.com, public-key="PUBKEY2", short-id=cd34
+`
+	nodes, errs := ParseImport(input)
+	if len(errs) != 0 || len(nodes) != 6 {
+		t.Fatalf("parse surge vless: nodes=%d errs=%v", len(nodes), errs)
+	}
+	for _, n := range nodes {
+		line, ok := proxySurge(Endpoint{Name: n.Name, Host: n.Host, Port: n.Port, Proxy: n.Proxy, Direct: true})
+		if !ok {
+			t.Fatalf("proxySurge rejected %s: %v", n.Name, n.Proxy)
+		}
+		back := mustImportOne(t, line)
+		if back.Name != n.Name || back.Host != n.Host || back.Port != n.Port || !reflect.DeepEqual(normalized(back.Proxy), normalized(n.Proxy)) {
+			t.Fatalf("surge vless round trip mismatch for %s:\nline: %s\norig: %v\nback: %v", n.Name, line, n.Proxy, back.Proxy)
+		}
+	}
+	if nodes[1].Proxy.network() != "xhttp" || nodes[1].Proxy.sub("xhttp-opts").str("mode") != "packet-up" {
+		t.Fatalf("xhttp opts: %v", nodes[1].Proxy)
+	}
+	if !nodes[3].Proxy.sub("ws-opts").flag("v2ray-http-upgrade") {
+		t.Fatalf("httpupgrade flag lost: %v", nodes[3].Proxy)
+	}
+	if nodes[5].Proxy.sub("reality-opts").str("public-key") != "PUBKEY2" || nodes[5].Proxy.str("flow") != FlowVision {
+		t.Fatalf("loon vless: %v", nodes[5].Proxy)
 	}
 }
 

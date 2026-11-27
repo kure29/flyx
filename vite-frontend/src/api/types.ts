@@ -64,6 +64,7 @@ export interface ForwardApiItem {
   proxyProtocol?: number;
   proxyProtocolReceive?: number;
   proxyProtocolSend?: number;
+  updatedTime?: number;
   inx?: number;
   [key: string]: unknown;
 }
@@ -584,6 +585,7 @@ export interface InboundSettings {
   /** Snell v6 traffic shaping: unset (default) or "unshaped". */
   snellMode?: string;
   masquerade?: string;
+  obfsPassword?: string;
   backendPort?: number;
   portHopping?: string;
   username?: string;
@@ -595,6 +597,8 @@ export interface InboundSettings {
   peerPublicKey?: string;
   peerAddress?: string;
   mtu?: number;
+  mieruMultiplexing?: string;
+  mieruHandshakeMode?: string;
 }
 
 export interface InboundTransport {

@@ -1,6 +1,7 @@
 // Convert the WebAuthn JSON wire format to the browser's ArrayBuffer format.
 function decode(value: string): ArrayBuffer {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
   const bytes = Uint8Array.from(atob(padded), (character) =>
     character.charCodeAt(0),
   );

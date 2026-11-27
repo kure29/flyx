@@ -338,8 +338,9 @@ func (r *Repository) ListNodeInboundsByNode(nodeID int64) ([]model.NodeInbound, 
 	return rows, r.db.Where("node_id = ?", nodeID).Order("id ASC").Find(&rows).Error
 }
 
-// NodeForwardOrTunnelPortRangeOccupant reports whether any forward or tunnel
-// uses a port in [lo, hi] on the node ("" when free).
+// NodeForwardOrTunnelPortRangeOccupant reports whether a forward or chain
+// tunnel listens on any port in [lo, hi] of a node ("" when free). Forwards
+// and tunnels carry both TCP and UDP, so they conflict with any L4 protocol.
 func (r *Repository) NodeForwardOrTunnelPortRangeOccupant(nodeID int64, lo, hi int) (string, error) {
 	if r == nil || r.db == nil {
 		return "", errors.New("repository not initialized")
@@ -591,6 +592,37 @@ func (r *Repository) UpdateManagedInboundRelayName(forwardID int64, name string)
 	return r.db.Model(&model.NodeInboundRelay{}).
 		Where("forward_id = ? AND managed = ?", forwardID, 1).
 		Update("name", name).Error
+}
+
+// syncManagedRelayForwardNamesTx aligns managed relay forward names with
+// node_inbound_relay.name so rows renamed before 3.10.2 or restored from
+// older backups stay consistent across Nodes and Rules.
+func syncManagedRelayForwardNamesTx(tx *gorm.DB, now int64) error {
+	if tx == nil {
+		return errors.New("database unavailable")
+	}
+	if !tx.Migrator().HasTable(&model.NodeInboundRelay{}) || !tx.Migrator().HasTable(&model.Forward{}) {
+		return nil
+	}
+	type mismatch struct {
+		ForwardID int64  `gorm:"column:forward_id"`
+		Name      string `gorm:"column:name"`
+	}
+	var rows []mismatch
+	if err := tx.Table("node_inbound_relay").
+		Select("node_inbound_relay.forward_id AS forward_id, node_inbound_relay.name AS name").
+		Joins("INNER JOIN forward ON forward.id = node_inbound_relay.forward_id").
+		Where("node_inbound_relay.managed = ? AND node_inbound_relay.forward_id > 0 AND node_inbound_relay.name <> '' AND forward.name <> node_inbound_relay.name", 1).
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := tx.Model(&model.Forward{}).Where("id = ?", row.ForwardID).
+			Updates(map[string]interface{}{"name": row.Name, "updated_time": now}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Repository) DeleteInboundRelay(id int64) error {

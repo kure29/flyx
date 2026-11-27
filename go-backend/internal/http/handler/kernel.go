@@ -941,6 +941,7 @@ func boolToInt(b bool) int {
 func (h *Handler) pickFreeInboundPort(nodeID, excludeInboundID int64) (int, error) {
 	for i := 0; i < 64; i++ {
 		port := 20000 + rand.Intn(40000)
+		// Leave Protocol empty so random port picking avoids both TCP and UDP occupants.
 		msg, err := h.inboundPortConflict(nodeID, "", kernel.Inbound{Port: port}, excludeInboundID)
 		if err != nil {
 			return 0, err
@@ -955,7 +956,7 @@ func (h *Handler) pickFreeInboundPort(nodeID, excludeInboundID int64) (int, erro
 // portSpan is a port range an inbound occupies on its node.
 type portSpan struct {
 	lo, hi int
-	net    string // "tcp", "udp", or "tcp,udp"
+	net    string // "tcp", "udp", or "tcp,udp" (empty treated as both)
 	what   string
 	isMain bool
 }
@@ -969,15 +970,42 @@ func (s portSpan) String() string {
 
 func (s portSpan) overlaps(o portSpan) bool { return s.lo <= o.hi && o.lo <= s.hi }
 
-// inboundSpans lists the ports an inbound needs: its listen port, the
-// loopback backend of a ShadowTLS front, and the port-hopping range.
-func inboundSpans(in kernel.Inbound, mainNet string) []portSpan {
-	if mainNet == "" {
-		mainNet = "tcp,udp"
+// networksOverlap reports whether two L4 protocol lists ("tcp", "udp",
+// "tcp,udp") share at least one protocol. Empty is treated as both.
+func networksOverlap(a, b string) bool {
+	aTCP, aUDP := networkFlags(a)
+	bTCP, bUDP := networkFlags(b)
+	return (aTCP && bTCP) || (aUDP && bUDP)
+}
+
+func networkFlags(net string) (tcp, udp bool) {
+	if strings.TrimSpace(net) == "" {
+		return true, true
 	}
-	spans := []portSpan{{lo: in.Port, hi: in.Port, net: mainNet, what: "端口", isMain: true}}
+	for _, part := range strings.Split(net, ",") {
+		switch strings.ToLower(strings.TrimSpace(part)) {
+		case "tcp":
+			tcp = true
+		case "udp":
+			udp = true
+		}
+	}
+	if !tcp && !udp {
+		return true, true
+	}
+	return tcp, udp
+}
+
+// inboundSpans lists the ports an inbound needs: its listen port, the
+// loopback backend of a ShadowTLS front, and the UDP port-hopping range.
+func inboundSpans(kernelType string, in kernel.Inbound) []portSpan {
+	netSpec := "tcp,udp"
+	if in.Protocol != "" {
+		netSpec = in.NetworkOn(kernelType)
+	}
+	spans := []portSpan{{lo: in.Port, hi: in.Port, net: netSpec, what: "端口", isMain: true}}
 	if bp := in.Settings.BackendPort; bp > 0 {
-		spans = append(spans, portSpan{lo: bp, hi: bp, net: "tcp", what: "后端端口"})
+		spans = append(spans, portSpan{lo: bp, hi: bp, net: "tcp,udp", what: "后端端口"})
 	}
 	if lo, hi := in.HopRange(); lo > 0 {
 		spans = append(spans, portSpan{lo: lo, hi: hi, net: "udp", what: "端口跳跃范围"})
@@ -987,14 +1015,15 @@ func inboundSpans(in kernel.Inbound, mainNet string) []portSpan {
 
 // inboundPortConflict describes the first clash between the ports an
 // inbound needs and what already runs on the node ("" when there is none).
-// It distinguishes TCP vs UDP and permits multiple SNI-bearing TCP inbounds to
-// share the node's configured NodePortMux port when their SNIs are distinct.
+// TCP-only and UDP-only inbounds may share a port number on the same node,
+// and multiple SNI-bearing TCP inbounds may share the node's configured
+// NodePortMux port when their SNIs are distinct.
 func (h *Handler) inboundPortConflict(nodeID int64, kernelType string, in kernel.Inbound, excludeInboundID int64) (string, error) {
 	mainNet := "tcp,udp"
 	if in.Protocol != "" {
 		mainNet = in.NetworkOn(kernelType)
 	}
-	spans := inboundSpans(in, mainNet)
+	spans := inboundSpans(kernelType, in)
 	for _, sp := range spans {
 		occ, err := h.repo.NodeForwardOrTunnelPortRangeOccupant(nodeID, sp.lo, sp.hi)
 		if err != nil {
@@ -1054,49 +1083,50 @@ func (h *Handler) inboundPortConflict(nodeID int64, kernelType string, in kernel
 		}
 	}
 
-	kernels, err := h.repo.ListNodeKernels(nodeID)
-	if err != nil {
-		return "", err
-	}
-	kernelTypeByID := make(map[int64]string, len(kernels))
-	for _, k := range kernels {
-		kernelTypeByID[k.ID] = k.KernelType
-	}
 	others, err := h.repo.ListNodeInboundsByNode(nodeID)
 	if err != nil {
 		return "", err
+	}
+	kernelTypeByID := make(map[int64]string)
+	if len(others) > 0 {
+		kernels, err := h.repo.ListNodeKernels(nodeID)
+		if err != nil {
+			return "", err
+		}
+		for _, k := range kernels {
+			kernelTypeByID[k.ID] = k.KernelType
+		}
 	}
 	for _, row := range others {
 		if row.ID == excludeInboundID {
 			continue
 		}
-		other, err := inboundFromModel(row)
-		if err != nil {
-			continue
-		}
 		otherKT := kernelTypeByID[row.KernelID]
-		otherNet := other.NetworkOn(otherKT)
-		otherMuxed := muxEnabled && row.Port == mux.Port && networkHasTCP(otherNet)
-		otherSpans := inboundSpans(other, otherNet)
+		var otherSpans []portSpan
+		var other kernel.Inbound
+		var otherMuxed bool
+		if parsed, err := inboundFromModel(row); err == nil {
+			other = parsed
+			otherNet := other.NetworkOn(otherKT)
+			otherMuxed = muxEnabled && row.Port == mux.Port && networkHasTCP(otherNet)
+			otherSpans = inboundSpans(otherKT, other)
+		} else if row.Port > 0 {
+			otherSpans = []portSpan{{lo: row.Port, hi: row.Port, net: "tcp,udp", what: "端口", isMain: true}}
+		}
 		if row.MuxPort > 0 {
 			otherSpans = append(otherSpans, portSpan{lo: row.MuxPort, hi: row.MuxPort, net: "tcp", what: "复用内部端口"})
 		}
 		for _, os := range otherSpans {
 			for _, sp := range spans {
-				if !sp.overlaps(os) {
+				if !sp.overlaps(os) || !networksOverlap(sp.net, os.net) {
 					continue
 				}
 				if os.isMain {
-					if sp.isMain {
-						if !networksOverlap(sp.net, os.net) {
-							continue
+					if sp.isMain && inMuxed && otherMuxed {
+						if inSNI == inboundMuxSNI(other) {
+							return fmt.Sprintf("端口 %d 复用时，SNI「%s」与入站「%s」冲突", mux.Port, inSNI, row.Name), nil
 						}
-						if inMuxed && otherMuxed {
-							if inSNI == inboundMuxSNI(other) {
-								return fmt.Sprintf("端口 %d 复用时，SNI「%s」与入站「%s」冲突", mux.Port, inSNI, row.Name), nil
-							}
-							continue
-						}
+						continue
 					}
 					return fmt.Sprintf("%s 已被其他节点服务（%s）占用", sp, row.Name), nil
 				}

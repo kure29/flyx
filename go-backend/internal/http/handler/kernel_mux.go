@@ -140,14 +140,6 @@ func networkHasTCP(netSpec string) bool {
 	return strings.Contains(netSpec, "tcp")
 }
 
-func networkHasUDP(netSpec string) bool {
-	return strings.Contains(netSpec, "udp")
-}
-
-func networksOverlap(a, b string) bool {
-	return (networkHasTCP(a) && networkHasTCP(b)) || (networkHasUDP(a) && networkHasUDP(b))
-}
-
 // inboundMuxSNI returns the normalized SNI used to route a TCP inbound behind
 // NodePortMux, or "" if the inbound has no TLS-ClientHello SNI layer.
 func inboundMuxSNI(in kernel.Inbound) string {

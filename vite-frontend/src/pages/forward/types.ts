@@ -19,6 +19,7 @@ export interface Forward {
   serviceRunning: boolean;
   federationShareFlow?: number;
   createdTime: string;
+  updatedTime?: number;
   userName?: string;
   userId?: number;
   inx?: number;

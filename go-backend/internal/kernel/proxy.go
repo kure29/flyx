@@ -26,6 +26,7 @@ var importTypes = map[string]string{
 	"tuic":      ProtocolTUIC,
 	"anytls":    ProtocolAnyTLS,
 	"snell":     ProtocolSnell,
+	"mieru":     ProtocolMieru,
 	"socks5":    "socks5",
 	"http":      "http",
 }
@@ -33,7 +34,7 @@ var importTypes = map[string]string{
 var proxyLabels = map[string]string{
 	"ss": "Shadowsocks", "vmess": "VMess", "vless": "VLESS", "trojan": "Trojan",
 	"hysteria2": "Hysteria2", "tuic": "TUIC", "anytls": "AnyTLS", "snell": "Snell",
-	"socks5": "SOCKS5", "http": "HTTP", "wireguard": "WireGuard",
+	"mieru": "Mieru", "socks5": "SOCKS5", "http": "HTTP", "wireguard": "WireGuard",
 }
 
 // ImportedNode is a node the panel does not deploy; it only relays and
@@ -197,7 +198,11 @@ func DescribeProxy(p Proxy) string {
 	if parts[0] == "" {
 		parts[0] = p.Type()
 	}
-	if n := p.network(); n != "tcp" && n != "" {
+	if p.Type() == "mieru" {
+		if tr := strings.ToUpper(p.str("transport")); tr != "" {
+			parts = append(parts, tr)
+		}
+	} else if n := p.network(); n != "tcp" && n != "" {
 		parts = append(parts, strings.ToUpper(n))
 	}
 	switch {
@@ -257,6 +262,7 @@ func (p Proxy) forEndpoint(e Endpoint) Proxy {
 	}
 	delete(out, "ports")
 	delete(out, "hop-interval")
+	delete(out, "port-range")
 	if orig == "" || net.ParseIP(orig) != nil {
 		return out
 	}

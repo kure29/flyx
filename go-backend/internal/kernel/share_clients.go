@@ -115,7 +115,7 @@ var loonSSCiphers = toSet([]string{"aes-128-gcm", "aes-192-gcm", "aes-256-gcm", 
 // shadowrocketSkips lists what the Shadowrocket profile leaves out because
 // its Clash-list import is not known to handle it.
 func shadowrocketSkips(p Proxy) bool {
-	return hasVLESSEncryption(p) || p.Type() == "wireguard"
+	return hasVLESSEncryption(p) || p.Type() == "wireguard" || p.Type() == "mieru"
 }
 
 func loonLine(p Proxy) (string, bool) {
