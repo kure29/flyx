@@ -159,7 +159,7 @@ func xrayStream(in Inbound) obj {
 		stream["realitySettings"] = obj{
 			"show":        false,
 			"dest":        sec.RealityDest,
-			"xver":        0,
+			"xver":        sec.RealityXver,
 			"serverNames": []string{sec.SNI},
 			"privateKey":  sec.RealityPrivateKey,
 			"shortIds":    sec.RealityShortIDs,

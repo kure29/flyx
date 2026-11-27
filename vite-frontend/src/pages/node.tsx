@@ -68,6 +68,7 @@ import { GroupHeader, groupItems, useCollapsed } from "@/pages/inbound/group";
 import { getRemoteSyncErrorMessage } from "@/pages/node/display";
 import { NodeTuneModal } from "@/pages/node/tune-modal";
 import { NodeBillingModal } from "@/pages/node/billing-modal";
+import { NodePortMuxModal } from "@/pages/node/port-mux-modal";
 import { copyWithToast } from "@/utils/clipboard";
 import {
   formatNodeRenewalTime,
@@ -209,6 +210,7 @@ export default function NodePage({
   const [rollbackModalOpen, setRollbackModalOpen] = useState(false);
   const [tuneNode, setTuneNode] = useState<Node | null>(null);
   const [billingNode, setBillingNode] = useState<Node | null>(null);
+  const [portMuxNode, setPortMuxNode] = useState<Node | null>(null);
   // The 分组 chip picked above the list ("" = all, "\u0000" = no group).
   const [groupFilter, setGroupFilter] = useState("");
   const [nodeToRollback, setNodeToRollback] = useState<Node | null>(null);
@@ -2292,6 +2294,15 @@ export default function NodePage({
                         disabled: !online,
                         onPress: () => setTuneNode(node),
                       },
+                      ...(node.forwardMode !== "nftables"
+                        ? [
+                            {
+                              key: "port-mux",
+                              label: "443 端口复用",
+                              onPress: () => setPortMuxNode(node),
+                            },
+                          ]
+                        : []),
                       {
                         key: "edit",
                         label: "编辑",
@@ -2403,6 +2414,10 @@ export default function NodePage({
       />
 
       <NodeTuneModal node={tuneNode} onClose={() => setTuneNode(null)} />
+      <NodePortMuxModal
+        node={portMuxNode}
+        onClose={() => setPortMuxNode(null)}
+      />
       <NodeBillingModal
         node={billingNode}
         onClose={() => setBillingNode(null)}

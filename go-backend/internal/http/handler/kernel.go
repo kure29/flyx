@@ -100,6 +100,8 @@ type inboundView struct {
 	ShareAddressMode string             `json:"shareAddressMode"`
 	ShareAddress     string             `json:"shareAddress"`
 	ShareHost        string             `json:"shareHost"`
+	SharePort        int                `json:"sharePort"`
+	MuxPort          int                `json:"muxPort,omitempty"`
 	Remark           string             `json:"remark"`
 	RelayOnly        bool               `json:"relayOnly"`
 	RelayCount       int                `json:"relayCount"`
@@ -158,6 +160,7 @@ type inboundRequest struct {
 	Extra               string             `json:"extra"`
 	ShareAddressMode    *string            `json:"shareAddressMode"`
 	ShareHost           string             `json:"shareHost"`
+	SharePort           int                `json:"sharePort"`
 	Remark              string             `json:"remark"`
 	RelayOnly           bool               `json:"relayOnly"`
 	AcceptProxyProtocol bool               `json:"acceptProxyProtocol"`
@@ -449,6 +452,7 @@ func (h *Handler) kernelControl(w http.ResponseWriter, r *http.Request) {
 			response.WriteJSON(w, response.ErrDefault(err.Error()))
 			return
 		}
+		_ = h.syncNodePortMuxIfEnabled(k.NodeID)
 	case "restart":
 		unlock := lockKernelApply(k.ID)
 		_, err := h.sendNodeCommandWithTimeout(k.NodeID, "KernelControl", map[string]interface{}{
@@ -481,6 +485,7 @@ func (h *Handler) kernelControl(w http.ResponseWriter, r *http.Request) {
 			response.WriteJSON(w, response.Err(-2, err.Error()))
 			return
 		}
+		_ = h.syncNodePortMuxIfEnabled(k.NodeID)
 	default:
 		response.WriteJSON(w, response.ErrDefault("未知操作"))
 		return
@@ -590,6 +595,8 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			Extra:              row.Extra,
 			ShareHost:          row.ShareHost,
 			ShareAddressMode:   inboundShareMode(&row),
+			SharePort:          row.SharePort,
+			MuxPort:            row.MuxPort,
 			Remark:             row.Remark,
 			RelayOnly:          row.RelayOnly == 1,
 			RelayCount:         relayCounts[row.ID],
@@ -745,9 +752,8 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
-	if req.RelayWhitelist && strings.TrimSpace(node.NftError) != "" {
-		// The agent stops a whitelisted kernel it cannot protect.
-		response.WriteJSON(w, response.ErrDefault("该服务器无法使用入站白名单："+node.NftError))
+	if req.SharePort < 0 || req.SharePort > 65535 {
+		response.WriteJSON(w, response.ErrDefault("分享端口必须在 1-65535 之间（0 表示与监听端口一致）"))
 		return
 	}
 	if req.RateUpMbps != nil || req.RateDownMbps != nil {
@@ -806,6 +812,18 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
+	mux, err := h.repo.GetNodePortMux(row.NodeID)
+	if err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	wasMuxed := update && row.MuxPort > 0
+	willMux := inboundEligibleForMux(in, k.KernelType, mux)
+	if req.RelayWhitelist && !willMux && strings.TrimSpace(node.NftError) != "" {
+		// The agent stops a whitelisted kernel it cannot protect via nftables.
+		response.WriteJSON(w, response.ErrDefault("该服务器无法使用入站白名单："+node.NftError))
+		return
+	}
 	if in.Settings.SSSubscriptionUsers {
 		if strings.TrimSpace(node.NftError) != "" {
 			response.WriteJSON(w, response.ErrDefault("SS 订阅独立密码需要服务器支持流量计数："+node.NftError))
@@ -838,7 +856,7 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 			return
 		}
 	}
-	if msg, err := h.inboundPortConflict(row.NodeID, in, row.ID); err != nil {
+	if msg, err := h.inboundPortConflict(row.NodeID, k.KernelType, in, row.ID); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	} else if msg != "" {
@@ -850,8 +868,21 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
+	if willMux {
+		if row.MuxPort <= 0 || row.MuxPort == in.Port || row.MuxPort == in.Settings.BackendPort {
+			mp, err := h.pickFreeMuxPort(row.NodeID, row.ID, in.Port, in.Settings.BackendPort)
+			if err != nil {
+				response.WriteJSON(w, response.ErrDefault(err.Error()))
+				return
+			}
+			row.MuxPort = mp
+		}
+	} else {
+		row.MuxPort = 0
+	}
 	row.Name = req.Name
 	row.ShareHost = req.ShareHost
+	row.SharePort = req.SharePort
 	row.Remark = strings.TrimSpace(req.Remark)
 	prevAcceptProxy := row.AcceptProxyProtocol
 	row.RelayOnly = boolToInt(req.RelayOnly)
@@ -884,6 +915,11 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 	if err := h.applyKernel(k.ID, false); err != nil {
 		warnings = append([]string{"下发到服务器失败: " + err.Error()}, warnings...)
 	}
+	if willMux || wasMuxed {
+		if err := h.syncNodePortMuxIfEnabled(row.NodeID); err != nil {
+			warnings = append(warnings, "下发端口复用配置失败: "+err.Error())
+		}
+	}
 	if update {
 		warnings = append(warnings, h.applyChainReferrers(row.ID)...)
 	}
@@ -905,7 +941,7 @@ func boolToInt(b bool) int {
 func (h *Handler) pickFreeInboundPort(nodeID, excludeInboundID int64) (int, error) {
 	for i := 0; i < 64; i++ {
 		port := 20000 + rand.Intn(40000)
-		msg, err := h.inboundPortConflict(nodeID, kernel.Inbound{Port: port}, excludeInboundID)
+		msg, err := h.inboundPortConflict(nodeID, "", kernel.Inbound{Port: port}, excludeInboundID)
 		if err != nil {
 			return 0, err
 		}
@@ -919,7 +955,9 @@ func (h *Handler) pickFreeInboundPort(nodeID, excludeInboundID int64) (int, erro
 // portSpan is a port range an inbound occupies on its node.
 type portSpan struct {
 	lo, hi int
+	net    string // "tcp", "udp", or "tcp,udp"
 	what   string
+	isMain bool
 }
 
 func (s portSpan) String() string {
@@ -933,23 +971,32 @@ func (s portSpan) overlaps(o portSpan) bool { return s.lo <= o.hi && o.lo <= s.h
 
 // inboundSpans lists the ports an inbound needs: its listen port, the
 // loopback backend of a ShadowTLS front, and the port-hopping range.
-func inboundSpans(in kernel.Inbound) []portSpan {
-	spans := []portSpan{{in.Port, in.Port, "端口"}}
+func inboundSpans(in kernel.Inbound, mainNet string) []portSpan {
+	if mainNet == "" {
+		mainNet = "tcp,udp"
+	}
+	spans := []portSpan{{lo: in.Port, hi: in.Port, net: mainNet, what: "端口", isMain: true}}
 	if bp := in.Settings.BackendPort; bp > 0 {
-		spans = append(spans, portSpan{bp, bp, "后端端口"})
+		spans = append(spans, portSpan{lo: bp, hi: bp, net: "tcp", what: "后端端口"})
 	}
 	if lo, hi := in.HopRange(); lo > 0 {
-		spans = append(spans, portSpan{lo, hi, "端口跳跃范围"})
+		spans = append(spans, portSpan{lo: lo, hi: hi, net: "udp", what: "端口跳跃范围"})
 	}
 	return spans
 }
 
 // inboundPortConflict describes the first clash between the ports an
 // inbound needs and what already runs on the node ("" when there is none).
-func (h *Handler) inboundPortConflict(nodeID int64, in kernel.Inbound, excludeInboundID int64) (string, error) {
-	spans := inboundSpans(in)
+// It distinguishes TCP vs UDP and permits multiple SNI-bearing TCP inbounds to
+// share the node's configured NodePortMux port when their SNIs are distinct.
+func (h *Handler) inboundPortConflict(nodeID int64, kernelType string, in kernel.Inbound, excludeInboundID int64) (string, error) {
+	mainNet := "tcp,udp"
+	if in.Protocol != "" {
+		mainNet = in.NetworkOn(kernelType)
+	}
+	spans := inboundSpans(in, mainNet)
 	for _, sp := range spans {
-		occ, err := h.repo.NodePortRangeOccupant(nodeID, sp.lo, sp.hi, excludeInboundID)
+		occ, err := h.repo.NodeForwardOrTunnelPortRangeOccupant(nodeID, sp.lo, sp.hi)
 		if err != nil {
 			return "", err
 		}
@@ -971,6 +1018,50 @@ func (h *Handler) inboundPortConflict(nodeID int64, in kernel.Inbound, excludeIn
 			return fmt.Sprintf("%s 与服务器的转发端口段 %s 重叠", sp, spec), nil
 		}
 	}
+
+	mux, err := h.repo.GetNodePortMux(nodeID)
+	if err != nil {
+		return "", err
+	}
+	muxEnabled := mux != nil && mux.Enabled == 1 && mux.Port > 0
+	inMuxed := muxEnabled && in.Protocol != "" && in.Port == mux.Port && networkHasTCP(mainNet)
+
+	if muxEnabled {
+		// Auto-picked ports (Protocol == "") must not collide with the mux port.
+		if in.Protocol == "" && in.Port == mux.Port {
+			return fmt.Sprintf("端口 %d 已被端口复用占用", mux.Port), nil
+		}
+		for _, sp := range spans {
+			if !sp.isMain && networkHasTCP(sp.net) && sp.overlaps(portSpan{lo: mux.Port, hi: mux.Port}) {
+				return fmt.Sprintf("%s 与端口复用端口 %d 冲突", sp, mux.Port), nil
+			}
+		}
+	}
+
+	var inSNI string
+	if inMuxed {
+		if in.AcceptProxyProtocol {
+			return "端口复用入站暂不支持开启「获取真实 IP (PROXY protocol)」", nil
+		}
+		inSNI = inboundMuxSNI(in)
+		if inSNI == "" {
+			return fmt.Sprintf("服务器已开启端口 %d 复用，TCP 入站需配置 TLS / Reality / ShadowTLS 的 SNI 域名", mux.Port), nil
+		}
+		for _, ext := range parseMuxRulesJSON(mux.Rules) {
+			if normalizeMuxSNI(ext.SNI) == inSNI {
+				return fmt.Sprintf("SNI「%s」与端口复用的外部规则冲突", inSNI), nil
+			}
+		}
+	}
+
+	kernels, err := h.repo.ListNodeKernels(nodeID)
+	if err != nil {
+		return "", err
+	}
+	kernelTypeByID := make(map[int64]string, len(kernels))
+	for _, k := range kernels {
+		kernelTypeByID[k.ID] = k.KernelType
+	}
 	others, err := h.repo.ListNodeInboundsByNode(nodeID)
 	if err != nil {
 		return "", err
@@ -983,12 +1074,33 @@ func (h *Handler) inboundPortConflict(nodeID int64, in kernel.Inbound, excludeIn
 		if err != nil {
 			continue
 		}
-		// Listen ports were checked by the query above; compare the rest.
-		for _, os := range inboundSpans(other)[1:] {
+		otherKT := kernelTypeByID[row.KernelID]
+		otherNet := other.NetworkOn(otherKT)
+		otherMuxed := muxEnabled && row.Port == mux.Port && networkHasTCP(otherNet)
+		otherSpans := inboundSpans(other, otherNet)
+		if row.MuxPort > 0 {
+			otherSpans = append(otherSpans, portSpan{lo: row.MuxPort, hi: row.MuxPort, net: "tcp", what: "复用内部端口"})
+		}
+		for _, os := range otherSpans {
 			for _, sp := range spans {
-				if sp.overlaps(os) {
-					return fmt.Sprintf("%s 与入站「%s」的%s 冲突", sp, row.Name, os), nil
+				if !sp.overlaps(os) {
+					continue
 				}
+				if os.isMain {
+					if sp.isMain {
+						if !networksOverlap(sp.net, os.net) {
+							continue
+						}
+						if inMuxed && otherMuxed {
+							if inSNI == inboundMuxSNI(other) {
+								return fmt.Sprintf("端口 %d 复用时，SNI「%s」与入站「%s」冲突", mux.Port, inSNI, row.Name), nil
+							}
+							continue
+						}
+					}
+					return fmt.Sprintf("%s 已被其他节点服务（%s）占用", sp, row.Name), nil
+				}
+				return fmt.Sprintf("%s 与入站「%s」的%s 冲突", sp, row.Name, os), nil
 			}
 		}
 	}
@@ -1021,8 +1133,17 @@ func (h *Handler) inboundDelete(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.OKEmpty())
 		return
 	}
+	var warnings []string
 	if err := h.applyKernel(row.KernelID, false); err != nil {
-		response.WriteJSON(w, response.R{Code: 0, Msg: "已删除，但下发到服务器失败: " + err.Error(), TS: time.Now().UnixMilli()})
+		warnings = append(warnings, "下发到服务器失败: "+err.Error())
+	}
+	if row.MuxPort > 0 {
+		if err := h.syncNodePortMuxIfEnabled(row.NodeID); err != nil {
+			warnings = append(warnings, "更新端口复用失败: "+err.Error())
+		}
+	}
+	if len(warnings) > 0 {
+		response.WriteJSON(w, response.R{Code: 0, Msg: "已删除，但" + strings.Join(warnings, "；"), TS: time.Now().UnixMilli()})
 		return
 	}
 	response.WriteJSON(w, response.OKEmpty())
@@ -1041,6 +1162,7 @@ func (h *Handler) inboundBatchDelete(w http.ResponseWriter, r *http.Request) {
 	var targetIDs []int64
 	kernelIDs := make([]int64, 0)
 	seenKernel := make(map[int64]bool)
+	muxNodeIDs := make(map[int64]bool)
 	for _, id := range ids {
 		row, err := h.repo.GetNodeInbound(id)
 		if err != nil || row == nil {
@@ -1060,9 +1182,14 @@ func (h *Handler) inboundBatchDelete(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		s++
-		if !isExternalInbound(row) && !seenKernel[row.KernelID] {
-			seenKernel[row.KernelID] = true
-			kernelIDs = append(kernelIDs, row.KernelID)
+		if !isExternalInbound(row) {
+			if !seenKernel[row.KernelID] {
+				seenKernel[row.KernelID] = true
+				kernelIDs = append(kernelIDs, row.KernelID)
+			}
+			if row.MuxPort > 0 {
+				muxNodeIDs[row.NodeID] = true
+			}
 		}
 		targetIDs = append(targetIDs, outboundTargets(*row)...)
 	}
@@ -1070,6 +1197,11 @@ func (h *Handler) inboundBatchDelete(w http.ResponseWriter, r *http.Request) {
 	for _, kernelID := range kernelIDs {
 		if err := h.applyKernel(kernelID, false); err != nil {
 			msg = "已删除，但下发到服务器失败: " + err.Error()
+		}
+	}
+	for nodeID := range muxNodeIDs {
+		if err := h.syncNodePortMuxIfEnabled(nodeID); err != nil {
+			msg = "已删除，但更新端口复用失败: " + err.Error()
 		}
 	}
 	for _, targetID := range targetIDs {
@@ -1107,6 +1239,7 @@ func (h *Handler) inboundBatchToggle(w http.ResponseWriter, r *http.Request) {
 	failures := make([]batchFailureDetail, 0)
 	kernelIDs := make([]int64, 0)
 	seenKernel := make(map[int64]bool)
+	muxNodeIDs := make(map[int64]bool)
 	now := time.Now().UnixMilli()
 	for _, id := range req.IDs {
 		row, err := h.repo.GetNodeInbound(id)
@@ -1127,15 +1260,25 @@ func (h *Handler) inboundBatchToggle(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		s++
-		if !isExternalInbound(row) && !seenKernel[row.KernelID] {
-			seenKernel[row.KernelID] = true
-			kernelIDs = append(kernelIDs, row.KernelID)
+		if !isExternalInbound(row) {
+			if !seenKernel[row.KernelID] {
+				seenKernel[row.KernelID] = true
+				kernelIDs = append(kernelIDs, row.KernelID)
+			}
+			if row.MuxPort > 0 {
+				muxNodeIDs[row.NodeID] = true
+			}
 		}
 	}
 	msg := "操作成功"
 	for _, kernelID := range kernelIDs {
 		if err := h.applyKernel(kernelID, false); err != nil {
 			msg = "已保存，但下发到服务器失败: " + err.Error()
+		}
+	}
+	for nodeID := range muxNodeIDs {
+		if err := h.syncNodePortMuxIfEnabled(nodeID); err != nil {
+			msg = "已保存，但更新端口复用失败: " + err.Error()
 		}
 	}
 	response.WriteJSON(w, response.R{
@@ -1177,6 +1320,12 @@ func (h *Handler) inboundToggle(w http.ResponseWriter, r *http.Request) {
 	if err := h.applyKernel(row.KernelID, false); err != nil {
 		response.WriteJSON(w, response.R{Code: 0, Msg: "已保存，但下发到服务器失败: " + err.Error(), TS: row.UpdatedTime})
 		return
+	}
+	if row.MuxPort > 0 {
+		if err := h.syncNodePortMuxIfEnabled(row.NodeID); err != nil {
+			response.WriteJSON(w, response.R{Code: 0, Msg: "已保存，但更新端口复用失败: " + err.Error(), TS: row.UpdatedTime})
+			return
+		}
 	}
 	response.WriteJSON(w, response.OKEmpty())
 }
@@ -1277,6 +1426,7 @@ type agentKernelStatus struct {
 	Epoch        string               `json:"epoch"`
 	NftAvailable bool                 `json:"nftAvailable"`
 	NftError     string               `json:"nftError"`
+	Mux          *agentMuxState       `json:"mux,omitempty"`
 }
 
 func remarshal(in interface{}, out interface{}) error {
@@ -1307,6 +1457,7 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	if err != nil {
 		return nil, "", err
 	}
+	mux, _ := h.repo.GetNodePortMux(k.NodeID)
 	inbounds := make([]kernel.Inbound, 0, len(rows))
 	ports := make([]map[string]interface{}, 0, len(rows))
 	users, trackedInbounds := h.activeUsersByInboundWithTracking(time.Now())
@@ -1322,6 +1473,11 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		in, err := inboundFromModel(row)
 		if err != nil {
 			return nil, "", err
+		}
+		muxed := mux != nil && mux.Enabled == 1 && row.MuxPort > 0 && inboundEligibleForMux(in, k.KernelType, mux)
+		if muxed {
+			in.Listen = "127.0.0.1"
+			in.Port = row.MuxPort
 		}
 		if in.SupportsUsers() && !(in.Settings.SSSubscriptionUsers && node != nil && strings.TrimSpace(node.NftError) != "") {
 			in.Users = users[in.ID]
@@ -1340,7 +1496,9 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		if lo, hi := in.HopRange(); lo > 0 {
 			port["hopFrom"], port["hopTo"] = lo, hi
 		}
-		if row.RelayWhitelist == 1 {
+		// For muxed inbounds, the SNI multiplexer enforces the allowlist on
+		// the real client IP before dialing 127.0.0.1:<MuxPort>.
+		if row.RelayWhitelist == 1 && !muxed {
 			port["allow"] = h.inboundAllowList(row)
 		}
 		// Speed limits, enforced by the agent on the port (agent 3.9.4+;
@@ -1704,6 +1862,9 @@ func (h *Handler) reconcileNodeKernels(nodeID int64) {
 			log.Printf("kernel reconcile failed node_id=%d kernel=%s err=%v", nodeID, k.KernelType, err)
 		}
 	}
+	if err := h.syncNodePortMuxIfEnabled(nodeID); err != nil {
+		log.Printf("port mux reconcile failed node_id=%d err=%v", nodeID, err)
+	}
 	// Also runs when the panel has no kernel left on the node, so kernels
 	// deleted while it was offline get removed.
 	h.pollNodeKernels(nodeID, true)
@@ -1716,7 +1877,12 @@ func (h *Handler) refreshNodeKernelStatus(nodeID int64) {
 
 func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 	kernels, err := h.repo.ListNodeKernels(nodeID)
-	if err != nil || (len(kernels) == 0 && !evenIfNone) {
+	if err != nil {
+		return
+	}
+	mux, _ := h.repo.GetNodePortMux(nodeID)
+	hasMux := mux != nil && mux.Enabled == 1
+	if len(kernels) == 0 && !hasMux && !evenIfNone {
 		return
 	}
 	sequence, err := h.repo.NextCounterSnapshot(nodeID, "kernel")
@@ -1763,6 +1929,7 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 	}
 
 	now := time.Now().UnixMilli()
+	h.reconcilePolledNodePortMux(nodeID, mux, status.Mux, now)
 	byType := make(map[string]agentKernelState, len(status.Kernels))
 	for _, s := range status.Kernels {
 		byType[s.Type] = s

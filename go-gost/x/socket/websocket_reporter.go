@@ -1054,8 +1054,8 @@ func (w *WebSocketReporter) routeCommand(ctx context.Context, cmd CommandMessage
 		response.Type = cmd.Type + "Response"
 		response.Data, err = handleTuneCommand(cmd.Type, cmd.Data)
 
-	// 代理内核（Xray / sing-box / Snell）相关命令，由 kernel.Manager 自行串行化
-	case "KernelApply", "KernelControl", "KernelStatus":
+	// 代理内核（Xray / sing-box / Snell）及 443 端口复用相关命令，由 kernel.Manager 自行串行化
+	case "KernelApply", "KernelControl", "KernelStatus", "KernelMuxApply":
 		response.Type = cmd.Type + "Response"
 		response.Data, err = handleKernelCommand(cmd.Type, cmd.Data)
 

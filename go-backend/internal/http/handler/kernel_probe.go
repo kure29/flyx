@@ -170,7 +170,7 @@ func reachProbeHost(row *model.NodeInbound, builtNode func(row *model.NodeInboun
 	if isExternalInbound(row) {
 		return row.Listen // imports store the node's address here
 	}
-	if row.RelayWhitelist == 1 || isLoopbackListen(row.Listen) {
+	if row.RelayWhitelist == 1 || (isLoopbackListen(row.Listen) && row.SharePort == 0) {
 		return ""
 	}
 	ip, live := builtNode(row)
@@ -306,9 +306,10 @@ func (h *Handler) probeInboundReach(ctx context.Context, ids []int64) (map[int64
 		go func(row model.NodeInbound) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			p, err := probeInboundAt(ctx, hosts[row.ID], row.Port)
+			probePort := effectiveSharePort(&row)
+			p, err := probeInboundAt(ctx, hosts[row.ID], probePort)
 			if errors.Is(err, errPanelNoRoute) && !isExternalInbound(&row) {
-				p = h.probeInboundFromNode(row.NodeID, hosts[row.ID], row.Port)
+				p = h.probeInboundFromNode(row.NodeID, hosts[row.ID], probePort)
 			}
 			mu.Lock()
 			results[row.ID] = p
@@ -331,7 +332,7 @@ func (h *Handler) probeInboundReach(ctx context.Context, ids []int64) (map[int64
 		byID[row.ID] = row
 	}
 	for _, t := range h.reachProbes.track(byID, results) {
-		addr := net.JoinHostPort(hosts[t.row.ID], strconv.Itoa(t.row.Port))
+		addr := net.JoinHostPort(hosts[t.row.ID], strconv.Itoa(effectiveSharePort(&t.row)))
 		key := strconv.FormatInt(t.row.ID, 10)
 		if t.down {
 			from := firstNonEmpty(results[t.row.ID].From, "面板服务器")

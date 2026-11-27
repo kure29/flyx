@@ -263,6 +263,13 @@ export function InboundFormModal({
         return "端口必须在 1-65535 之间";
       }
     }
+    if (form.sharePort.trim()) {
+      const sp = Number(form.sharePort);
+
+      if (!Number.isInteger(sp) || sp < 1 || sp > 65535) {
+        return "分享端口必须在 1-65535 之间";
+      }
+    }
     if (
       form.securityType === "tls" &&
       !form.sni.trim() &&
@@ -1035,16 +1042,39 @@ export function InboundFormModal({
                           />
                         </div>
                         {form.kernelType === "xray" && (
-                          <Input
-                            description="低于此版本的客户端会被拒绝。Xray 新版默认 26.3.27，会导致 Clash / Mihomo 等客户端连不上，保持 1.0.0 即可兼容所有客户端"
-                            label="最低客户端版本"
-                            placeholder="1.0.0"
-                            value={form.realityMinClientVer}
-                            variant="bordered"
-                            onChange={(e) =>
-                              set("realityMinClientVer", e.target.value)
-                            }
-                          />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <Input
+                              description="低于此版本的客户端会被拒绝。保持 1.0.0 即可兼容 Mihomo / Clash 等客户端"
+                              label="最低客户端版本"
+                              placeholder="1.0.0"
+                              value={form.realityMinClientVer}
+                              variant="bordered"
+                              onChange={(e) =>
+                                set("realityMinClientVer", e.target.value)
+                              }
+                            />
+                            <Select
+                              description="向本机回落目标（如 Caddy/Nginx）发送 PROXY protocol 头版本，普通伪装保持 0"
+                              label="回落 PROXY protocol (xver)"
+                              selectedKeys={[form.realityXver || "0"]}
+                              onSelectionChange={(keys) =>
+                                set(
+                                  "realityXver",
+                                  String(Array.from(keys)[0] ?? "0"),
+                                )
+                              }
+                            >
+                              <SelectItem key="0" textValue="0（关闭，默认）">
+                                0（关闭，默认）
+                              </SelectItem>
+                              <SelectItem key="1" textValue="1（PROXY v1）">
+                                1（PROXY v1）
+                              </SelectItem>
+                              <SelectItem key="2" textValue="2（PROXY v2）">
+                                2（PROXY v2）
+                              </SelectItem>
+                            </Select>
+                          </div>
                         )}
                       </div>
                     )}
@@ -1075,13 +1105,29 @@ export function InboundFormModal({
 
                     <div className="space-y-3 border-t border-divider pt-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <Input
-                          description="默认 :: 监听所有地址；127.0.0.1 仅本机（配合隧道中转）"
-                          label="监听地址"
-                          value={form.listen}
-                          variant="bordered"
-                          onChange={(e) => set("listen", e.target.value)}
-                        />
+                        <div className="space-y-3">
+                          <Input
+                            description="默认 :: 监听所有地址；127.0.0.1 仅本机（配合隧道中转或外部反代）"
+                            label="监听地址"
+                            value={form.listen}
+                            variant="bordered"
+                            onChange={(e) => set("listen", e.target.value)}
+                          />
+                          <Input
+                            description="留空则与监听端口一致；配合外部 443 反代/CDN 时可填 443"
+                            inputMode="numeric"
+                            label="分享端口（可选）"
+                            placeholder={form.port || "与监听端口一致"}
+                            value={form.sharePort}
+                            variant="bordered"
+                            onChange={(e) =>
+                              set(
+                                "sharePort",
+                                e.target.value.replace(/[^\d]/g, ""),
+                              )
+                            }
+                          />
+                        </div>
                         <div className="space-y-2">
                           <Select
                             disabledKeys={[

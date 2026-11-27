@@ -549,10 +549,10 @@ func (h *Handler) inboundEndpointsForUser(rows []model.NodeInbound, user *kernel
 			pq = kernelSupportsPostQuantumReality(k)
 			postQuantum[row.KernelID] = pq
 		}
-		if row.RelayOnly != 1 && !isLoopbackListen(row.Listen) {
+		if row.RelayOnly != 1 && (!isLoopbackListen(row.Listen) || row.SharePort > 0) {
 			host := inboundShareAddress(&row, node)
 			if host != "" {
-				endpoints = append(endpoints, kernel.Endpoint{Name: row.Name, Host: host, Port: row.Port, Inbound: in, Direct: true, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq, OrderKey: fmt.Sprintf("direct:%d", row.ID)})
+				endpoints = append(endpoints, kernel.Endpoint{Name: row.Name, Host: host, Port: effectiveSharePort(&row), Inbound: in, Direct: true, Proxy: proxy, SourceID: row.SourceID, PostQuantumReality: pq, OrderKey: fmt.Sprintf("direct:%d", row.ID)})
 				kinds = append(kinds, "direct")
 			}
 		}

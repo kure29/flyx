@@ -44,16 +44,20 @@ func (h *Handler) chainEndpoint(target *model.NodeInbound, fromNodeID int64) (ke
 		return e, fmt.Errorf("出站节点「%s」开启了获取真实 IP（PROXY protocol），只能经中转连接", target.Name)
 	}
 	if target.NodeID == fromNodeID {
-		// Same machine: dial it locally.
+		// Same machine: dial it locally (directly to the internal mux loopback
+		// port when multiplexed so same-node chains avoid an extra hop).
 		e.Host = "127.0.0.1"
-		if ip := net.ParseIP(target.Listen); ip != nil && !ip.IsUnspecified() {
+		if target.MuxPort > 0 {
+			e.Port = target.MuxPort
+		} else if ip := net.ParseIP(target.Listen); ip != nil && !ip.IsUnspecified() {
 			e.Host = ip.String()
 		}
 		return e, nil
 	}
-	if isLoopbackListen(target.Listen) {
+	if isLoopbackListen(target.Listen) && target.SharePort == 0 {
 		return e, fmt.Errorf("出站节点「%s」只监听本机，其他服务器连不上", target.Name)
 	}
+	e.Port = effectiveSharePort(target)
 	node, _ := h.repo.GetNodeByID(target.NodeID)
 	e.Host = inboundShareAddress(target, node)
 	if e.Host == "" {
@@ -292,6 +296,11 @@ func (h *Handler) applyWhitelistedTarget(targetID int64) []string {
 	}
 	if err := h.applyKernel(target.KernelID, false); err != nil {
 		return []string{fmt.Sprintf("出站节点「%s」的白名单下发失败: %v", target.Name, err)}
+	}
+	if target.MuxPort > 0 {
+		if err := h.syncNodePortMuxIfEnabled(target.NodeID); err != nil {
+			return []string{fmt.Sprintf("出站节点「%s」的端口复用白名单下发失败: %v", target.Name, err)}
+		}
 	}
 	return nil
 }

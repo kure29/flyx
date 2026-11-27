@@ -38,6 +38,12 @@ func handleKernelCommand(cmdType string, data interface{}) (interface{}, error) 
 		}
 		_ = json.Unmarshal(raw, &req)
 		return m.Status(req.Logs), nil
+	case "KernelMuxApply":
+		var cfg kernel.MuxConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, fmt.Errorf("解析端口复用配置失败: %v", err)
+		}
+		return m.ApplyMux(cfg)
 	}
 	return nil, fmt.Errorf("未知命令类型: %s", cmdType)
 }

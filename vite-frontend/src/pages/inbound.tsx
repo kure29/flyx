@@ -182,6 +182,13 @@ function detailRows(item: InboundApiItem): Array<[string, string]> {
     ["端口", String(item.port)],
     ["协议", describeInbound(item)],
   ];
+
+  if (item.sharePort && item.sharePort !== item.port) {
+    rows.push(["分享端口", String(item.sharePort)]);
+  }
+  if (item.muxPort) {
+    rows.push(["端口复用", `SNI 分流 → 127.0.0.1:${item.muxPort}`]);
+  }
   const s = item.settings;
   const t = item.transport;
   const sec = item.security;
