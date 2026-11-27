@@ -4,6 +4,24 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/kure29/flyx/releases)。
 
+## 3.11.0
+
+2026-11-27
+
+- **443 端口 TCP SNI 复用与面板 HTTPS 共用 443**：
+  - **节点 Agent 原生 TCP SNI 分流器**：无需安装第三方反代组件，在 **服务器 → 操作 → 443 端口复用** 中一键开启；无解密窥探 TLS ClientHello SNI（支持后量子/大分片多 Record ClientHello），原样回放并双向转发，同端口路由表支持原子热更新（不断开现存连接）与重启自动恢复。
+  - **跨内核多协议共存**：开启后，同机多个监听 443 端口的 TLS / Reality / ShadowTLS 入站（跨 Xray / sing-box / Snell）自动分配回环内部端口接入 SNI 分流，UDP 443（如 Hysteria2 / TUIC）保持直连共存互不干扰；nftables 流量统计与限速继续精准生效，入站白名单由 SNI 分流器在真实客户端 IP 上执行。
+  - **面板 HTTPS / 建站外部回落**：支持按精确域名或通配符（`*.example.com`）与默认回落目标将流量转发至本机 Caddy / Nginx（如 `127.0.0.1:8443`），可选 PROXY protocol v1 透传真实 IP，弹窗内置可一键复制的 Caddy / Nginx 配置示例。
+  - **分享端口覆盖与 Reality `xver`**：入站新增可选「分享端口 (`sharePort`)」，配合外部 443 反代/CDN 时可让本机回环监听的入站按 443 输出分享链接、订阅与探测；Xray Reality 新增 `xver`（`0 / 1 / 2`）选项。
+- **多内核协议能力更新与 Mieru 独立内核**：
+  - **新增 Mieru (`mita`) 独立内核**：支持安装与管理 Mieru 服务端（TCP / UDP、多路复用等级、握手模式、MTU 与出站 IP 策略），支持 Clash / Mihomo 订阅输出、分享链接与外部节点导入。
+  - **协议与客户端补齐**：支持 Hysteria2 Salamander 混淆密码（`obfsPassword`）、Surge VLESS（含 Reality / TLS）导出、后量子 Reality 客户端版本协商以及同端口 TCP 与 UDP 独立入站共存（如 TCP 443 与 UDP 443 无需复用也可并存）。
+- **问题修复**：
+  - **中文用户名登录修复**：修复前端 JWT payload 解码未处理 Base64URL（`-`/`_` 与补齐 `=`）及 UTF-8 编码导致中文用户名登录成功后反复跳回登录页的问题（#14）。
+  - **中转改名同步**：修复在节点侧修改中转名称后转发规则列表未同步及缓存未刷新问题，补齐历史托管中转名称一致性。
+  - **realm 端口转发防误报**：修复 Agent 快速启停进程时的停止竞态及 realm 转发保存超时重试导致误报「端口被占用」的问题。
+- **升级**：**443 端口复用、Mieru 独立内核与 realm 进程停止修复需同步升级节点 Agent**（未升级的旧版 Agent 仍可正常转发，启用 443 端口复用时会提示升级节点）；其余协议渲染、订阅导出、中转同步与前端登录修复仅升级面板即生效。
+
 ## 3.10.3
 
 2026-11-27

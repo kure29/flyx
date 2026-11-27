@@ -22,11 +22,12 @@
 | Shadowsocks 2022 | Xray / sing-box | |
 | Trojan + TLS（自签） | Xray / sing-box | 需要填写域名 |
 | VMess + WS + TLS | Xray / sing-box | 兼容老客户端 |
-| Hysteria2 | sing-box | 基于 QUIC，可选端口跳跃 |
+| Hysteria2 | sing-box | 基于 QUIC，可选端口跳跃与 Salamander 混淆 |
 | TUIC v5 | sing-box | 基于 QUIC |
 | AnyTLS | sing-box | |
 | SS2022 + ShadowTLS | sing-box | 仅 TCP |
 | NaïveProxy | sing-box | 需要域名和真实证书 |
+| Mieru | Mieru | TCP / UDP 高抗审查传输（Mihomo / Clash 订阅支持） |
 | WireGuard | Xray / sing-box | 所有人共用一份客户端配置；分享里有配置文件和二维码，WireGuard 官方 App 可直接导入 |
 | SOCKS5 / HTTP 代理 | Xray / sing-box | 不加密，适合内网或经加密线路中转后使用；订阅用户各有自己的用户名和密码 |
 | Snell / Snell + ShadowTLS | sing-box（1.14+）/ Snell | Surge 专用；两个内核的区别见 [Snell 用哪个内核](./kernels.md#snell-用哪个内核) |
@@ -45,11 +46,22 @@ TLS 类入站有三种证书来源：
 
 NaïveProxy 必须使用真实证书（ACME 或证书文件）。
 
-## Hysteria2 端口跳跃
+## 443 端口复用（SNI 分流）与分享端口
 
-在 Hysteria2 入站里填写一段 UDP 端口，例如 `20000-30000`。服务器会用 nftables 把这段端口转到入站端口，客户端在其中随机切换，缓解运营商对单个 UDP 端口的限速。
+当面板与代理节点部署在同一台服务器（例如面板开启了 Caddy / Nginx HTTPS 占用 443），或希望同机多个节点（如 VLESS + Reality、Trojan + TLS、Snell + ShadowTLS）共用 443 端口时：
 
-- 范围不能包含入站端口本身，不能和其他入站、转发或服务器的转发端口段重叠
+1. 将宿主机上的 Caddy / Nginx HTTPS 监听端口改为本机内部端口（例如 `127.0.0.1:8443`）以让出 443。
+2. 在 **服务器** 页点击对应服务器 → **443 端口复用**，启用开关并添加面板域名的外部规则（或填写默认回落目标 `127.0.0.1:8443`），弹窗内提供可一键复制的 Caddy / Nginx 配置参考。
+3. 在 **节点** 页创建监听 `443` 端口的 TLS / Reality / ShadowTLS 入站（各入站使用不同的 SNI 域名），面板会自动为其分配本机回环内部端口并接入节点 Agent 的 TCP SNI 分流器，对外分享与订阅仍保持 `443` 端口。
+4. UDP 入站（如 Hysteria2 / TUIC）可与 TCP 443 复用直接并存，互不占用。
+
+> 若你更习惯继续由外部 Caddy / Nginx 占用 443 并自行 SNI 反代到本机端口，可在入站高级设置中填写 **监听地址** `127.0.0.1` + **分享端口** `443`（Xray Reality 还支持设置回落 `xver` `0 / 1 / 2`）。
+
+## Hysteria2 端口跳跃与混淆
+
+在 Hysteria2 入站里填写一段 UDP 端口，例如 `20000-30000`。服务器会用 nftables 把这段端口转到入站端口，客户端在其中随机切换，缓解运营商对单个 UDP 端口的限速；也可在高级选项中设置 **Salamander 混淆密码** 以隐藏 QUIC 特征。
+
+- 范围不能包含入站端口本身，不能和其他 UDP/双栈入站、转发或服务器的转发端口段重叠
 - 只有直连地址带跳跃参数；经中转连接时只转发一个端口，不跳跃
 
 ## 限速
@@ -66,7 +78,7 @@ NaïveProxy 必须使用真实证书（ACME 或证书文件）。
 
 ## 分享
 
-点击入站 → **分享**（电脑上也可以直接点行内的“分享”按钮）：显示通用分享链接和二维码；WireGuard 显示配置文件和二维码；Snell 没有通用链接，显示 Surge 配置行。
+点击入站 → **分享**（电脑上也可以直接点行内的“分享”按钮）：显示通用分享链接和二维码；WireGuard 显示配置文件和二维码；Snell 没有通用链接，显示 Surge 配置行（VLESS 亦支持 Surge 导出）。
 
 日常使用建议用 [订阅](./subscription.md)：一个链接包含选中的节点和中转线路，换了参数客户端更新一下就行。
 

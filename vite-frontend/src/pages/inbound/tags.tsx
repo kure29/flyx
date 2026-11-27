@@ -14,8 +14,7 @@ import {
   ModalHeader,
 } from "@/shadcn-bridge/heroui/modal";
 
-const modalBase =
-  "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
+const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 /** Offered before the user has tags of their own. */
 const PRESET_TAGS = ["出站", "落地", "中转", "备用"];

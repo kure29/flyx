@@ -48,7 +48,7 @@ Manage servers, multi-kernel proxy nodes, relay tunnels, subscription distributi
 
 ## ✨ Key Features
 
-- **Multi-Kernel Node Deployment**: Install and manage **Xray**, **sing-box**, and **Snell v4 / v5** per server (two-column kernel cards, one-click dark terminal logs & restart, segmented agent install modal) with one-click presets for VLESS Reality, Hysteria2 (port hopping), TUIC, AnyTLS, NaïveProxy, ShadowTLS, Shadowsocks / SS2022, and more.
+- **Multi-Kernel Deployment & Port 443 SNI Multiplexing**: Install and manage **Xray**, **sing-box**, **Snell v4 / v5**, and **Mieru (`mita`)** per server (two-column kernel cards, one-click dark terminal logs & restart, segmented agent install modal) with one-click presets for VLESS Reality (post-quantum & `xver`), Hysteria2 (port hopping / Salamander obfs), TUIC, AnyTLS, NaïveProxy, ShadowTLS, Shadowsocks / SS2022, and Mieru. Supports TCP/UDP L4 port sharing, custom share port overrides, and **agent-native TCP SNI port 443 multiplexing** (share port 443 across multiple proxy protocols and panel HTTPS with wildcard SNI, fallback, and zero-downtime hot reload).
 - **Automated TLS Certificates**: Supports self-signed certs, existing server certs, or automatic ACME issuance & renewal via sing-box (HTTP, Cloudflare, and Aliyun DNS).
 - **Flexible Relay & Traffic Forwarding**: TCP / UDP port forwarding, encrypted tunnels, and multi-hop chains powered by GOST, realm, and nftables with real client IP passthrough, inbound allowlists, bidirectional relay/rule rename sync, and per-rule traffic accounting.
 - **External Node & Source Import**: Paste share links, Clash / sing-box / Surge configs, or remote subscription URLs to attach relays and include them in subscriptions.
@@ -64,9 +64,9 @@ Manage servers, multi-kernel proxy nodes, relay tunnels, subscription distributi
 
 | Category | Support |
 | --- | --- |
-| **Proxy Kernels** | Xray-core · sing-box · Snell v4 / v5 |
-| **Protocols** | VLESS (Reality / Vision / WS / gRPC / xHTTP) · VMess · Trojan · Shadowsocks / SS2022 · Hysteria2 · TUIC · AnyTLS · NaïveProxy · ShadowTLS · Snell |
-| **Forwarding Engines** | GOST (TCP / UDP / TLS / WS / WSS / mTLS tunnels) · realm · nftables |
+| **Proxy Kernels** | Xray-core · sing-box · Snell v4 / v5 · Mieru (`mita`) |
+| **Protocols** | VLESS (Reality / Vision / WS / gRPC / xHTTP) · VMess · Trojan · Shadowsocks / SS2022 · Hysteria2 (Port Hopping / Salamander) · TUIC · AnyTLS · NaïveProxy · ShadowTLS · Snell · Mieru |
+| **Forwarding & Mux** | GOST (TCP / UDP / TLS / WS / WSS / mTLS tunnels) · realm · nftables · Agent-native 443 TCP SNI Mux |
 | **Subscription Clients** | Auto-detected: Clash / Mihomo · sing-box · Surge · Stash · Shadowrocket · Loon · Quantumult X · Base64 (with custom templates) |
 | **Databases** | SQLite (zero-config default) · PostgreSQL |
 

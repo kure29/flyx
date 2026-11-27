@@ -17,8 +17,7 @@ import {
   ModalHeader,
 } from "@/shadcn-bridge/heroui/modal";
 
-const modalBase =
-  "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
+const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 export async function copyText(text: string, label = "已复制") {
   await copyWithToast(text, label);

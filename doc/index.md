@@ -26,8 +26,8 @@ hero:
       link: https://t.me/flyx_chat
 
 features:
-  - title: 多内核节点
-    details: 按服务器安装 Xray、sing-box、Snell v4 / v5，一键创建 VLESS Reality、Hysteria2（端口跳跃）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022 等入站。
+  - title: 多内核节点与 443 端口复用
+    details: 按服务器安装 Xray、sing-box、Snell v4 / v5 与 Mieru，一键创建 VLESS Reality、Hysteria2（端口跳跃 / Salamander 混淆）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022 等入站；内置 Agent 原生 TCP SNI 443 端口复用，可与面板 HTTPS 共用 443。
   - title: 灵活中转与转发
     details: 支持 TCP / UDP 端口转发、隧道转发与多跳链路，内置 GOST / realm / nftables 引擎；中转线路自动进入订阅，支持入站白名单与真实客户端 IP。
   - title: Sub-Store 风格订阅

@@ -34,8 +34,7 @@ import {
 import { Select, SelectItem } from "@/shadcn-bridge/heroui/select";
 import { Switch } from "@/shadcn-bridge/heroui/switch";
 
-const modalBase =
-  "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
+const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 /** Label shown where a panel-managed inbound shows its node or kernel. */
 export const EXTERNAL_LABEL = "导入的节点";

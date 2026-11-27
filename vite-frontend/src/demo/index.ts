@@ -171,7 +171,7 @@ async function answer(config: InternalAxiosRequestConfig) {
   const role = getDemoRole();
 
   if (bare === "node/install") {
-    const version = "3.10.3";
+    const version = "3.11.0";
     const addr = "panel.demo.flyx.dev:6365";
     const secret = "demo8f2c4a9e1b7d3f6a0c5e2b8d4f1a";
     const makeDocker = (priv: boolean) =>
@@ -188,6 +188,64 @@ async function answer(config: InternalAxiosRequestConfig) {
         dockerPrivileged: makeDocker(true),
         dockerCompose: makeCompose(false),
         dockerComposePrivileged: makeCompose(true),
+      },
+      ts: Date.now(),
+    };
+  }
+
+  if (bare === "node/port-mux/get") {
+    let nodeId = 1;
+
+    try {
+      const parsed =
+        typeof config.data === "string"
+          ? JSON.parse(config.data)
+          : (config.data as { nodeId?: number } | undefined);
+
+      if (parsed?.nodeId) nodeId = Number(parsed.nodeId);
+    } catch {
+      // default nodeId = 1
+    }
+
+    return {
+      code: 0,
+      msg: "操作成功",
+      data: {
+        nodeId,
+        enabled: nodeId === 1,
+        listen: "::",
+        port: 443,
+        rules:
+          nodeId === 1
+            ? [
+                {
+                  sni: "panel.demo.flyx.dev",
+                  target: "127.0.0.1:8443",
+                  proxyProtocol: false,
+                  remark: "面板 HTTPS",
+                },
+              ]
+            : [],
+        fallbackTarget: nodeId === 1 ? "127.0.0.1:8443" : "",
+        fallbackProxy: false,
+        status: nodeId === 1 ? "running" : "stopped",
+        lastError: "",
+        synced: true,
+        updatedTime: Date.now(),
+        inbounds:
+          nodeId === 1
+            ? [
+                {
+                  id: 1,
+                  name: "香港 Reality",
+                  kernelType: "xray",
+                  protocol: "vless",
+                  sni: "www.microsoft.com",
+                  muxPort: 45443,
+                  enabled: true,
+                },
+              ]
+            : [],
       },
       ts: Date.now(),
     };

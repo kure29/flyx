@@ -1,6 +1,6 @@
 # 内核与协议
 
-内核是服务器上真正跑代理协议的程序。面板支持三种内核，一台服务器可以同时装多个，每个入站属于其中一个内核。
+内核是服务器上真正跑代理协议的程序。面板支持四种内核，一台服务器可以同时装多个，每个入站属于其中一个内核。
 
 ## 安装内核
 
@@ -11,6 +11,7 @@
 | Xray | 默认最新版，可指定 | GitHub Release，用官方校验文件校验 |
 | sing-box | 默认最新版，可指定 | GitHub Release，用 Release 资产的 SHA256 校验 |
 | Snell | 5.0.1（默认）/ 6.0.0（测试版）/ 4.1.1 | 只从官方 `dl.nssurge.com` 下载，使用内置的校验值；6.0.0 没有 armv7 版本 |
+| Mieru (`mita`) | 默认最新版，可指定 | GitHub Release，按 Release 资产 SHA256 校验 |
 
 内核按服务器以双列卡片分组显示，顶部提供运行状态统计、关键词搜索以及按内核类型 / 异常状态筛选。每行内核旁可直接一键查看深色终端日志或重启，点击内核行可进行启停、更换版本或卸载；服务器重启后内核会自动恢复运行。国内服务器下载慢见 [安装服务器 - 国内服务器安装慢](./agent.md#国内服务器安装慢)。
 
@@ -19,45 +20,48 @@
 | 想要 | 选 |
 |------|----|
 | 不用域名和证书、通用性最好 | Xray 或 sing-box 的 **VLESS + Reality + Vision** |
-| 弱网、高延迟、丢包多的线路 | sing-box 的 **Hysteria2** 或 **TUIC** |
+| 弱网、高延迟、丢包多的线路 | sing-box 的 **Hysteria2**（支持端口跳跃与 Salamander 混淆）或 **TUIC** |
 | 抗量子加密（VLESS Encryption）、XHTTP | Xray |
 | 经中转时让落地看到客户端真实 IP | Xray（PROXY protocol） |
 | 自动申请证书（ACME）、NaïveProxy、AnyTLS、ShadowTLS | sing-box |
 | 给 Surge 用 Snell | sing-box 内置 Snell，或 Snell 内核，区别见 [Snell 用哪个内核](#snell-用哪个内核) |
+| 高抗审查加密传输（Mihomo / Clash 客户端） | **Mieru** 独立内核（TCP / UDP） |
 
 ## 协议支持
 
-| 协议 | Xray | sing-box | Snell 内核 |
-|------|:----:|:--------:|:----------:|
-| VLESS（TCP / WS / gRPC，Reality / TLS） | ✓ | ✓ | |
-| VLESS + XHTTP | ✓ | | |
-| VLESS Encryption | ✓ | | |
-| VMess（TCP / WS / gRPC） | ✓ | ✓ | |
-| Trojan（TCP / WS / gRPC） | ✓ | ✓ | |
-| Shadowsocks / SS2022 | ✓ | ✓ | |
-| SS2022 + ShadowTLS | | ✓ | |
-| Hysteria2（可选端口跳跃） | | ✓ | |
-| TUIC v5 | | ✓ | |
-| AnyTLS | | ✓ | |
-| NaïveProxy | | ✓ | |
-| Snell / Snell + ShadowTLS | | ✓（1.14+） | ✓ |
-| WireGuard | ✓ | ✓ | |
-| SOCKS5 / HTTP 代理 | ✓ | ✓ | |
+| 协议 | Xray | sing-box | Snell 内核 | Mieru 内核 |
+|------|:----:|:--------:|:----------:|:----------:|
+| VLESS（TCP / WS / gRPC，Reality / TLS） | ✓ | ✓ | | |
+| VLESS + XHTTP | ✓ | | | |
+| VLESS Encryption | ✓ | | | |
+| VMess（TCP / WS / gRPC） | ✓ | ✓ | | |
+| Trojan（TCP / WS / gRPC） | ✓ | ✓ | | |
+| Shadowsocks / SS2022 | ✓ | ✓ | | |
+| SS2022 + ShadowTLS | | ✓ | | |
+| Hysteria2（端口跳跃 / Salamander 混淆） | | ✓ | | |
+| TUIC v5 | | ✓ | | |
+| AnyTLS | | ✓ | | |
+| NaïveProxy | | ✓ | | |
+| Snell / Snell + ShadowTLS | | ✓（1.14+） | ✓ | |
+| Mieru（TCP / UDP） | | | | ✓ |
+| WireGuard | ✓ | ✓ | | |
+| SOCKS5 / HTTP 代理 | ✓ | ✓ | | |
 
 ## 功能差异
 
-| 功能 | Xray | sing-box | Snell 内核 |
-|------|:----:|:--------:|:----------:|
-| 自签证书 / 服务器上的证书文件 | ✓ | ✓ | — |
-| 自动申请证书（ACME） | | ✓（1.14+） | — |
-| 获取真实客户端 IP（PROXY protocol） | ✓ | | |
-| [分流与链式出站](./routing.md) | ✓ | ✓ | |
-| 作为别的入站的出站节点 | ✓ | ✓ | |
-| 订阅用户单独凭据 | ✓ | ✓ | |
-| 入站流量统计（nftables） | ✓ | ✓ | ✓ |
+| 功能 | Xray | sing-box | Snell 内核 | Mieru 内核 |
+|------|:----:|:--------:|:----------:|:----------:|
+| 自签证书 / 服务器上的证书文件 | ✓ | ✓ | — | — |
+| 自动申请证书（ACME） | | ✓（1.14+） | — | — |
+| 获取真实客户端 IP（PROXY protocol） | ✓ | | | |
+| [分流与链式出站](./routing.md) | ✓ | ✓ | | |
+| 作为别的入站的出站节点 | ✓ | ✓ | | |
+| 订阅用户单独凭据 | ✓ | ✓ | | |
+| 入站流量统计（nftables） | ✓ | ✓ | ✓ | ✓ |
+| 443 端口 TCP SNI 复用 | ✓ | ✓ | ✓（ShadowTLS） | — |
 
 - Xray 作出站时只能连接 VLESS / VMess / Trojan / Shadowsocks（不含插件和 ShadowTLS）/ SOCKS5 / HTTP 节点；要连 Hysteria2、TUIC、AnyTLS 等请用 sing-box
-- 订阅用户单独凭据只对支持的协议有效：Xray 的传统 Shadowsocks 和 SS2022 AES-GCM 可以选择独立密码，Snell 和 WireGuard 仍共用凭据，见 [凭据、到期与流量](./subscription-users.md)
+- 订阅用户单独凭据只对支持的协议有效：Xray 的传统 Shadowsocks 和 SS2022 AES-GCM 可以选择独立密码，Snell、Mieru 和 WireGuard 仍共用凭据，见 [凭据、到期与流量](./subscription-users.md)
 - 用到 1.14 功能（ACME、内置 Snell、经 Snell 节点出站）的 sing-box 不能换回 1.14 以前的版本，面板会拒绝
 
 ## Snell 用哪个内核

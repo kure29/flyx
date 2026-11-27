@@ -48,7 +48,7 @@
 
 ## ✨ 核心特性
 
-- **多内核一键建节点**：按服务器安装与管理 **Xray**、**sing-box**、**Snell v4 / v5**（双列内核卡片、一键终端日志与重启、紧凑分段式 Agent 安装命令）；内置 VLESS Reality、Hysteria2（端口跳跃）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022 等开箱即用模板
+- **多内核一键建节点与 443 端口复用**：按服务器安装与管理 **Xray**、**sing-box**、**Snell v4 / v5**、**Mieru (`mita`)**（双列内核卡片、一键终端日志与重启、紧凑分段式 Agent 安装命令）；内置 VLESS Reality（支持后量子与 `xver`）、Hysteria2（端口跳跃 / Salamander 混淆）、TUIC、AnyTLS、NaïveProxy、ShadowTLS、Shadowsocks / SS2022、Mieru 等开箱即用模板；支持同端口 TCP/UDP 共存、入站分享端口覆盖及 **Agent 原生 TCP SNI 443 端口复用**（多协议与面板 HTTPS 共用 443，支持通配符 SNI、默认回落与热更新）
 - **证书自动管理**：支持自签证书、本地证书文件，或由 sing-box 自动申请与续期（ACME HTTP / Cloudflare / 阿里云 DNS 验证）
 - **灵活中转与流量转发**：支持 TCP / UDP 端口转发、加密隧道转发与多跳链路（如 前置 → IX → 落地），内置 GOST / realm / nftables 转发引擎，支持入站白名单、Proxy Protocol 透传真实 IP、中转与转发规则双向同步及按规则上下行统计
 - **外部节点与订阅源导入**：粘贴分享链接、Clash / sing-box / Surge 配置或远程订阅 URL，外部节点同样可对接中转、参与编排与分发
@@ -64,9 +64,9 @@
 
 | 维度 | 支持范围 |
 | --- | --- |
-| **代理内核** | Xray-core · sing-box · Snell v4 / v5 |
-| **节点协议** | VLESS (Reality / Vision / WS / gRPC / xHTTP) · VMess · Trojan · Shadowsocks / SS2022 · Hysteria2 · TUIC · AnyTLS · NaïveProxy · ShadowTLS · Snell |
-| **转发引擎** | GOST（TCP / UDP / TLS / WS / WSS / mTLS 隧道）· realm · nftables |
+| **代理内核** | Xray-core · sing-box · Snell v4 / v5 · Mieru (`mita`) |
+| **节点协议** | VLESS (Reality / Vision / WS / gRPC / xHTTP) · VMess · Trojan · Shadowsocks / SS2022 · Hysteria2 (端口跳跃 / Salamander) · TUIC · AnyTLS · NaïveProxy · ShadowTLS · Snell · Mieru |
+| **转发与复用** | GOST（TCP / UDP / TLS / WS / WSS / mTLS 隧道）· realm · nftables · Agent 原生 443 TCP SNI 复用 |
 | **订阅格式** | 自动识别客户端：Clash / Mihomo · sing-box · Surge · Stash · Shadowrocket · Loon · Quantumult X · 通用 Base64（支持自定义模板） |
 | **数据库** | SQLite（开箱即用）· PostgreSQL |
 
