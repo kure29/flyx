@@ -426,6 +426,17 @@ jobs:
 
           echo "✅ Release ${VERSION} 创建完成"
 
+      - name: Notify Telegram Channel
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHANNEL_ID || '@flyx_notify' }}
+        run: |
+          python3 .github/scripts/notify-telegram.py \
+            "${{ needs.check-version.outputs.version }}" \
+            "${{ github.repository }}" \
+            --sha "${{ github.sha }}"
+
   update-release-gost:
     name: Update GOST Binaries in Release
     needs: [check-version, build-gost]

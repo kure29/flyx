@@ -12,7 +12,8 @@ Manage servers, multi-kernel proxy nodes, relay tunnels, subscription distributi
 [![License](https://img.shields.io/github/license/kure29/flyx?style=flat-square&color=2563eb)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go&logoColor=white)](go-backend/go.mod)
 [![React](https://img.shields.io/badge/React-Vite%20%2B%20Tailwind-61DAFB?style=flat-square&logo=react&logoColor=111827)](vite-frontend/package.json)
-[![Telegram](https://img.shields.io/badge/Telegram-Community-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/flyx_chat)
+[![Telegram Channel](https://img.shields.io/badge/Telegram-Releases-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/flyx_notify)
+[![Telegram Community](https://img.shields.io/badge/Telegram-Community-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/flyx_chat)
 
 [简体中文](README.md) · **English**
 
