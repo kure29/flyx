@@ -388,21 +388,21 @@ export const userTunnel = () =>
 
 // 转发CRUD操作 - 全部使用POST请求
 export const createForward = (data: ForwardMutationPayload) =>
-  Network.post("/forward/create", data);
+  Network.post("/forward/create", data, { timeout: 300 * 1000 });
 export const getForwardList = () =>
   Network.post<ForwardApiItem[]>("/forward/list");
 export const updateForward = (data: ForwardMutationPayload) =>
-  Network.post("/forward/update", data);
+  Network.post("/forward/update", data, { timeout: 120 * 1000 });
 export const deleteForward = (id: number) =>
-  Network.post("/forward/delete", { id });
+  Network.post("/forward/delete", { id }, { timeout: 120 * 1000 });
 export const forceDeleteForward = (id: number) =>
-  Network.post("/forward/force-delete", { id });
+  Network.post("/forward/force-delete", { id }, { timeout: 120 * 1000 });
 
 // 转发服务控制操作 - 通过Java后端接口
 export const pauseForwardService = (forwardId: number) =>
-  Network.post("/forward/pause", { id: forwardId });
+  Network.post("/forward/pause", { id: forwardId }, { timeout: 120 * 1000 });
 export const resumeForwardService = (forwardId: number) =>
-  Network.post("/forward/resume", { id: forwardId });
+  Network.post("/forward/resume", { id: forwardId }, { timeout: 120 * 1000 });
 export const resetForwardFlow = (forwardId: number) =>
   Network.post("/forward/reset-flow", { id: forwardId });
 
@@ -811,7 +811,7 @@ export const installKernel = (data: {
   nodeId: number;
   kernelType: string;
   version: string;
-}) => Network.post("/kernel/install", data);
+}) => Network.post("/kernel/install", data, { timeout: 300 * 1000 });
 export const controlKernel = (
   id: number,
   action: "start" | "stop" | "restart" | "remove",
@@ -822,11 +822,15 @@ export const getKernelLogs = (id: number) =>
 export const getInboundList = () =>
   Network.post<InboundApiItem[]>("/inbound/list");
 export const createInbound = (data: InboundMutationPayload) =>
-  Network.post<{ id: number }>("/inbound/create", data);
+  Network.post<{ id: number }>("/inbound/create", data, {
+    timeout: 120 * 1000,
+  });
 export const updateInbound = (data: InboundMutationPayload) =>
-  Network.post<{ id: number }>("/inbound/update", data);
+  Network.post<{ id: number }>("/inbound/update", data, {
+    timeout: 120 * 1000,
+  });
 export const deleteInbound = (id: number) =>
-  Network.post("/inbound/delete", { id });
+  Network.post("/inbound/delete", { id }, { timeout: 120 * 1000 });
 export const batchDeleteInbounds = (ids: number[]) =>
   Network.post<BatchOperationResult>("/inbound/batch-delete", { ids });
 export const batchToggleInbounds = (ids: number[], enabled: boolean) =>
@@ -1431,15 +1435,18 @@ export const createInboundRelay = (data: {
   inPort?: number;
   name?: string;
   shareHost?: string;
-}) => Network.post<{ id: number }>("/inbound/relay/create", data);
-/** Renames a relay and changes its share host; the forward is untouched. */
+}) =>
+  Network.post<{ id: number }>("/inbound/relay/create", data, {
+    timeout: 300 * 1000,
+  });
+/** Renames a relay (and its managed forward rule) and changes its share host. */
 export const updateInboundRelay = (data: {
   id: number;
   name: string;
   shareHost: string;
 }) => Network.post("/inbound/relay/update", data);
 export const deleteInboundRelay = (id: number, force = false) =>
-  Network.post("/inbound/relay/delete", { id, force });
+  Network.post("/inbound/relay/delete", { id, force }, { timeout: 120 * 1000 });
 
 // ---- public status page (no login) ----
 export interface PublicStatusAvailability {

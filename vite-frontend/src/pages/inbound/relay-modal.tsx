@@ -4,7 +4,7 @@ import type {
   TunnelApiItem,
 } from "@/api/types";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
 import {
@@ -15,6 +15,11 @@ import {
   getTunnelList,
   updateInboundRelay,
 } from "@/api";
+import { invalidatePageCache } from "@/hooks/use-cached-state";
+import {
+  RELAY_CREATE_DROP_NOTICE,
+  relayCreatedDespiteDrop,
+} from "@/pages/forward/save-recovery";
 import { RelayLatencyCell } from "@/components/relay-latency";
 import { Button } from "@/shadcn-bridge/heroui/button";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
@@ -86,12 +91,14 @@ export function RelayModal({
     shareHost: "",
   });
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   const [editing, setEditing] = useState<{
     id: number;
     name: string;
     shareHost: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [removing, setRemoving] = useState<InboundRelayApiItem | null>(null);
   const [removeFailed, setRemoveFailed] = useState(false);
   const [removeLoading, setRemoveLoading] = useState(false);
@@ -156,51 +163,84 @@ export function RelayModal({
   )?.route;
 
   const create = async () => {
+    if (creatingRef.current) return;
     if (!item || !form.tunnelId) {
       toast.error("请选择隧道");
 
       return;
     }
-    if (form.inPort.trim()) {
-      const p = Number(form.inPort);
+    const parsedPort = form.inPort.trim() ? Number(form.inPort) : undefined;
 
-      if (!Number.isInteger(p) || p < 1 || p > 65535) {
+    if (parsedPort !== undefined) {
+      if (
+        !Number.isInteger(parsedPort) ||
+        parsedPort < 1 ||
+        parsedPort > 65535
+      ) {
         toast.error("入口端口必须在 1-65535 之间");
 
         return;
       }
     }
+    const tunnelId = Number(form.tunnelId);
+    const trimmedName = form.name.trim() || undefined;
+    const prevMaxId = relays.reduce((max, r) => Math.max(max, r.id), 0);
+
+    creatingRef.current = true;
     setCreating(true);
     try {
       const res = await createInboundRelay({
         inboundId: item.id,
-        tunnelId: Number(form.tunnelId),
-        inPort: form.inPort.trim() ? Number(form.inPort) : undefined,
-        name: form.name.trim() || undefined,
+        tunnelId,
+        inPort: parsedPort,
+        name: trimmedName,
         shareHost: form.shareHost.trim() || undefined,
       });
 
       if (res.code !== 0) {
-        toast.error(res.msg || "对接失败", { duration: 6000 });
+        const recovered = await relayCreatedDespiteDrop(
+          res,
+          item.id,
+          prevMaxId,
+          {
+            tunnelId,
+            name: trimmedName,
+            inPort: parsedPort,
+          },
+        );
 
-        return;
+        if (!recovered) {
+          toast.error(res.msg || "对接失败", { duration: 6000 });
+
+          return;
+        }
+        toast.success(RELAY_CREATE_DROP_NOTICE, { duration: 6000 });
+      } else {
+        toast.success("已创建中转转发");
       }
-      toast.success("已创建中转转发");
+      invalidatePageCache(
+        "forward",
+        "relay-lines",
+        "inbound",
+        "admin-overview",
+      );
       setForm({ tunnelId: "", inPort: "", name: "", shareHost: "" });
       await load();
       onChanged();
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   };
 
   const saveEdit = async () => {
-    if (!editing) return;
+    if (savingRef.current || !editing) return;
     if (!editing.name.trim()) {
       toast.error("名称不能为空");
 
       return;
     }
+    savingRef.current = true;
     setSaving(true);
     try {
       const res = await updateInboundRelay({
@@ -214,11 +254,18 @@ export function RelayModal({
 
         return;
       }
+      invalidatePageCache(
+        "forward",
+        "relay-lines",
+        "inbound",
+        "admin-overview",
+      );
       toast.success("已保存");
       setEditing(null);
       await load();
       onChanged();
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -235,6 +282,12 @@ export function RelayModal({
 
         return;
       }
+      invalidatePageCache(
+        "forward",
+        "relay-lines",
+        "inbound",
+        "admin-overview",
+      );
       toast.success("已删除");
       setRemoving(null);
       await load();

@@ -128,6 +128,12 @@ func (p *process) supervise() {
 }
 
 func (p *process) runOnce() error {
+	select {
+	case <-p.stopCh:
+		return nil
+	default:
+	}
+
 	cmd := exec.Command(p.bin, p.args...)
 	cmd.Dir = p.dir
 	if len(p.env) > 0 {
@@ -148,7 +154,16 @@ func (p *process) runOnce() error {
 	p.running = true
 	p.pid = cmd.Process.Pid
 	p.startedAt = time.Now().UnixMilli()
+	var stopped bool
+	select {
+	case <-p.stopCh:
+		stopped = true
+	default:
+	}
 	p.mu.Unlock()
+	if stopped {
+		signalGroup(cmd.Process.Pid, syscall.SIGTERM)
+	}
 
 	scanDone := make(chan struct{})
 	go func() {

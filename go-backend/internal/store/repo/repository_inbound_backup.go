@@ -226,6 +226,9 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 			return 0, err
 		}
 	}
+	if err := syncManagedRelayForwardNamesTx(tx, now); err != nil {
+		return 0, err
+	}
 
 	// Counter baselines keep the next traffic sample from being counted
 	// twice when the restored panel talks to the same nodes.

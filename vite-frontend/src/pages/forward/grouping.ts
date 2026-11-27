@@ -362,6 +362,8 @@ export const mapForwardApiItems = (items: ForwardApiItem[]): Forward[] => {
     outFlow: forward.outFlow ?? 0,
     createdTime:
       typeof forward.createdTime === "string" ? forward.createdTime : "",
+    updatedTime:
+      typeof forward.updatedTime === "number" ? forward.updatedTime : undefined,
     userName:
       typeof forward.userName === "string" ? forward.userName : undefined,
     userId: typeof forward.userId === "number" ? forward.userId : undefined,

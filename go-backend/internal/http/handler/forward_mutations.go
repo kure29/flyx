@@ -46,13 +46,6 @@ func (h *Handler) forwardCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("转发名称和目标地址不能为空"))
 		return
 	}
-	port := asInt(req["inPort"], 0)
-	if port <= 0 {
-		port = h.pickTunnelPort(tunnelID)
-	}
-	if port <= 0 {
-		port = 10000
-	}
 	entryNodes, _ := h.tunnelEntryNodeIDs(tunnelID)
 	isNftTunnel, _, err := h.tunnelUsesNftables(tunnelID)
 	if err != nil {
@@ -70,37 +63,60 @@ func (h *Handler) forwardCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("多入口隧道的转发不支持自定义监听IP"))
 		return
 	}
-	for _, nodeID := range entryNodes {
-		node, nodeErr := h.getNodeRecord(nodeID)
-		if nodeErr != nil {
-			continue
-		}
-		if err := validateRemoteNodePort(node, port); err != nil {
-			response.WriteJSON(w, response.ErrDefault(err.Error()))
-			return
-		}
-		if err := validateLocalNodePort(node, port); err != nil {
-			response.WriteJSON(w, response.ErrDefault(err.Error()))
-			return
-		}
-		if err := h.validateForwardPortAvailability(node, port, 0); err != nil {
-			response.WriteJSON(w, response.ErrDefault(err.Error()))
-			return
-		}
-	}
-	now := time.Now().UnixMilli()
-	inx := h.repo.NextIndex("forward")
-	userName := h.repo.GetUsernameByID(userID)
-	if userName == "" {
-		userName = "user"
-	}
+	requestedPort := asInt(req["inPort"], 0)
 	proxyProtocol := asInt(req["proxyProtocol"], 0)
 	proxyProtocolReceive := asInt(req["proxyProtocolReceive"], 0)
 	proxyProtocolSend := asInt(req["proxyProtocolSend"], proxyProtocol)
+	strategy := defaultString(asString(req["strategy"]), "fifo")
 
-	forwardID, err := h.repo.CreateForwardTx(userID, userName, name, tunnelID, remoteAddr, defaultString(asString(req["strategy"]), "fifo"), now, inx, entryNodes, port, inIp, proxyProtocol, proxyProtocolReceive, proxyProtocolSend)
-	if err != nil {
-		response.WriteJSON(w, response.Err(-2, err.Error()))
+	var (
+		forwardID  int64
+		validation error
+		createErr  error
+	)
+	func() {
+		h.forwardPortMu.Lock()
+		defer h.forwardPortMu.Unlock()
+
+		port := requestedPort
+		if port <= 0 {
+			port = h.pickTunnelPort(tunnelID)
+		}
+		if port <= 0 {
+			port = 10000
+		}
+		for _, nodeID := range entryNodes {
+			node, nodeErr := h.getNodeRecord(nodeID)
+			if nodeErr != nil {
+				continue
+			}
+			if err := validateRemoteNodePort(node, port); err != nil {
+				validation = err
+				return
+			}
+			if err := validateLocalNodePort(node, port); err != nil {
+				validation = err
+				return
+			}
+			if err := h.validateForwardPortAvailability(node, port, 0); err != nil {
+				validation = err
+				return
+			}
+		}
+		now := time.Now().UnixMilli()
+		inx := h.repo.NextIndex("forward")
+		userName := h.repo.GetUsernameByID(userID)
+		if userName == "" {
+			userName = "user"
+		}
+		forwardID, createErr = h.repo.CreateForwardTx(userID, userName, name, tunnelID, remoteAddr, strategy, now, inx, entryNodes, port, inIp, proxyProtocol, proxyProtocolReceive, proxyProtocolSend)
+	}()
+	if validation != nil {
+		response.WriteJSON(w, response.ErrDefault(validation.Error()))
+		return
+	}
+	if createErr != nil {
+		response.WriteJSON(w, response.Err(-2, createErr.Error()))
 		return
 	}
 	createdForward, err := h.getForwardRecord(forwardID)
@@ -108,9 +124,17 @@ func (h *Handler) forwardCreate(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	if err := h.syncForwardServices(createdForward, "UpdateService", true); err != nil {
+	syncWarnings, err := h.syncForwardServicesWithWarnings(createdForward, "UpdateService", true)
+	if err != nil {
 		_ = h.deleteForwardByID(forwardID)
+		if tunnelIsRealm(tunnel) && len(entryNodes) > 1 {
+			_, _ = h.syncRealmNodes(entryNodes, nil)
+		}
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
+	if len(syncWarnings) > 0 {
+		response.WriteJSON(w, response.OK(map[string]interface{}{"warnings": syncWarnings}))
 		return
 	}
 	response.WriteJSON(w, response.OKEmpty())
@@ -184,16 +208,6 @@ func (h *Handler) forwardUpdate(w http.ResponseWriter, r *http.Request) {
 	if strategy == "" {
 		strategy = forward.Strategy
 	}
-	port := asInt(req["inPort"], 0)
-	if port <= 0 {
-		minPort := h.repo.GetMinForwardPort(id)
-		if minPort.Valid {
-			port = int(minPort.Int64)
-		}
-		if port <= 0 {
-			port = h.pickTunnelPort(tunnelID)
-		}
-	}
 	hasInIP := false
 	inIp := ""
 	if rawInIP, ok := req["inIp"]; ok {
@@ -216,43 +230,73 @@ func (h *Handler) forwardUpdate(w http.ResponseWriter, r *http.Request) {
 		removedNodeIDs = diffInt64s(oldNodeIDs, newNodeIDs)
 		keptNodeIDs = diffInt64s(oldNodeIDs, removedNodeIDs)
 	}
-	for _, nodeID := range fwdEntryNodes {
-		node, nodeErr := h.getNodeRecord(nodeID)
-		if nodeErr != nil {
-			continue
-		}
-		if err := validateRemoteNodePort(node, port); err != nil {
-			response.WriteJSON(w, response.ErrDefault(err.Error()))
-			return
-		}
-		if err := validateLocalNodePort(node, port); err != nil {
-			response.WriteJSON(w, response.ErrDefault(err.Error()))
-			return
-		}
-		if err := h.validateForwardPortAvailability(node, port, id); err != nil {
-			response.WriteJSON(w, response.ErrDefault(err.Error()))
-			return
-		}
-	}
-	now := time.Now().UnixMilli()
+	requestedPort := asInt(req["inPort"], 0)
 	proxyProtocol := asInt(req["proxyProtocol"], forward.ProxyProtocol)
 	proxyProtocolReceive := asInt(req["proxyProtocolReceive"], forward.ProxyProtocolReceive)
 	proxyProtocolSend := asInt(req["proxyProtocolSend"], forward.ProxyProtocolSend)
 
-	if err := h.repo.UpdateForward(id, name, tunnelID, remoteAddr, strategy, now, proxyProtocol, proxyProtocolReceive, proxyProtocolSend); err != nil {
-		response.WriteJSON(w, response.Err(-2, err.Error()))
+	var (
+		validation   error
+		updateErr    error
+		needRollback bool
+	)
+	func() {
+		h.forwardPortMu.Lock()
+		defer h.forwardPortMu.Unlock()
+
+		port := requestedPort
+		if port <= 0 {
+			minPort := h.repo.GetMinForwardPort(id)
+			if minPort.Valid {
+				port = int(minPort.Int64)
+			}
+			if port <= 0 {
+				port = h.pickTunnelPort(tunnelID)
+			}
+		}
+		for _, nodeID := range fwdEntryNodes {
+			node, nodeErr := h.getNodeRecord(nodeID)
+			if nodeErr != nil {
+				continue
+			}
+			if err := validateRemoteNodePort(node, port); err != nil {
+				validation = err
+				return
+			}
+			if err := validateLocalNodePort(node, port); err != nil {
+				validation = err
+				return
+			}
+			if err := h.validateForwardPortAvailability(node, port, id); err != nil {
+				validation = err
+				return
+			}
+		}
+		now := time.Now().UnixMilli()
+		if err := h.repo.UpdateForward(id, name, tunnelID, remoteAddr, strategy, now, proxyProtocol, proxyProtocolReceive, proxyProtocolSend); err != nil {
+			updateErr = err
+			return
+		}
+		if hasInIP {
+			updateErr = h.replaceForwardPorts(id, tunnelID, port, inIp)
+		} else if tunnelID != forward.TunnelID {
+			updateErr = h.replaceForwardPorts(id, tunnelID, port, "")
+		} else {
+			updateErr = h.replaceForwardPortsPreservingInIP(id, tunnelID, port, oldPorts)
+		}
+		if updateErr != nil {
+			needRollback = true
+		}
+	}()
+	if validation != nil {
+		response.WriteJSON(w, response.ErrDefault(validation.Error()))
 		return
 	}
-	if hasInIP {
-		err = h.replaceForwardPorts(id, tunnelID, port, inIp)
-	} else if tunnelID != forward.TunnelID {
-		err = h.replaceForwardPorts(id, tunnelID, port, "")
-	} else {
-		err = h.replaceForwardPortsPreservingInIP(id, tunnelID, port, oldPorts)
-	}
-	if err != nil {
-		h.rollbackForwardMutation(forward, oldPorts)
-		response.WriteJSON(w, response.Err(-2, err.Error()))
+	if updateErr != nil {
+		if needRollback {
+			h.rollbackForwardMutation(forward, oldPorts)
+		}
+		response.WriteJSON(w, response.Err(-2, updateErr.Error()))
 		return
 	}
 	updatedForward, err := h.getForwardRecord(id)
@@ -282,7 +326,7 @@ func (h *Handler) forwardUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	warnings = append(warnings, syncWarnings...)
-	if name != forward.Name {
+	if name != "" {
 		_ = h.repo.UpdateManagedInboundRelayName(id, name)
 	}
 
@@ -747,58 +791,61 @@ func (h *Handler) forwardBatchChangeTunnel(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 		oldNodeIDs := forwardPortNodeIDs(oldPorts)
-		port := h.repo.GetMinForwardPort(id)
-		if err := h.repo.UpdateForwardTunnel(id, req.TargetTunnelID, time.Now().UnixMilli()); err != nil {
-			fail++
-			failures = appendBatchFailure(failures, id, forward.Name, err)
-			continue
-		}
-		p := 0
-		if port.Valid {
-			p = int(port.Int64)
-		}
-		if p <= 0 {
-			p = h.pickTunnelPort(req.TargetTunnelID)
-		}
 		bctEntryNodes, _ := h.tunnelEntryNodeIDs(req.TargetTunnelID)
 		newNodeIDs := uniqueInt64s(bctEntryNodes)
 		removedNodeIDs := diffInt64s(oldNodeIDs, newNodeIDs)
 		keptNodeIDs := diffInt64s(oldNodeIDs, removedNodeIDs)
-		portRangeOk := true
-		var portRangeErr error
-		for _, nid := range bctEntryNodes {
-			nd, ndErr := h.getNodeRecord(nid)
-			if ndErr != nil {
-				portRangeErr = ndErr
-				portRangeOk = false
-				break
+
+		var (
+			mutateErr    error
+			needRollback bool
+		)
+		func() {
+			h.forwardPortMu.Lock()
+			defer h.forwardPortMu.Unlock()
+
+			port := h.repo.GetMinForwardPort(id)
+			p := 0
+			if port.Valid {
+				p = int(port.Int64)
 			}
-			if validateErr := validateRemoteNodePort(nd, p); validateErr != nil {
-				portRangeOk = false
-				portRangeErr = validateErr
-				break
+			if p <= 0 {
+				p = h.pickTunnelPort(req.TargetTunnelID)
 			}
-			if validateErr := validateLocalNodePort(nd, p); validateErr != nil {
-				portRangeOk = false
-				portRangeErr = validateErr
-				break
+			for _, nid := range bctEntryNodes {
+				nd, ndErr := h.getNodeRecord(nid)
+				if ndErr != nil {
+					mutateErr = ndErr
+					return
+				}
+				if validateErr := validateRemoteNodePort(nd, p); validateErr != nil {
+					mutateErr = validateErr
+					return
+				}
+				if validateErr := validateLocalNodePort(nd, p); validateErr != nil {
+					mutateErr = validateErr
+					return
+				}
+				if validateErr := h.validateForwardPortAvailability(nd, p, id); validateErr != nil {
+					mutateErr = validateErr
+					return
+				}
 			}
-			if validateErr := h.validateForwardPortAvailability(nd, p, id); validateErr != nil {
-				portRangeOk = false
-				portRangeErr = validateErr
-				break
+			if err := h.repo.UpdateForwardTunnel(id, req.TargetTunnelID, time.Now().UnixMilli()); err != nil {
+				mutateErr = err
+				return
 			}
-		}
-		if !portRangeOk {
+			if err := h.replaceForwardPorts(id, req.TargetTunnelID, p, ""); err != nil {
+				mutateErr = err
+				needRollback = true
+			}
+		}()
+		if mutateErr != nil {
+			if needRollback {
+				h.rollbackForwardMutation(forward, oldPorts)
+			}
 			fail++
-			failures = appendBatchFailure(failures, id, forward.Name, portRangeErr)
-			h.rollbackForwardMutation(forward, oldPorts)
-			continue
-		}
-		if err := h.replaceForwardPorts(id, req.TargetTunnelID, p, ""); err != nil {
-			h.rollbackForwardMutation(forward, oldPorts)
-			fail++
-			failures = appendBatchFailure(failures, id, forward.Name, err)
+			failures = appendBatchFailure(failures, id, forward.Name, mutateErr)
 			continue
 		}
 		updatedForward, fetchErr := h.getForwardRecord(id)
