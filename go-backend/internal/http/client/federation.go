@@ -19,6 +19,9 @@ type RemoteNodeInfo struct {
 	NodeID         int64  `json:"nodeId"`
 	NodeName       string `json:"nodeName"`
 	ServerIP       string `json:"serverIp"`
+	ServerIPV4     string `json:"serverIpV4"`
+	ServerIPV6     string `json:"serverIpV6"`
+	ExtraIPs       string `json:"extraIPs"`
 	Status         int    `json:"status"`
 	MaxBandwidth   int64  `json:"maxBandwidth"`
 	CurrentFlow    int64  `json:"currentFlow"`

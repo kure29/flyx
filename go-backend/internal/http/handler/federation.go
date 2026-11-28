@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -14,6 +15,29 @@ import (
 	"go-backend/internal/http/response"
 	"go-backend/internal/store/repo"
 )
+
+func resolveRemoteNodeAddresses(serverIP, serverIPV4, serverIPV6 string) (primaryIP, v4, v6 string) {
+	primaryIP = strings.TrimSpace(serverIP)
+	v4 = strings.TrimSpace(serverIPV4)
+	v6 = strings.Trim(strings.TrimSpace(serverIPV6), "[]")
+	if trimmed := strings.Trim(primaryIP, "[]"); trimmed != "" {
+		if addr, err := netip.ParseAddr(trimmed); err == nil {
+			if addr.Is4() && v4 == "" {
+				v4 = addr.String()
+			} else if addr.Is6() && !addr.Is4In6() && v6 == "" {
+				v6 = addr.String()
+			}
+		}
+	}
+	if primaryIP == "" {
+		if v4 != "" {
+			primaryIP = v4
+		} else if v6 != "" {
+			primaryIP = v6
+		}
+	}
+	return primaryIP, v4, v6
+}
 
 type federationTunnelRequest struct {
 	Protocol   string `json:"protocol"`
@@ -83,11 +107,15 @@ func (h *Handler) nodeImport(w http.ResponseWriter, r *http.Request) {
 
 	inx := h.repo.NextIndex("node")
 	now := time.Now().UnixMilli()
+	primaryIP, serverIPV4, serverIPV6 := resolveRemoteNodeAddresses(info.ServerIP, info.ServerIPV4, info.ServerIPV6)
 
 	if err = h.repo.CreateRemoteNode(
 		fmt.Sprintf("%s (Remote)", info.NodeName),
 		randomToken(16),
-		info.ServerIP,
+		primaryIP,
+		serverIPV4,
+		serverIPV6,
+		strings.TrimSpace(info.ExtraIPs),
 		portRange,
 		now,
 		info.Status,

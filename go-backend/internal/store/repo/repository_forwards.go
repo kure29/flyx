@@ -92,17 +92,23 @@ func (r *Repository) ListForwards() ([]map[string]interface{}, error) {
 // ─── Helper Functions ────────────────────────────────────────────────
 
 func resolveForwardIngress(db *gorm.DB, forwardID int64, tunnelID int64) (string, sql.NullInt64, error) {
-	var tunnelInIP sql.NullString
-	db.Model(&model.Tunnel{}).Select("in_ip").Where("id = ?", tunnelID).Limit(1).Scan(&tunnelInIP)
+	var tunnelRow struct {
+		InIP         sql.NullString
+		IPPreference sql.NullString
+	}
+	db.Model(&model.Tunnel{}).Select("in_ip, ip_preference").Where("id = ?", tunnelID).Limit(1).Scan(&tunnelRow)
+	ipPref := strings.TrimSpace(tunnelRow.IPPreference.String)
 
 	type fpRow struct {
-		Port     sql.NullInt64
-		ServerIP sql.NullString
-		InIP     sql.NullString
+		Port       sql.NullInt64
+		ServerIP   sql.NullString
+		ServerIPV4 sql.NullString
+		ServerIPV6 sql.NullString
+		InIP       sql.NullString
 	}
 	var fpRows []fpRow
 	err := db.Model(&model.ForwardPort{}).
-		Select("forward_port.port, node.server_ip, forward_port.in_ip").
+		Select("forward_port.port, node.server_ip, node.server_ip_v4, node.server_ip_v6, forward_port.in_ip").
 		Joins("LEFT JOIN node ON node.id = forward_port.node_id").
 		Where("forward_port.forward_id = ?", forwardID).
 		Order("forward_port.id ASC").
@@ -116,6 +122,15 @@ func resolveForwardIngress(db *gorm.DB, forwardID int64, tunnelID int64) (string
 	seenPorts := make(map[int64]struct{})
 	seenPairs := make(map[string]struct{})
 
+	firstNonEmpty := func(vals ...string) string {
+		for _, v := range vals {
+			if trimmed := strings.TrimSpace(v); trimmed != "" {
+				return trimmed
+			}
+		}
+		return ""
+	}
+
 	for _, row := range fpRows {
 		if !row.Port.Valid {
 			continue
@@ -128,8 +143,15 @@ func resolveForwardIngress(db *gorm.DB, forwardID int64, tunnelID int64) (string
 		var ip string
 		if row.InIP.Valid && strings.TrimSpace(row.InIP.String) != "" {
 			ip = strings.TrimSpace(row.InIP.String)
-		} else if row.ServerIP.Valid && strings.TrimSpace(row.ServerIP.String) != "" {
-			ip = strings.TrimSpace(row.ServerIP.String)
+		} else {
+			switch ipPref {
+			case "v6":
+				ip = firstNonEmpty(row.ServerIPV6.String, row.ServerIP.String, row.ServerIPV4.String)
+			case "v4":
+				ip = firstNonEmpty(row.ServerIPV4.String, row.ServerIP.String, row.ServerIPV6.String)
+			default:
+				ip = firstNonEmpty(row.ServerIP.String, row.ServerIPV4.String, row.ServerIPV6.String)
+			}
 		}
 
 		if ip != "" {

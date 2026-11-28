@@ -3,6 +3,7 @@ package repo
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	"go-backend/internal/store/model"
 
@@ -18,11 +19,14 @@ type RemoteNodeRow struct {
 	RemoteConfig sql.NullString
 }
 
-// NodeBasicInfo holds name, server_ip, and status for a node.
+// NodeBasicInfo holds name, addresses, and status for a node.
 type NodeBasicInfo struct {
-	Name     string
-	ServerIP string
-	Status   int
+	Name       string
+	ServerIP   string
+	ServerIPV4 string
+	ServerIPV6 string
+	ExtraIPs   string
+	Status     int
 }
 
 // FederationBindingRow holds the columns for an active federation tunnel binding.
@@ -74,6 +78,30 @@ func (r *Repository) UpdateNodeRemoteConfig(nodeID int64, configJSON string) err
 	return r.db.Model(&model.Node{}).Where("id = ?", nodeID).Update("remote_config", configJSON).Error
 }
 
+// UpdateNodeRemoteSync refreshes remote_config, status, and non-empty peer IP metadata.
+func (r *Repository) UpdateNodeRemoteSync(nodeID int64, configJSON, serverIP, serverIPV4, serverIPV6, extraIPs string, status int) error {
+	if r == nil || r.db == nil {
+		return errors.New("repository not initialized")
+	}
+	updates := map[string]interface{}{
+		"remote_config": configJSON,
+		"status":        status,
+	}
+	if strings.TrimSpace(serverIP) != "" {
+		updates["server_ip"] = strings.TrimSpace(serverIP)
+	}
+	if strings.TrimSpace(serverIPV4) != "" {
+		updates["server_ip_v4"] = sql.NullString{String: strings.TrimSpace(serverIPV4), Valid: true}
+	}
+	if strings.TrimSpace(serverIPV6) != "" {
+		updates["server_ip_v6"] = sql.NullString{String: strings.TrimSpace(serverIPV6), Valid: true}
+	}
+	if strings.TrimSpace(extraIPs) != "" {
+		updates["extra_ips"] = sql.NullString{String: strings.TrimSpace(extraIPs), Valid: true}
+	}
+	return r.db.Model(&model.Node{}).Where("id = ?", nodeID).Updates(updates).Error
+}
+
 // ListActiveBindingsForNode returns active federation tunnel bindings for a node.
 func (r *Repository) ListActiveBindingsForNode(nodeID int64) ([]FederationBindingRow, error) {
 	if r == nil || r.db == nil {
@@ -116,17 +144,24 @@ func (r *Repository) ListActiveForwardPortsForNode(nodeID int64) ([]ActiveForwar
 	return result, nil
 }
 
-// GetNodeBasicInfo returns the name, server_ip, and status for a given node.
+// GetNodeBasicInfo returns the name, addresses, and status for a given node.
 func (r *Repository) GetNodeBasicInfo(nodeID int64) (*NodeBasicInfo, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("repository not initialized")
 	}
 	var n model.Node
-	err := r.db.Select("name", "server_ip", "status").Where("id = ?", nodeID).First(&n).Error
+	err := r.db.Select("name", "server_ip", "server_ip_v4", "server_ip_v6", "extra_ips", "status").Where("id = ?", nodeID).First(&n).Error
 	if err != nil {
 		return nil, err
 	}
-	return &NodeBasicInfo{Name: n.Name, ServerIP: n.ServerIP, Status: n.Status}, nil
+	return &NodeBasicInfo{
+		Name:       n.Name,
+		ServerIP:   n.ServerIP,
+		ServerIPV4: strings.TrimSpace(n.ServerIPV4.String),
+		ServerIPV6: strings.TrimSpace(n.ServerIPV6.String),
+		ExtraIPs:   strings.TrimSpace(n.ExtraIPs.String),
+		Status:     n.Status,
+	}, nil
 }
 
 // CreateFederationTunnel creates a tunnel and chain_tunnel entry in a transaction,
@@ -271,16 +306,20 @@ func (r *Repository) NextIndex(table string) int {
 }
 
 // CreateRemoteNode inserts a new remote node.
-func (r *Repository) CreateRemoteNode(name, secret, serverIP, portRange string, now int64, status int, inx int, remoteURL, remoteToken, remoteConfigJSON string) error {
+func (r *Repository) CreateRemoteNode(name, secret, serverIP, serverIPV4, serverIPV6, extraIPs, portRange string, now int64, status int, inx int, remoteURL, remoteToken, remoteConfigJSON string) error {
 	if r == nil || r.db == nil {
 		return errors.New("repository not initialized")
 	}
+	v4 := strings.TrimSpace(serverIPV4)
+	v6 := strings.TrimSpace(serverIPV6)
+	extra := strings.TrimSpace(extraIPs)
 	node := model.Node{
 		Name:          name,
 		Secret:        secret,
 		ServerIP:      serverIP,
-		ServerIPV4:    sql.NullString{},
-		ServerIPV6:    sql.NullString{},
+		ServerIPV4:    sql.NullString{String: v4, Valid: v4 != ""},
+		ServerIPV6:    sql.NullString{String: v6, Valid: v6 != ""},
+		ExtraIPs:      sql.NullString{String: extra, Valid: extra != ""},
 		Port:          portRange,
 		InterfaceName: sql.NullString{},
 		Version:       sql.NullString{},
