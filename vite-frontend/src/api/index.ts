@@ -16,6 +16,7 @@ import type {
   ForwardMutationPayload,
   UpdatePasswordPayload,
   BackupImportPayload,
+  BackupImportResult,
   NodeMetricApiItem,
   TunnelMetricApiItem,
   ServiceMonitorApiItem,
@@ -688,7 +689,7 @@ export const exportBackup = async (types: string[] = []) => {
 };
 
 export const importBackup = (data: BackupImportPayload) =>
-  Network.post("/backup/import", data);
+  Network.post<BackupImportResult>("/backup/import", data);
 
 export interface AnnouncementData {
   content: string;
