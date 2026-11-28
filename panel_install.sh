@@ -269,7 +269,8 @@ show_menu() {
   echo "2. 更新面板"
   echo "3. 卸载面板"
   echo "4. 迁移到 PostgreSQL"
-  echo "5. 退出"
+  echo "5. 配置 / 管理 HTTPS"
+  echo "6. 退出"
   echo "==============================================="
 }
 
@@ -295,6 +296,17 @@ upsert_env_var() {
     printf '%s=%s\n' "$key" "$value" > "$tmp_file"
   fi
 
+  mv "$tmp_file" "$file"
+}
+
+remove_env_var() {
+  local file="$1"
+  local key="$2"
+  local tmp_file
+
+  [[ -f "$file" ]] || return 0
+  tmp_file=$(mktemp)
+  awk -v k="$key" '$0 !~ ("^" k "=") { print }' "$file" > "$tmp_file"
   mv "$tmp_file" "$file"
 }
 
@@ -658,6 +670,18 @@ create_panel_update_backup() {
     echo "❌ 备份面板配置失败"
     return 1
   fi
+  if [[ -f "docker-compose.override.yml" ]]; then
+    cp -p docker-compose.override.yml "$UPDATE_BACKUP_DIR/" || {
+      echo "❌ 备份 HTTPS Compose 配置失败"
+      return 1
+    }
+  fi
+  if [[ -f "Caddyfile" ]]; then
+    cp -p Caddyfile "$UPDATE_BACKUP_DIR/" || {
+      echo "❌ 备份 Caddyfile 失败"
+      return 1
+    }
+  fi
 
   if [[ "$db_type" == "postgres" ]]; then
     backup_postgres_for_update "$UPDATE_BACKUP_DIR/postgres.sql" || return 1
@@ -721,6 +745,9 @@ start_panel_after_update() {
     wait_for_postgres_healthy || return 1
   fi
   panel_compose_up -d --force-recreate --remove-orphans backend frontend || return 1
+  if [[ -f "docker-compose.override.yml" ]]; then
+    panel_compose_up -d caddy || return 1
+  fi
   wait_for_backend_healthy
 }
 
@@ -732,11 +759,20 @@ rollback_panel_update() {
     echo "❌ 配置回滚失败，请从 $UPDATE_BACKUP_DIR 手动恢复"
     return 1
   fi
+  if [[ -f "$UPDATE_BACKUP_DIR/docker-compose.override.yml" ]]; then
+    cp -p "$UPDATE_BACKUP_DIR/docker-compose.override.yml" docker-compose.override.yml || true
+  fi
+  if [[ -f "$UPDATE_BACKUP_DIR/Caddyfile" ]]; then
+    cp -p "$UPDATE_BACKUP_DIR/Caddyfile" Caddyfile || true
+  fi
   if [[ "$db_type" == "postgres" ]]; then
     panel_compose_up -d postgres || return 1
     wait_for_postgres_healthy || return 1
   fi
   panel_compose_up -d --force-recreate --remove-orphans backend frontend || return 1
+  if [[ -f "docker-compose.override.yml" ]]; then
+    panel_compose_up -d caddy || return 1
+  fi
   wait_for_backend_healthy
 }
 
@@ -952,8 +988,24 @@ EOF
     panel_compose_up -d backend frontend
   fi
 
+  local enable_https https_domain https_port https_origin
+  echo ""
+  read -p "🔒 是否现在配置域名 HTTPS（通过 Caddy 自动申请证书或自定义证书）? (y/N): " enable_https
+  if [[ "$enable_https" == "y" || "$enable_https" == "Y" ]]; then
+    configure_panel_https || echo "⚠️ HTTPS 配置未完成，稍后可重新运行脚本选择「5. 配置 / 管理 HTTPS」"
+  fi
+
+  https_domain=$(get_env_var "PANEL_HTTPS_DOMAIN" || true)
+  https_port=$(get_env_var "PANEL_HTTPS_PORT" || true)
+
   echo "🎉 部署完成"
-  echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
+  if [[ "$(get_env_var "PANEL_HTTPS_ENABLED" || true)" == "true" && -n "$https_domain" ]]; then
+    https_origin=$(format_https_origin "$https_domain" "${https_port:-443}")
+    echo "🌐 访问地址: $https_origin"
+    echo "💡 如需保留 HTTP 直连：http://服务器IP:$FRONTEND_PORT"
+  else
+    echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
+  fi
   echo "📖 部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
   echo "📚 文档地址: https://kure29.github.io/flyx/guide/getting-started"
   echo "💡 默认管理员账号: admin_user / admin_user"
@@ -1105,6 +1157,9 @@ migrate_to_postgres() {
 
   echo "🚀 启动迁移后的服务..."
   $DOCKER_CMD up -d postgres backend frontend
+  if [[ -f "docker-compose.override.yml" ]]; then
+    $DOCKER_CMD up -d caddy || true
+  fi
 
   echo "⏳ 等待服务启动..."
   if ! wait_for_backend_healthy; then
@@ -1115,7 +1170,394 @@ migrate_to_postgres() {
   echo "✅ SQLite -> PostgreSQL 迁移完成"
 }
 
+is_valid_https_domain() {
+  local domain="$1"
 
+  [[ -n "$domain" && ${#domain} -le 253 ]] || return 1
+  # Reject schemes, paths, ports, spaces, and plain IPv4 literals.
+  [[ "$domain" != *"://"* && "$domain" != *"/"* && "$domain" != *":"* ]] || return 1
+  [[ ! "$domain" =~ ^[0-9.]+$ ]] || return 1
+  [[ "$domain" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$ ]]
+}
+
+extract_port_number() {
+  local spec="$1"
+  if [[ "$spec" =~ :([0-9]+)$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  else
+    printf '%s' "$spec"
+  fi
+}
+
+format_https_origin() {
+  local domain="$1"
+  local port_spec="${2:-443}"
+  local port
+  port=$(extract_port_number "$port_spec")
+  if [[ -z "$port" || "$port" == "443" ]]; then
+    printf 'https://%s' "$domain"
+  else
+    printf 'https://%s:%s' "$domain" "$port"
+  fi
+}
+
+ensure_https_identity() {
+  local caddy_container caddy_data_volume caddy_config_volume
+  caddy_container=$(get_env_var "PANEL_CADDY_CONTAINER" || true)
+  caddy_data_volume=$(get_env_var "FLYX_CADDY_DATA_VOLUME" || true)
+  caddy_config_volume=$(get_env_var "FLYX_CADDY_CONFIG_VOLUME" || true)
+
+  caddy_container=${caddy_container:-flyx-panel-caddy}
+  caddy_data_volume=${caddy_data_volume:-flyx-caddy-data}
+  caddy_config_volume=${caddy_config_volume:-flyx-caddy-config}
+
+  upsert_env_var ".env" "PANEL_CADDY_CONTAINER" "$caddy_container"
+  upsert_env_var ".env" "FLYX_CADDY_DATA_VOLUME" "$caddy_data_volume"
+  upsert_env_var ".env" "FLYX_CADDY_CONFIG_VOLUME" "$caddy_config_volume"
+}
+
+write_panel_https_files() {
+  local mode="$1"
+  local domain="$2"
+  local email="$3"
+  local https_port="$4"
+  local http_port="$5"
+  local cert_path="$6"
+  local key_path="$7"
+  local https_origin
+
+  https_origin=$(format_https_origin "$domain" "$https_port")
+  ensure_https_identity
+
+  if [[ "$mode" == "auto" ]]; then
+    {
+      if [[ -n "$email" ]]; then
+        printf '{\n    email %s\n}\n\n' "$email"
+      fi
+      cat <<EOF
+$domain {
+    reverse_proxy frontend:80 {
+        flush_interval -1
+    }
+}
+EOF
+    } > Caddyfile
+  else
+    {
+      printf '{\n    auto_https off\n}\n\n'
+      if [[ -n "$http_port" ]]; then
+        cat <<EOF
+http://$domain:80 {
+    redir ${https_origin}{uri} permanent
+}
+
+EOF
+      fi
+      cat <<EOF
+https://$domain:443 {
+    tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+    reverse_proxy frontend:80 {
+        flush_interval -1
+    }
+}
+EOF
+    } > Caddyfile
+  fi
+  chmod 0644 Caddyfile
+
+  {
+    cat <<'EOF'
+# Managed by panel_install.sh (HTTPS via Caddy).
+# Docker Compose merges this file automatically with docker-compose.yml,
+# so script updates and in-panel upgrades preserve your HTTPS setup.
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: ${PANEL_CADDY_CONTAINER:-flyx-panel-caddy}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+EOF
+    if [[ "$mode" == "auto" ]]; then
+      printf '      - "80:80"\n'
+      printf '      - "443:443"\n'
+      printf '      - "443:443/udp"\n'
+    else
+      if [[ -n "$http_port" ]]; then
+        printf '      - "%s:80"\n' "$http_port"
+      fi
+      printf '      - "%s:443"\n' "$https_port"
+      printf '      - "%s:443/udp"\n' "$https_port"
+    fi
+    cat <<'EOF'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+EOF
+    if [[ "$mode" == "custom" ]]; then
+      printf '      - "%s:/etc/caddy/certs/fullchain.pem:ro"\n' "$cert_path"
+      printf '      - "%s:/etc/caddy/certs/privkey.pem:ro"\n' "$key_path"
+    fi
+    cat <<'EOF'
+    depends_on:
+      - frontend
+    networks:
+      - gost-network
+
+volumes:
+  caddy_data:
+    name: ${FLYX_CADDY_DATA_VOLUME:-flyx-caddy-data}
+    driver: local
+  caddy_config:
+    name: ${FLYX_CADDY_CONFIG_VOLUME:-flyx-caddy-config}
+    driver: local
+EOF
+  } > docker-compose.override.yml
+  chmod 0644 docker-compose.override.yml
+
+  upsert_env_var ".env" "PANEL_HTTPS_ENABLED" "true"
+  upsert_env_var ".env" "PANEL_HTTPS_MODE" "$mode"
+  upsert_env_var ".env" "PANEL_HTTPS_DOMAIN" "$domain"
+  upsert_env_var ".env" "PANEL_HTTPS_PORT" "$https_port"
+}
+
+configure_panel_https() {
+  local requested_mode="${1:-}"
+  local mode choice domain email https_port http_port cert_path key_path
+  local check_port confirm https_origin set_webauthn
+
+  if [[ ! -f ".env" || ! -f "docker-compose.yml" ]]; then
+    echo "❌ 当前部署目录缺少 .env 或 docker-compose.yml，请先安装面板"
+    return 1
+  fi
+
+  if [[ "$requested_mode" == "auto" || "$requested_mode" == "custom" ]]; then
+    mode="$requested_mode"
+  else
+    echo "请选择 HTTPS 证书模式："
+    echo "1. 自动申请证书（Let's Encrypt / Caddy 自动续期，需域名已解析且 80/443 端口开放）"
+    echo "2. 使用自定义证书（自有 .pem/.crt + .key，支持自定义端口或与 443 SNI 复用共存）"
+    read -p "请输入选项 (1-2，默认 1): " choice
+    case "${choice:-1}" in
+      1) mode="auto" ;;
+      2) mode="custom" ;;
+      *)
+        echo "❌ 无效选项"
+        return 1
+        ;;
+    esac
+  fi
+
+  while true; do
+    read -p "请输入面板域名（例如 panel.example.com，不要带 https://）: " domain
+    domain="${domain#"${domain%%[![:space:]]*}"}"
+    domain="${domain%"${domain##*[![:space:]]}"}"
+    if is_valid_https_domain "$domain"; then
+      break
+    fi
+    echo "❌ 域名格式无效，请输入有效域名（不含协议头、路径或端口，不能为纯 IP）"
+  done
+
+  email=""
+  https_port="443"
+  http_port="80"
+  cert_path=""
+  key_path=""
+
+  if [[ "$mode" == "auto" ]]; then
+    read -p "请输入证书通知邮箱（可选，直接回车跳过）: " email
+    email="${email#"${email%%[![:space:]]*}"}"
+    email="${email%"${email##*[![:space:]]}"}"
+
+    local caddy_running=""
+    local caddy_name
+    caddy_name=$(get_env_var "PANEL_CADDY_CONTAINER" || true)
+    caddy_name=${caddy_name:-flyx-panel-caddy}
+    caddy_running=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -Fx "$caddy_name" || true)
+
+    if [[ -z "$caddy_running" ]]; then
+      for check_port in 80 443; do
+        if port_in_use "$check_port"; then
+          echo "⚠️ 检测到宿主机端口 $check_port 已被占用，自动申请证书需要 80 和 443 端口可用。"
+          read -p "是否仍继续配置？(y/N): " confirm
+          if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "❌ 已取消 HTTPS 配置"
+            return 1
+          fi
+          break
+        fi
+      done
+    fi
+  else
+    while true; do
+      read -p "请输入 HTTPS 监听端口或绑定地址（默认 443，例：8443 或 127.0.0.1:8443）: " https_port
+      https_port="${https_port:-443}"
+      if is_valid_port_binding "$https_port"; then
+        break
+      fi
+      echo "❌ 端口格式无效：$https_port"
+    done
+
+    read -p "是否开启 HTTP 自动跳转 HTTPS？输入监听端口（如 80），直接回车跳过: " http_port
+    if [[ -n "$http_port" ]] && ! is_valid_port_binding "$http_port"; then
+      echo "❌ HTTP 端口格式无效：$http_port"
+      return 1
+    fi
+
+    while true; do
+      read -p "请输入证书文件绝对路径（fullchain.pem / .crt）: " cert_path
+      if [[ -f "$cert_path" && -r "$cert_path" ]]; then
+        cert_path=$(cd "$(dirname "$cert_path")" && printf '%s/%s' "$(pwd -P)" "$(basename "$cert_path")")
+        break
+      fi
+      echo "❌ 证书文件不存在或不可读：$cert_path"
+    done
+
+    while true; do
+      read -p "请输入私钥文件绝对路径（privkey.pem / .key）: " key_path
+      if [[ -f "$key_path" && -r "$key_path" ]]; then
+        key_path=$(cd "$(dirname "$key_path")" && printf '%s/%s' "$(pwd -P)" "$(basename "$key_path")")
+        break
+      fi
+      echo "❌ 私钥文件不存在或不可读：$key_path"
+    done
+  fi
+
+  write_panel_https_files "$mode" "$domain" "$email" "$https_port" "$http_port" "$cert_path" "$key_path"
+
+  if ! run_panel_compose config -q; then
+    echo "❌ 生成的 HTTPS Compose 配置校验失败，已清理新增文件"
+    rm -f docker-compose.override.yml Caddyfile
+    remove_env_var ".env" "PANEL_HTTPS_ENABLED"
+    return 1
+  fi
+
+  echo "🚀 启动 Caddy HTTPS 服务..."
+  if ! panel_compose_up -d --force-recreate caddy; then
+    echo "❌ Caddy 启动失败，请检查端口占用或查看日志：docker logs $(get_env_var PANEL_CADDY_CONTAINER || echo flyx-panel-caddy)"
+    return 1
+  fi
+
+  https_origin=$(format_https_origin "$domain" "$https_port")
+  echo "✅ HTTPS 配置已生效：$https_origin"
+  if [[ "$mode" == "auto" ]]; then
+    echo "ℹ️ 首次启动时 Caddy 会自动向 Let's Encrypt 申请证书，通常需等待 10-30 秒。"
+  fi
+
+  read -p "🔐 是否同步写入 Passkey 所需环境变量 FLYX_WEBAUTHN_ORIGIN=$https_origin 并重启后端？(Y/n): " set_webauthn
+  if [[ "$set_webauthn" != "n" && "$set_webauthn" != "N" ]]; then
+    upsert_env_var ".env" "FLYX_WEBAUTHN_ORIGIN" "$https_origin"
+    upsert_env_var ".env" "FLVX_WEBAUTHN_ORIGIN" "$https_origin"
+    echo "🔄 正在应用 FLYX_WEBAUTHN_ORIGIN 到后端容器..."
+    panel_compose_up -d --force-recreate backend && wait_for_backend_healthy || true
+  fi
+}
+
+disable_panel_https() {
+  local confirm clear_origin caddy_container
+
+  if [[ ! -f "docker-compose.override.yml" && ! -f "Caddyfile" && "$(get_env_var "PANEL_HTTPS_ENABLED" || true)" != "true" ]]; then
+    echo "ℹ️ 当前面板未启用脚本托管的 HTTPS"
+    return 0
+  fi
+
+  read -p "确认关闭 HTTPS 并移除 Caddy 容器及配置吗？(y/N): " confirm
+  if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+    echo "❌ 已取消操作"
+    return 0
+  fi
+
+  caddy_container=$(get_env_var "PANEL_CADDY_CONTAINER" || true)
+  caddy_container=${caddy_container:-flyx-panel-caddy}
+
+  echo "🛑 停止并移除 Caddy 容器..."
+  docker rm -f "$caddy_container" 2>/dev/null || true
+  rm -f docker-compose.override.yml Caddyfile
+
+  remove_env_var ".env" "PANEL_HTTPS_ENABLED"
+  remove_env_var ".env" "PANEL_HTTPS_MODE"
+  remove_env_var ".env" "PANEL_HTTPS_DOMAIN"
+  remove_env_var ".env" "PANEL_HTTPS_PORT"
+
+  if [[ -n "$(get_env_var "FLYX_WEBAUTHN_ORIGIN" || true)" ]]; then
+    read -p "是否同时清除 .env 中的 FLYX_WEBAUTHN_ORIGIN？(y/N): " clear_origin
+    if [[ "$clear_origin" == "y" || "$clear_origin" == "Y" ]]; then
+      remove_env_var ".env" "FLYX_WEBAUTHN_ORIGIN"
+      remove_env_var ".env" "FLVX_WEBAUTHN_ORIGIN"
+      panel_compose_up -d --force-recreate backend >/dev/null 2>&1 || true
+    fi
+  fi
+
+  echo "✅ 已关闭并回滚 HTTPS，面板仍可通过 HTTP 端口访问：http://服务器IP:$(get_env_var FRONTEND_PORT || echo 6366)"
+}
+
+show_panel_https_status() {
+  local enabled mode domain port origin caddy_container status
+
+  enabled=$(get_env_var "PANEL_HTTPS_ENABLED" || true)
+  mode=$(get_env_var "PANEL_HTTPS_MODE" || true)
+  domain=$(get_env_var "PANEL_HTTPS_DOMAIN" || true)
+  port=$(get_env_var "PANEL_HTTPS_PORT" || true)
+  caddy_container=$(get_env_var "PANEL_CADDY_CONTAINER" || true)
+  caddy_container=${caddy_container:-flyx-panel-caddy}
+
+  echo "==============================================="
+  echo "          面板 HTTPS 状态"
+  echo "==============================================="
+  if [[ "$enabled" == "true" || -f "docker-compose.override.yml" ]]; then
+    origin=$(format_https_origin "${domain:-未设置}" "${port:-443}")
+    status=$(docker inspect -f '{{.State.Status}}' "$caddy_container" 2>/dev/null || echo "not_found")
+    echo "启用状态: 已启用"
+    echo "证书模式: ${mode:-unknown}"
+    echo "访问地址: $origin"
+    echo "Caddy 容器: $caddy_container ($status)"
+    echo "Passkey Origin: $(get_env_var FLYX_WEBAUTHN_ORIGIN || echo '未设置')"
+    if [[ "$status" != "not_found" ]]; then
+      echo "-----------------------------------------------"
+      echo "最近 25 行 Caddy 日志："
+      docker logs --tail 25 "$caddy_container" 2>&1 || true
+    fi
+  else
+    echo "启用状态: 未启用（纯 HTTP 模式）"
+    echo "HTTP 端口: $(get_env_var FRONTEND_PORT || echo '未设置')"
+  fi
+  echo "==============================================="
+}
+
+manage_panel_https() {
+  local sub_choice
+
+  check_docker
+  resolve_panel_deployment || return 1
+
+  while true; do
+    echo "==============================================="
+    echo "          配置 / 管理面板 HTTPS"
+    echo "==============================================="
+    echo "1. 开启 / 更新自动 HTTPS（Let's Encrypt 自动申请与续期）"
+    echo "2. 开启 / 更新自定义证书 HTTPS（自有证书 / 非 443 端口）"
+    echo "3. 查看 HTTPS 状态与证书日志"
+    echo "4. 关闭并回滚 HTTPS（恢复纯 HTTP）"
+    echo "5. 返回上级菜单"
+    echo "==============================================="
+    read -p "请输入选项 (1-5): " sub_choice
+
+    case $sub_choice in
+      1) configure_panel_https "auto" ;;
+      2) configure_panel_https "custom" ;;
+      3) show_panel_https_status ;;
+      4) disable_panel_https ;;
+      5) return 0 ;;
+      *) echo "❌ 无效选项，请输入 1-5" ;;
+    esac
+    echo ""
+  done
+}
 
 # 卸载功能
 uninstall_panel() {
@@ -1148,7 +1590,7 @@ uninstall_panel() {
   echo "🛑 停止并删除容器、镜像、卷..."
   $DOCKER_CMD down --rmi all --volumes --remove-orphans
   echo "🧹 删除配置文件..."
-  rm -f docker-compose.yml .env
+  rm -f docker-compose.yml docker-compose.override.yml Caddyfile .env
   echo "✅ 卸载完成"
 }
 
@@ -1158,7 +1600,7 @@ main() {
   # 显示交互式菜单
   while true; do
     show_menu
-    read -p "请输入选项 (1-5): " choice
+    read -p "请输入选项 (1-6): " choice
 
     case $choice in
       1)
@@ -1182,12 +1624,15 @@ main() {
         exit 0
         ;;
       5)
+        manage_panel_https
+        ;;
+      6)
         echo "👋 退出脚本"
         delete_self
         exit 0
         ;;
       *)
-        echo "❌ 无效选项，请输入 1-5"
+        echo "❌ 无效选项，请输入 1-6"
         echo ""
         ;;
     esac

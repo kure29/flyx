@@ -39,22 +39,34 @@ curl -L https://github.com/kure29/flyx/releases/latest/download/panel_install.sh
 ## 维护菜单
 
 再次运行 `./panel_install.sh` 脚本可以看到管理菜单：
-1. 安装面板
+1. 安装面板（末尾可选交互式配置域名 HTTPS）
 2. 更新面板
 3. 卸载面板
 4. 迁移到 PostgreSQL（见 [PostgreSQL](./postgresql.md)）
-5. 退出
+5. 配置 / 管理 HTTPS（自动申请 Let's Encrypt 证书、自定义证书、查看状态或关闭回滚）
+6. 退出
 
 ## 下一步
 
 1. **设置 → 基本** 里填写“面板后端地址”（`ip:port` 或 `域名:port`），服务器用它连接面板，可以套 CDN / HTTPS
 2. [安装 agent](./agent.md)
 
-## 反向代理（可选）
+## 配置 HTTPS（推荐）
 
-如果需要通过域名访问面板并自动获取 HTTPS 证书，可以使用 Caddy 作为反向代理。
+### 方式一：通过 `panel_install.sh` 一键配置（推荐）
 
-### 安装 Caddy
+安装面板时可以直接选择开启域名 HTTPS，或随时再次运行 `./panel_install.sh` 选择 **`5. 配置 / 管理 HTTPS`**：
+
+- **自动申请证书（Let's Encrypt）**：输入已解析到本机的域名（及可选邮箱），脚本会自动生成 `Caddyfile` 与 `docker-compose.override.yml`，以 Docker 容器方式运行 Caddy 并自动续期，支持 WebSocket 与 SSE 诊断流。
+- **使用自定义证书**：支持填写自有 `.pem`/`.crt` 与 `.key` 路径以及自定义监听端口（例如 `8443` 或 `127.0.0.1:8443`，便于与 443 TCP SNI 复用共存）。
+- **Passkey 联动**：开启 HTTPS 后会自动提示写入 `FLYX_WEBAUTHN_ORIGIN` 并重启后端，使 Passkey 登录开箱即用。
+- **平滑升级与回滚**：配置保存在 `docker-compose.override.yml` 中，面板脚本更新与后台自更新均会自动保留；不需要时可在菜单中选择「关闭并回滚 HTTPS」恢复纯 HTTP 访问。
+
+### 方式二：手动在宿主机安装 Caddy
+
+如果你希望自行管理宿主机上的 Caddy，也可以按以下步骤配置：
+
+#### 安装 Caddy
 
 ```bash
 # Debian / Ubuntu
@@ -67,15 +79,13 @@ sudo apt install caddy
 
 其他系统请参考 [Caddy 官方安装文档](https://caddyserver.com/docs/install)。
 
-### 配置 Caddyfile
+#### 配置 Caddyfile
 
 编辑 Caddy 配置文件：
 
 ```bash
 sudo nano /etc/caddy/Caddyfile
 ```
-
-#### 面板域名配置
 
 将 `panel.example.com` 替换为你自己的域名：
 
@@ -87,7 +97,7 @@ panel.example.com {
 
 Caddy 会自动为域名申请和续期 HTTPS 证书，无需额外配置。
 
-### 重启 Caddy
+#### 重启 Caddy
 
 ```bash
 sudo systemctl restart caddy
@@ -96,8 +106,8 @@ sudo systemctl restart caddy
 ### 注意事项
 
 - 确保域名已正确解析到服务器 IP。
-- 确保服务器防火墙放行了 **80** 和 **443** 端口（Caddy 自动申请证书需要）。
-- 使用 Caddy 反向代理后，可以在 `.env` 中将前端端口改为仅监听本地，避免直接暴露：
+- 使用自动申请证书时，确保服务器防火墙放行了 **80** 和 **443** 端口。
+- 使用反向代理后，可以在 `.env` 中将前端端口改为仅监听本地，避免直接暴露：
   ```
   FRONTEND_PORT=127.0.0.1:6366
   ```
