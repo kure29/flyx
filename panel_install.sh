@@ -488,6 +488,33 @@ run_panel_compose() {
   $DOCKER_CMD "$@"
 }
 
+is_valid_port_binding() {
+  local spec="$1" host="" port="" octet
+  local -a octets=()
+
+  if [[ "$spec" =~ ^[0-9]+$ ]]; then
+    port="$spec"
+  elif [[ "$spec" =~ ^\[([0-9a-fA-F:]+)\]:([0-9]+)$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[2]}"
+    [[ "$host" == *:* ]] || return 1
+  elif [[ "$spec" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[2]}"
+    IFS='.' read -r -a octets <<< "$host"
+    [[ "${#octets[@]}" -eq 4 ]] || return 1
+    for octet in "${octets[@]}"; do
+      if ((10#$octet < 0 || 10#$octet > 255)); then
+        return 1
+      fi
+    done
+  else
+    return 1
+  fi
+
+  ((10#$port >= 1 && 10#$port <= 65535))
+}
+
 validate_panel_update_environment() {
   local key value backend_port frontend_port configured_db_type db_type database_url postgres_password
 
@@ -510,11 +537,11 @@ validate_panel_update_environment() {
 
   backend_port=$(get_env_var "BACKEND_PORT" || true)
   frontend_port=$(get_env_var "FRONTEND_PORT" || true)
-  if [[ ! "$backend_port" =~ ^[0-9]+$ || "$backend_port" -lt 1 || "$backend_port" -gt 65535 ]]; then
+  if ! is_valid_port_binding "$backend_port"; then
     echo "❌ BACKEND_PORT 不是有效端口：$backend_port"
     return 1
   fi
-  if [[ ! "$frontend_port" =~ ^[0-9]+$ || "$frontend_port" -lt 1 || "$frontend_port" -gt 65535 ]]; then
+  if ! is_valid_port_binding "$frontend_port"; then
     echo "❌ FRONTEND_PORT 不是有效端口：$frontend_port"
     return 1
   fi
