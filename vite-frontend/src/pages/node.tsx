@@ -2223,9 +2223,9 @@ export default function NodePage({
                   ? ([
                       ["流量", formatFlow(usage.currentFlow)],
                       [
-                        "带宽上限",
+                        "流量上限",
                         usage.maxBandwidth > 0
-                          ? formatSpeed(usage.maxBandwidth)
+                          ? formatFlow(usage.maxBandwidth)
                           : "不限",
                       ],
                       [
