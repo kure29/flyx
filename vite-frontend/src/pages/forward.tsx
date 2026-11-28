@@ -2726,11 +2726,11 @@ export default function ForwardPage({
 
   const getForwardFlowText = (forward: Forward): string => {
     if ((forward.inFlow || 0) + (forward.outFlow || 0) > 0) {
-      return `↑${formatFlow(forward.inFlow || 0)} ↓${formatFlow(forward.outFlow || 0)}`;
+      return `↑${formatFlow(forward.outFlow || 0)} ↓${formatFlow(forward.inFlow || 0)}`;
     }
 
     if ((forward.federationShareFlow || 0) > 0) {
-      return `共享 ${formatFlow(forward.federationShareFlow || 0)}`;
+      return `${tr("共享")} ${formatFlow(forward.federationShareFlow || 0)}`;
     }
 
     return formatFlow(0);

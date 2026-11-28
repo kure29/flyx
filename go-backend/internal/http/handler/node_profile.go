@@ -263,19 +263,29 @@ type nodeTraffic struct {
 // since the start of its own period, with the admin's correction applied.
 func (h *Handler) periodTraffic(nodes []model.Node, now time.Time) (map[int64]nodeTraffic, error) {
 	out := make(map[int64]nodeTraffic, len(nodes))
-	totals := map[int64]map[int64][2]int64{} // period start -> node -> [in, out]
+	if len(nodes) == 0 {
+		return out, nil
+	}
+	starts := make(map[int64]time.Time, len(nodes))
+	byPeriod := make(map[int64][]int64)
 	for _, n := range nodes {
 		start := trafficPeriodStart(n.TrafficResetDay, now)
+		starts[n.ID] = start
 		ms := start.UnixMilli()
-		sums, ok := totals[ms]
-		if !ok {
-			var err error
-			if sums, err = h.repo.NodeTrafficSince(ms); err != nil {
-				return nil, err
-			}
-			totals[ms] = sums
+		byPeriod[ms] = append(byPeriod[ms], n.ID)
+	}
+	totals := make(map[int64]map[int64][2]int64, len(byPeriod))
+	for ms, ids := range byPeriod {
+		sums, err := h.repo.NodeTrafficSinceForNodes(ms, ids)
+		if err != nil {
+			return nil, err
 		}
-		t := sums[n.ID]
+		totals[ms] = sums
+	}
+	for _, n := range nodes {
+		start := starts[n.ID]
+		ms := start.UnixMilli()
+		t := totals[ms][n.ID]
 		v := nodeTraffic{Up: t[1], Down: t[0], Start: start}
 		if n.TrafficAdjustPeriod == ms {
 			v.Up = max(v.Up+n.TrafficAdjustUp, 0)

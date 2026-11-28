@@ -1039,4 +1039,92 @@ export const EN_DICT: Record<string, string> = {
   "{n} 小时前": "{n}h ago",
   "已解除 {count} 个订阅的 IP 暂停":
     "Cleared IP suspension for {count} subscriptions",
+
+  // ─── UI Polish & Shared Controls ────────────────────────────────────
+  请选择: "Select...",
+  暂无可选项: "No options available",
+  暂无数据: "No data",
+  不测延迟: "No latency probe",
+  "这台服务器没选测试点，点此设置":
+    "No latency targets selected for this server — click to configure",
+  "连不上：": "Unreachable: ",
+  可连接: "Reachable",
+  "IPv4 出站": "IPv4 Outbound",
+  "IPv6 出站": "IPv6 Outbound",
+  "优先 IPv4": "Prefer IPv4",
+  "优先 IPv6": "Prefer IPv6",
+  出站节点已删除: "Outbound node deleted",
+  "经 {name} 出站": "Outbound via {name}",
+  出站已删除: "Outbound missing",
+  链式: "Chained",
+  "只放行分流规则选中的流量，其他的丢弃":
+    "Only traffic matching split rules is allowed; all other traffic is dropped",
+  仅分流放行: "Allowlist split",
+  分流: "Split",
+  节点总带宽限速: "Total node bandwidth cap",
+  限速: "Rate limit",
+  "选择 {name}": "Select {name}",
+  加载分享列表失败: "Failed to load shares",
+  加载远程占用端口失败: "Failed to load remote port usage",
+  请填写必要信息: "Please fill in the required fields",
+  仅可选择本地服务器: "Only local servers can be selected",
+  "请输入有效的流量上限，0 表示不限流量":
+    "Enter a valid traffic limit (0 for unlimited)",
+  "升级过程需要访问 Docker Socket，并会在短时间内中断当前面板服务。":
+    "The upgrade requires Docker Socket access and will briefly interrupt the panel.",
+  "请确认已经允许面板管理容器与宿主机 Docker 交互，并且可以接受升级期间的临时不可用。":
+    "Confirm that the panel container can communicate with the host Docker daemon and brief downtime is acceptable.",
+  升级前请确认: "Before upgrading, please confirm",
+  "Docker Socket 可用且挂载权限正常。":
+    "Docker Socket is available and mounted with proper permissions.",
+  "当前面板允许短暂停止和重启。":
+    "Brief panel downtime during restart is acceptable.",
+  "已选择正确的更新通道与目标版本。":
+    "The desired release channel and target version are selected.",
+
+  // ─── Traffic Statistics & Node Live Stats ───────────────────────────
+  无限制: "Unlimited",
+  小时: "Hour",
+  日: "Day",
+  月: "Month",
+  "近 24 小时": "Last 24 hours",
+  "近 30 天": "Last 30 days",
+  "近 12 个月": "Last 12 months",
+  "{range}的流量": "Traffic · {range}",
+  "部分旧记录跨越本地时间边界，已按时长估算分配。":
+    "Some legacy hourly records cross local time boundaries and are prorated by duration.",
+  下载: "Download",
+  上传: "Upload",
+  合计: "Total",
+  "{range}还没有流量": "No traffic recorded for {range}",
+  "本周期起（{date}）": "Period start ({date})",
+  时间: "Time",
+  "下载 / 上传": "Download / Upload",
+  "查看全部 {count} 条": "Show all {count} rows",
+  "统计自建节点上按用户区分的协议（VLESS、Trojan、Hysteria2 等）；导入的节点、Shadowsocks、Snell 不计入。3.3.29 起开始记录，之前的流量不在图里":
+    "Counts per-user protocols on self-hosted nodes (VLESS, Trojan, Hysteria2, etc.); imported nodes, Shadowsocks, and Snell are excluded. Recorded since v3.3.29.",
+  "订阅上方的已用流量从本周期开始（{date}，创建或上次重置）累计，和这里的时间范围不同，两边的数不一定相等":
+    "The used traffic above counts from this period's start ({date}, creation or last reset), which differs from the chart window.",
+  服务器本周期总流量: "Server Cycle Traffic",
+  "各服务器按各自计费重置日（面板时区）统计的当前周期总流量":
+    "Sum of each server's current billing-cycle traffic (panel time zone).",
+  本周期: "Cycle",
+  "按面板时区统计（每月 {day} 日重置）":
+    "Counted in panel time zone (resets on day {day} monthly)",
+  按面板时区统计: "Counted in panel time zone",
+  "{n} 核": "{n} cores",
+  内存: "Memory",
+  磁盘: "Disk",
+  服务器历史流量: "Server Traffic History",
+  流量趋势: "Traffic Trend",
+  下载流量: "Download",
+  上传流量: "Upload",
+  暂无流量数据: "No traffic data",
+  同步失败: "Sync failed",
+  "升级中 {pct}%": "Upgrading {pct}%",
+  未连接过: "Never connected",
+  已运行: "Up",
+  远程: "Remote",
+  "本期已用 {used} / 每月额度 {total}":
+    "Used this cycle {used} / Monthly quota {total}",
 };
