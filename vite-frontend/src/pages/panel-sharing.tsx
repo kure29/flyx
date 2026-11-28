@@ -169,12 +169,12 @@ export default function PanelSharingPage() {
           Array.isArray(res.data) ? (res.data as unknown as PeerShare[]) : [],
         );
       } else {
-        toast.error(res.msg || "加载分享列表失败");
+        toast.error(res.msg || t("加载分享列表失败"));
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const loadNodes = useCallback(async () => {
     try {
@@ -214,12 +214,12 @@ export default function PanelSharingPage() {
             : [],
         );
       } else {
-        toast.error(res.msg || "加载远程占用端口失败");
+        toast.error(res.msg || t("加载远程占用端口失败"));
       }
     } finally {
       setRemoteUsageLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (selectedTab === "my-shares") {
@@ -235,14 +235,14 @@ export default function PanelSharingPage() {
 
   const handleCreateShare = async () => {
     if (!shareForm.name || !shareForm.nodeId) {
-      toast.error("请填写必要信息");
+      toast.error(t("请填写必要信息"));
 
       return;
     }
     const nodeId = parseInt(shareForm.nodeId, 10);
 
     if (Number.isNaN(nodeId) || !nodes.some((node) => node.id === nodeId)) {
-      toast.error("仅可选择本地服务器");
+      toast.error(t("仅可选择本地服务器"));
 
       return;
     }
@@ -256,7 +256,7 @@ export default function PanelSharingPage() {
       limitMiB > MAX_SAFE_BANDWIDTH_MIB ||
       shareForm.maxBandwidth < 0
     ) {
-      toast.error("请输入有效的流量上限，0 表示不限流量");
+      toast.error(t("请输入有效的流量上限，0 表示不限流量"));
 
       return;
     }

@@ -5,6 +5,7 @@ import { FieldContainer, extractText, type FieldMetaProps } from "./shared";
 
 import { Checkbox as BaseCheckbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 type SelectionMode = "single" | "multiple";
 
@@ -168,6 +169,7 @@ export function Select<T>({
   size,
   dropdownPlacement = "bottom",
 }: SelectProps<T>) {
+  const { t } = useI18n();
   const generatedId = React.useId();
   const options = React.useMemo(
     () => getOptions(children, items),
@@ -240,7 +242,7 @@ export function Select<T>({
   });
   const selectedFullText = resolvedSelectedValues.join("、");
   const selectedText =
-    selectedArray.length > 0 ? selectedFullText : (placeholder ?? "请选择");
+    selectedArray.length > 0 ? selectedFullText : (placeholder ?? t("请选择"));
 
   const updateMultipleSelection = (key: string, checked?: boolean) => {
     if (isDisabled || disabled.has(key)) {
@@ -308,7 +310,7 @@ export function Select<T>({
           <div
             className={cn("px-2 py-1 text-default-500", textSizeClass(size))}
           >
-            暂无可选项
+            {t("暂无可选项")}
           </div>
         ) : (
           options.map((option) => {
@@ -369,7 +371,10 @@ export function Select<T>({
             aria-haspopup="listbox"
             aria-label={label ? undefined : ariaLabel}
             className={cn(
-              "flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3 py-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3 py-2 text-left transition-[border-color,box-shadow] duration-150 focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25",
+              isInvalid
+                ? "border-danger focus-visible:border-danger focus-visible:ring-danger/20"
+                : "",
               isDisabled ? "cursor-not-allowed opacity-60" : "",
               classNames?.trigger,
             )}
@@ -402,9 +407,13 @@ export function Select<T>({
       ) : (
         <div className="relative w-full">
           <select
+            aria-invalid={isInvalid}
             aria-label={label ? undefined : ariaLabel}
             className={cn(
-              "w-full appearance-none rounded-md border border-input bg-background py-2 pl-3 pr-9 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:[color-scheme:dark]",
+              "w-full appearance-none rounded-md border border-input bg-background py-0 pl-3 pr-9 text-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 dark:[color-scheme:dark]",
+              isInvalid
+                ? "border-danger focus-visible:border-danger focus-visible:ring-danger/20"
+                : "",
               sizeClass(size),
               classNames?.trigger,
               className,
@@ -419,7 +428,7 @@ export function Select<T>({
             {/* Native pickers list every option: the placeholder only stands
               in while nothing is chosen. */}
             {singleValue === "" && !options.some((o) => o.key === "") && (
-              <option value="">{placeholder ?? "请选择"}</option>
+              <option value="">{placeholder ?? t("请选择")}</option>
             )}
             {options.map((option) => (
               <option

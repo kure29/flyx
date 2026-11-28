@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 interface TableClassNames {
   th?: string;
@@ -39,7 +40,10 @@ export function Table({
   return (
     <TableStyleContext.Provider value={style}>
       <div
-        className={cn("w-full overflow-auto rounded-md", classNames?.wrapper)}
+        className={cn(
+          "desktop-scrollbar w-full overflow-auto rounded-md",
+          classNames?.wrapper,
+        )}
       >
         <table className={cn("w-full text-sm", className)} {...props}>
           {children}
@@ -60,7 +64,7 @@ export function TableHeader({
   );
 
   return (
-    <thead className={cn("border-b", className)} {...props}>
+    <thead className={cn("border-b border-divider", className)} {...props}>
       {hasRow ? children : <TableRow>{children}</TableRow>}
     </thead>
   );
@@ -90,12 +94,14 @@ export const TableBody = React.forwardRef<
   }: TableBodyProps<T>,
   ref: React.Ref<HTMLTableSectionElement>,
 ) {
+  const { t } = useI18n();
+
   if (isLoading) {
     return (
       <tbody ref={ref} className={className} {...props}>
         <tr>
           <td className="p-4 text-center text-default-500" colSpan={999}>
-            {loadingContent ?? "加载中..."}
+            {loadingContent ?? t("加载中...")}
           </td>
         </tr>
       </tbody>
@@ -108,7 +114,7 @@ export const TableBody = React.forwardRef<
         <tbody ref={ref} className={className} {...props}>
           <tr>
             <td className="p-4 text-center text-default-500" colSpan={999}>
-              {emptyContent ?? "暂无数据"}
+              {emptyContent ?? t("暂无数据")}
             </td>
           </tr>
         </tbody>
@@ -137,7 +143,7 @@ export const TableBody = React.forwardRef<
       <tbody ref={ref} className={className} {...props}>
         <tr>
           <td className="p-4 text-center text-default-500" colSpan={999}>
-            {emptyContent ?? "暂无数据"}
+            {emptyContent ?? t("暂无数据")}
           </td>
         </tr>
       </tbody>
@@ -178,7 +184,11 @@ export const TableRow = React.forwardRef<
   return (
     <tr
       ref={ref}
-      className={cn("border-b last:border-b-0", trClassName, className)}
+      className={cn(
+        "border-b border-divider transition-colors hover:bg-default-50/70 last:border-b-0",
+        trClassName,
+        className,
+      )}
       {...props}
     />
   );

@@ -2,7 +2,7 @@ import { GripVertical } from "lucide-react";
 import { memo } from "react";
 
 import { LatencyCell, probePoints } from "@/components/latency-cell";
-import { useI18n } from "@/i18n";
+import { t, useI18n } from "@/i18n";
 import { getConnectionStatusMeta } from "@/pages/node/display";
 import { formatFlow, formatSpeed, formatUptime } from "@/pages/node/format";
 import { getNodeExpiryMeta, SortableItem } from "@/pages/node/helpers";
@@ -142,14 +142,14 @@ function renderLatency(
     return (
       <button
         className="rounded-full bg-default-100 px-2 py-0.5 text-xs text-default-500 hover:text-default-700"
-        title="这台服务器没选测试点，点此设置"
+        title={t("这台服务器没选测试点，点此设置")}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           actions.setTargetNodes([node]);
         }}
       >
-        不测延迟
+        {t("不测延迟")}
       </button>
     );
   }
@@ -483,7 +483,7 @@ export function NodeTable({
   const { t } = useI18n();
 
   return (
-    <div className="phone-card phone-card-fill overflow-x-auto rounded-xl border border-divider bg-content1">
+    <div className="phone-card phone-card-fill desktop-scrollbar overflow-x-auto rounded-xl border border-divider bg-content1">
       <table className="w-full min-w-[780px] text-left text-xs">
         <thead className="border-b border-divider bg-default-50/70 text-default-500">
           <tr>
