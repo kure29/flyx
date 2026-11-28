@@ -29,11 +29,13 @@ import {
   getKernelList,
   getNodeList,
   getNodeMonthTraffic,
+  getNodeTrafficHistory,
   getSubscriptions,
 } from "@/api";
 import { AnimatedPage } from "@/components/animated-page";
 import { PageLoadingState } from "@/components/page-state";
 import { probePoints } from "@/components/latency-cell";
+import { TrafficHistoryChart } from "@/components/traffic-history-chart";
 import {
   markPageCached,
   pageCached,
@@ -961,15 +963,22 @@ export function AdminOverview() {
 
         {/* Right Side Column */}
         <div className="space-y-4 lg:col-span-5">
-          {/* Traffic Summary + Top Inbounds */}
+          {/* Traffic Summary + Trend + Top Inbounds */}
           <BentoCard
             action={<MoreLink onPress={() => navigate("/inbound")} />}
             title={t("流量统计")}
           >
             <div className="mb-3.5 grid grid-cols-2 gap-2.5">
-              <div className="rounded-lg bg-default-50 px-3 py-2 dark:bg-default-100/30">
+              <div
+                className="rounded-lg bg-default-50 px-3 py-2 dark:bg-default-100/30"
+                title={t(
+                  "各服务器按各自计费重置日（面板时区）统计的当前周期总流量",
+                )}
+              >
                 <div className="text-[11px] text-default-400">
-                  {t("服务器本月总流量")}
+                  {nodes.some((n) => Number(n.trafficResetDay ?? 0) > 1)
+                    ? t("服务器本周期总流量")
+                    : t("服务器本月总流量")}
                 </div>
                 <div className="mt-0.5 text-base font-semibold tabular-nums text-foreground">
                   {formatTraffic(serverMonthBytes)}
@@ -986,6 +995,14 @@ export function AdminOverview() {
                   ↑ {formatTraffic(up)} · ↓ {formatTraffic(down)}
                 </div>
               </div>
+            </div>
+
+            <div className="mb-4 border-b border-divider pb-3.5">
+              <TrafficHistoryChart
+                compact
+                cacheKey="all-nodes"
+                fetchData={(range) => getNodeTrafficHistory(0, range)}
+              />
             </div>
 
             {top.length === 0 ? (

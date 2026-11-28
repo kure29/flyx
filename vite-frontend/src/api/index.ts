@@ -153,6 +153,13 @@ export const getNodeMonthTraffic = () =>
   Network.post<Record<string, [number, number]>>("/node/traffic/month", {
     tzOffset: -new Date().getTimezoneOffset(),
   });
+/** Historical traffic (hour/day/month) for one server (nodeId > 0) or all servers (nodeId = 0). */
+export const getNodeTrafficHistory = (nodeId: number, range: SubTrafficRange) =>
+  Network.post<SubTraffic>("/node/traffic/history", {
+    nodeId,
+    range,
+    tzOffset: -new Date().getTimezoneOffset(),
+  });
 export const getDashboardNodeExpiryList = () =>
   Network.post<NodeApiItem[]>("/node/list", {});
 /** Only a server's price and renewal (the 价格与到期 dialog). */

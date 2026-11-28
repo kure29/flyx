@@ -44,16 +44,26 @@ func (r *Repository) ListNodesWithExpiry() ([]model.Node, error) {
 	return nodes, err
 }
 
-// SumStatisticsFlowSince adds up the hourly forward traffic increments
+// SumStatisticsFlowSince adds up the forward/tunnel traffic increments
 // recorded since the given time (unix ms).
 func (r *Repository) SumStatisticsFlowSince(sinceMs int64) (int64, error) {
 	if r == nil || r.db == nil {
 		return 0, errors.New("repository not initialized")
 	}
 	var total int64
-	err := r.db.Model(&model.StatisticsFlow{}).Where("created_time >= ?", sinceMs).
-		Select("COALESCE(SUM(flow), 0)").Scan(&total).Error
-	return total, err
+	if err := r.db.Model(&model.StatisticsFlow{}).Where("created_time >= ?", sinceMs).
+		Select("COALESCE(SUM(flow), 0)").Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	if total > 0 {
+		return total, nil
+	}
+	var tunnelTotal int64
+	if err := r.db.Model(&model.TunnelMetric{}).Where("timestamp >= ?", sinceMs).
+		Select("COALESCE(SUM(bytes_in + bytes_out), 0)").Scan(&tunnelTotal).Error; err != nil {
+		return 0, err
+	}
+	return tunnelTotal, nil
 }
 
 // SumInboundTraffic returns the cumulative traffic of all inbounds.

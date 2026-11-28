@@ -98,7 +98,9 @@ export function Input({
             inputSizeClass(size),
             variant === "bordered"
               ? "border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-              : "",
+              : isInvalid
+                ? "border-danger focus-visible:border-danger focus-visible:ring-danger/20"
+                : "",
             startContent ? "pl-2" : "",
             endContent ? "pr-2" : "",
             classNames?.input,
@@ -151,6 +153,9 @@ export function Textarea({
         aria-invalid={isInvalid}
         className={cn(
           variant === "bordered" ? "border border-input" : "",
+          isInvalid
+            ? "border-danger focus-visible:border-danger focus-visible:ring-danger/20"
+            : "",
           size === "sm" ? "text-xs" : "",
           size === "lg" ? "text-base" : "",
           maxRows ? "max-h-[40vh]" : "",

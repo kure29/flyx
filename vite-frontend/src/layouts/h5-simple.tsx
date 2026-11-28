@@ -7,12 +7,14 @@ import { BrandLogo } from "@/components/brand-logo";
 import { siteConfig } from "@/config/site";
 import { useRouteTransition } from "@/hooks/useRouteTransition";
 import { useScrollTopOnPathChange } from "@/hooks/useScrollTopOnPathChange";
+import { useI18n } from "@/i18n";
 
 export default function H5SimpleLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   useScrollTopOnPathChange();
@@ -28,7 +30,13 @@ export default function H5SimpleLayout({
       {/* 顶部导航栏 */}
       <header className="h-14 safe-top flex-shrink-0 flex items-center justify-between px-4 relative z-10">
         <div className="flex items-center gap-2">
-          <Button isIconOnly size="sm" variant="light" onPress={handleBack}>
+          <Button
+            isIconOnly
+            aria-label={t("返回")}
+            size="sm"
+            variant="light"
+            onPress={handleBack}
+          >
             <BackIcon className="w-5 h-5" />
           </Button>
           <BrandLogo size={20} />

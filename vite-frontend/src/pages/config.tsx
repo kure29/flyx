@@ -1534,9 +1534,7 @@ export default function ConfigPage() {
     return (
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-default-700 dark:text-default-300">
-            {label}
-          </span>
+          <span className="text-sm font-medium text-default-700">{label}</span>
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -2276,21 +2274,23 @@ export default function ConfigPage() {
             <>
               <ModalHeader>{tr("确认面板升级")}</ModalHeader>
               <ModalBody>
-                <div className="space-y-3 text-sm text-default-700 dark:text-default-300">
+                <div className="space-y-3 text-sm text-default-700">
                   <p>
-                    升级过程需要访问 Docker
-                    Socket，并会在短时间内中断当前面板服务。
+                    {tr(
+                      "升级过程需要访问 Docker Socket，并会在短时间内中断当前面板服务。",
+                    )}
                   </p>
                   <p>
-                    请确认已经允许面板管理容器与宿主机 Docker
-                    交互，并且可以接受升级期间的临时不可用。
+                    {tr(
+                      "请确认已经允许面板管理容器与宿主机 Docker 交互，并且可以接受升级期间的临时不可用。",
+                    )}
                   </p>
                   <div className="space-y-2 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-warning-800 dark:border-warning-900/40 dark:bg-warning-950/30 dark:text-warning-200">
-                    <p className="text-xs font-medium">升级前请确认</p>
+                    <p className="text-xs font-medium">{tr("升级前请确认")}</p>
                     <ul className="list-disc space-y-1 pl-4 text-xs">
-                      <li>Docker Socket 可用且挂载权限正常。</li>
-                      <li>当前面板允许短暂停止和重启。</li>
-                      <li>已选择正确的更新通道与目标版本。</li>
+                      <li>{tr("Docker Socket 可用且挂载权限正常。")}</li>
+                      <li>{tr("当前面板允许短暂停止和重启。")}</li>
+                      <li>{tr("已选择正确的更新通道与目标版本。")}</li>
                     </ul>
                   </div>
                 </div>

@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 interface DisclosureOptions {
   isOpen?: boolean;
@@ -276,6 +277,7 @@ export function ModalHeader({
   closable?: boolean;
 }) {
   const context = useModalContext();
+  const { t } = useI18n();
 
   return (
     <DialogTitle asChild>
@@ -292,7 +294,7 @@ export function ModalHeader({
         {children}
         {closable && (
           <button
-            aria-label="关闭"
+            aria-label={t("关闭")}
             className="absolute -right-1.5 -top-1 rounded-full p-1.5 text-default-500 transition-colors hover:bg-default-100 hover:text-foreground"
             type="button"
             onClick={() => context?.onClose()}

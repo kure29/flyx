@@ -120,6 +120,24 @@ export default function AdminLayout({
     }
   }, [isMobile]);
 
+  useEffect(() => {
+    if (!isMobile || !mobileMenuVisible) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMobileMenuVisible(false);
+      }
+    };
+    const prevOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isMobile, mobileMenuVisible]);
+
   // The layout now stays mounted across pages: start each page at the top
   // and with the mobile menu closed, as a fresh layout did.
   const mainRef = useRef<HTMLElement>(null);

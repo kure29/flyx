@@ -1,52 +1,57 @@
 import type { NodeSystemInfo } from "@/pages/node/system-info";
 
-function bytes(v: number): string {
-  const units = ["B", "K", "M", "G", "T", "P"];
-  let i = 0;
-
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)}${units[i]}`;
-}
+import { useI18n } from "@/i18n";
+import { formatTrafficShort } from "@/utils/traffic";
 
 const capacity = (used?: number, total?: number) =>
-  total ? `${bytes(used ?? 0)} / ${bytes(total)}` : "";
+  total
+    ? `${formatTrafficShort(used ?? 0)} / ${formatTrafficShort(total)}`
+    : "";
 
 /**
  * A node's live resources on its list row: CPU, memory and disk, speed
- * and this month's traffic. "row" sits at the end of a wide row, "footer"
- * under the name on narrow screens.
+ * and current billing period traffic. "row" sits at the end of a wide row,
+ * "footer" under the name on narrow screens.
  */
 export function NodeLiveStats({
   info,
   month,
+  resetDay,
   variant,
 }: {
   info: NodeSystemInfo | null;
-  /** This month's [in, out] bytes. */
+  /** Current period's [in, out] bytes. */
   month?: [number, number];
+  /** Custom traffic reset day (1-31; 0 or 1 = calendar month). */
+  resetDay?: number;
   variant: "row" | "footer";
 }) {
+  const { t } = useI18n();
   const up = info ? (info.netOutSpeed ?? info.uploadSpeed) : undefined;
   const down = info ? (info.netInSpeed ?? info.downloadSpeed) : undefined;
-  const rate = (v?: number) => (v === undefined ? "—" : `${bytes(v)}/s`);
-  const total = month ? bytes(month[0] + month[1]) : "—";
-  const monthHint =
-    new Date().getTimezoneOffset() % 60 !== 0
-      ? "按本地时区统计；跨月的旧小时记录按时长估算"
-      : "按本地时区统计";
-  const split = month ? `↑${bytes(month[1])} ↓${bytes(month[0])}` : "";
+  const rate = (v?: number) =>
+    v === undefined ? "—" : `${formatTrafficShort(v)}/s`;
+  const total = month ? formatTrafficShort(month[0] + month[1]) : "—";
+  const hasCustomReset = Boolean(resetDay && resetDay > 1);
+  const periodLabel = hasCustomReset ? t("本周期") : t("本月");
+  const periodHint = hasCustomReset
+    ? t("按面板时区统计（每月 {day} 日重置）", { day: resetDay! })
+    : t("按面板时区统计");
+  const split = month
+    ? `↑${formatTrafficShort(month[1])} ↓${formatTrafficShort(month[0])}`
+    : "";
 
   // List rows: one quiet line, and nothing for data the node has not sent.
   const usage = info
     ? (
         [
-          ["CPU", info.cpuUsage, info.cpuCores ? `${info.cpuCores} 核` : ""],
-          ["内存", info.memoryUsage, capacity(info.memUsed, info.memTotal)],
-          ["磁盘", info.diskUsage, capacity(info.diskUsed, info.diskTotal)],
+          [
+            "CPU",
+            info.cpuUsage,
+            info.cpuCores ? t("{n} 核", { n: info.cpuCores }) : "",
+          ],
+          [t("内存"), info.memoryUsage, capacity(info.memUsed, info.memTotal)],
+          [t("磁盘"), info.diskUsage, capacity(info.diskUsed, info.diskTotal)],
         ] as const
       ).filter(([, v]) => v !== undefined)
     : [];
@@ -80,7 +85,11 @@ export function NodeLiveStats({
       <div className="flex flex-wrap gap-x-3 text-xs tabular-nums text-default-400 lg:hidden">
         {usageLine}
         {speedLine}
-        {month && <span title={`${split} ${monthHint}`}>本月 {total}</span>}
+        {month && (
+          <span title={`${split} · ${periodHint}`}>
+            {periodLabel} {total}
+          </span>
+        )}
       </div>
     );
   }
@@ -91,7 +100,7 @@ export function NodeLiveStats({
       {speedLine}
       <span
         className="w-24 text-right text-sm text-foreground"
-        title={`${split} ${monthHint}`}
+        title={`${split} · ${periodHint}`}
       >
         {month ? total : "—"}
       </span>

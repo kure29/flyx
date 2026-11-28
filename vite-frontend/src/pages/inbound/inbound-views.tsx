@@ -15,7 +15,7 @@ import { Button } from "@/shadcn-bridge/heroui/button";
 import { Checkbox } from "@/shadcn-bridge/heroui/checkbox";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
 import { Switch } from "@/shadcn-bridge/heroui/switch";
-import { useI18n } from "@/i18n";
+import { t, useI18n } from "@/i18n";
 import { formatTraffic } from "@/utils/traffic";
 
 export type InboundViewMode = "cards" | "table" | "list";
@@ -64,16 +64,16 @@ export function getInboundHealth(item: InboundApiItem): InboundHealth {
         ? "bg-warning"
         : "bg-default-300";
   const stateText = unreachable
-    ? `连不上：${probe?.error ?? ""}`
+    ? `${t("连不上：")}${probe?.error ?? ""}`
     : running
       ? probe
         ? item.external
-          ? `可连接 · ${probe.latencyMs} ms`
-          : "可连接"
-        : "运行中"
+          ? `${t("可连接")} · ${probe.latencyMs} ms`
+          : t("可连接")
+        : t("运行中")
       : item.enabled
         ? kernelStatusText(item.kernelStatus)
-        : "已停用";
+        : t("已停用");
 
   return { status, dotClass, stateText, kernelBad, unreachable, running };
 }
@@ -82,7 +82,7 @@ function relayEntryLabel(l: InboundRelayApiItem): string {
   const full = l.name || l.tunnelName || "";
   const cut = full.lastIndexOf(" → ");
 
-  return cut > 0 ? full.slice(0, cut) : full || l.shareHost || "中转";
+  return cut > 0 ? full.slice(0, cut) : full || l.shareHost || t("中转");
 }
 
 function relayLatencyMs(l: InboundRelayApiItem): number | undefined {
@@ -121,10 +121,10 @@ function renderBadges(item: InboundApiItem, kernelBad: boolean, maxTags = 3) {
         >
           {
             {
-              ipv4_only: "IPv4 出站",
-              ipv6_only: "IPv6 出站",
-              prefer_ipv4: "优先 IPv4",
-              prefer_ipv6: "优先 IPv6",
+              ipv4_only: t("IPv4 出站"),
+              ipv6_only: t("IPv6 出站"),
+              prefer_ipv4: t("优先 IPv4"),
+              prefer_ipv6: t("优先 IPv6"),
             }[item.outboundIpStrategy]
           }
         </Chip>
@@ -136,12 +136,12 @@ function renderBadges(item: InboundApiItem, kernelBad: boolean, maxTags = 3) {
           size="sm"
           title={
             item.outboundMissing
-              ? "出站节点已删除"
-              : `经 ${item.outboundName} 出站`
+              ? t("出站节点已删除")
+              : t("经 {name} 出站", { name: item.outboundName ?? "" })
           }
           variant="flat"
         >
-          {item.outboundMissing ? "出站已删除" : "链式"}
+          {item.outboundMissing ? t("出站已删除") : t("链式")}
         </Chip>
       )}
       {item.splitRules?.length > 0 && (
@@ -151,29 +151,29 @@ function renderBadges(item: InboundApiItem, kernelBad: boolean, maxTags = 3) {
           size="sm"
           title={
             item.defaultBlock
-              ? "只放行分流规则选中的流量，其他的丢弃"
+              ? t("只放行分流规则选中的流量，其他的丢弃")
               : undefined
           }
           variant="flat"
         >
-          {item.defaultBlock ? "仅分流放行" : "分流"}
+          {item.defaultBlock ? t("仅分流放行") : t("分流")}
         </Chip>
       )}
       {Boolean(item.rateDownMbps || item.rateUpMbps) && (
         <Chip
           className="shrink-0 whitespace-nowrap"
           size="sm"
-          title="节点总带宽限速"
+          title={t("节点总带宽限速")}
           variant="flat"
         >
-          限速
+          {t("限速")}
           {item.rateDownMbps ? ` ↓${item.rateDownMbps}M` : ""}
           {item.rateUpMbps ? ` ↑${item.rateUpMbps}M` : ""}
         </Chip>
       )}
       {item.relayOnly && (
         <Chip className="shrink-0 whitespace-nowrap" size="sm" variant="flat">
-          仅中转
+          {t("仅中转")}
         </Chip>
       )}
       {kernelBad && (
@@ -307,7 +307,7 @@ export function InboundCard({
                 onClick={(e) => e.stopPropagation()}
               >
                 <Checkbox
-                  aria-label={`选择 ${item.name}`}
+                  aria-label={t("选择 {name}", { name: item.name })}
                   isSelected={selected}
                   onValueChange={() => actions.onToggleSelect(item.id)}
                 />
@@ -403,7 +403,7 @@ export function InboundTable({
   const { t } = useI18n();
 
   return (
-    <div className="phone-card phone-card-fill overflow-x-auto rounded-xl border border-divider bg-content1">
+    <div className="phone-card phone-card-fill desktop-scrollbar overflow-x-auto rounded-xl border border-divider bg-content1">
       <table className="w-full min-w-[700px] text-left text-xs">
         <thead className="border-b border-divider bg-default-50/70 text-default-500">
           <tr>
@@ -450,7 +450,7 @@ export function InboundTable({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Checkbox
-                      aria-label={`选择 ${item.name}`}
+                      aria-label={t("选择 {name}", { name: item.name })}
                       isSelected={selected}
                       onValueChange={() => actions.onToggleSelect(item.id)}
                     />

@@ -36,10 +36,13 @@ import {
 import toast from "react-hot-toast";
 
 import { useLatestRequest } from "@/hooks/use-latest-request";
+import { useI18n } from "@/i18n";
 import { formatTraffic } from "@/utils/traffic";
 import { EmptyHint, ListGroup, ListRow } from "@/components/page-kit";
+import { TrafficHistoryChart } from "@/components/traffic-history-chart";
 import {
   getNodeMetrics,
+  getNodeTrafficHistory,
   getServiceMonitorList,
   getServiceMonitorLimits,
   getServiceMonitorResults,
@@ -451,24 +454,52 @@ const NodeMetricsChartCard = React.memo(function NodeMetricsChartCard({
           <>
             <div className="h-64">
               <ResponsiveContainer height="100%" width="100%">
-                <LineChart data={data}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" fontSize={12} />
-                  <YAxis fontSize={12} tickFormatter={yAxisTickFormatter} />
+                <LineChart
+                  data={data}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    stroke="currentColor"
+                    strokeDasharray="3 3"
+                    strokeOpacity={0.12}
+                    vertical={false}
+                  />
+                  <XAxis
+                    axisLine={false}
+                    dataKey="time"
+                    minTickGap={24}
+                    tick={{ fill: "currentColor", opacity: 0.55, fontSize: 11 }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tick={{ fill: "currentColor", opacity: 0.55, fontSize: 11 }}
+                    tickFormatter={yAxisTickFormatter}
+                    tickLine={false}
+                    width={56}
+                  />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "rgba(0,0,0,0.8)",
-                      border: "none",
-                      borderRadius: "8px",
+                      backgroundColor: "var(--content1)",
+                      border: "1px solid var(--divider)",
+                      borderRadius: "12px",
+                      color: "var(--foreground)",
+                      fontSize: 12,
+                      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.25)",
                     }}
                     formatter={tooltipFormatter}
-                    labelStyle={{ color: "#fff" }}
+                    labelStyle={{
+                      color: "var(--foreground)",
+                      fontWeight: 500,
+                      marginBottom: 4,
+                    }}
                   />
                   {chartConfig.lines.map((line) => (
                     <Line
                       key={line.dataKey}
                       dataKey={line.dataKey}
                       dot={false}
+                      isAnimationActive={false}
                       name={line.name}
                       stroke={line.color}
                       strokeWidth={2}
@@ -508,6 +539,7 @@ export function MonitorView({
   focusNodeId = null,
   onBack,
 }: MonitorViewProps) {
+  const { t } = useI18n();
   const [detailNodeId, setDetailNodeId] = useState<number | null>(focusNodeId);
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(
     focusNodeId,
@@ -1471,6 +1503,21 @@ export function MonitorView({
             onRangeChange={setMetricsRangeMs}
             onRefresh={loadMetrics}
           />
+
+          {/* Historical server traffic (24h / 30d / 12m) */}
+          <Card>
+            <CardHeader>
+              <h3 className="text-base font-semibold">{t("服务器历史流量")}</h3>
+            </CardHeader>
+            <CardBody>
+              <TrafficHistoryChart
+                cacheKey={`node-${detailNodeId}`}
+                fetchData={(range) =>
+                  getNodeTrafficHistory(detailNodeId, range)
+                }
+              />
+            </CardBody>
+          </Card>
 
           {/* Service monitors chart – same style as node metrics */}
           {(() => {

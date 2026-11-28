@@ -36,7 +36,12 @@ import {
 import toast from "react-hot-toast";
 
 import { useLatestRequest } from "@/hooks/use-latest-request";
-import { formatTraffic } from "@/utils/traffic";
+import { useI18n } from "@/i18n";
+import {
+  formatTraffic,
+  formatTrafficAxis,
+  formatTrafficCompact,
+} from "@/utils/traffic";
 import {
   getMonitorTunnels,
   getTunnelMetrics,
@@ -385,16 +390,25 @@ const TrafficChartCard = React.memo(function TrafficChartCard({
   tunnelId,
   onRefresh,
 }: TrafficChartCardProps) {
-  const yFormatter = (value: unknown) => {
-    const n = Number(value);
+  const { t } = useI18n();
+  const yFormatter = (value: unknown) => formatTrafficAxis(Number(value));
+  const tooltipFormatter = (value: unknown) => formatTraffic(Number(value));
+  const totals = useMemo(() => {
+    let down = 0;
+    let up = 0;
 
-    return formatTraffic(n);
-  };
+    for (const row of data) {
+      down += Number(row.bytesIn) || 0;
+      up += Number(row.bytesOut) || 0;
+    }
+
+    return { down, up, total: down + up };
+  }, [data]);
 
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">流量趋势</h3>
+        <h3 className="text-base font-semibold">{t("流量趋势")}</h3>
         <div className="flex items-center gap-2">
           <TimeRangeSelect value={rangeMs} onChange={onRangeChange} />
           <Button
@@ -404,11 +418,39 @@ const TrafficChartCard = React.memo(function TrafficChartCard({
             onPress={() => onRefresh(tunnelId)}
           >
             <RefreshCw className="w-4 h-4 mr-1" />
-            刷新
+            {t("刷新")}
           </Button>
         </div>
       </CardHeader>
-      <CardBody>
+      <CardBody className="space-y-3">
+        {data.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-default-100/80 px-3 py-2 dark:bg-default-100/40">
+              <div className="flex items-center gap-1.5 text-xs text-default-500">
+                <span className="h-2 w-2 rounded-full bg-blue-600" />
+                {t("下载流量")}
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-blue-700 dark:text-blue-400">
+                {formatTrafficCompact(totals.down)}
+              </div>
+            </div>
+            <div className="rounded-xl bg-default-100/80 px-3 py-2 dark:bg-default-100/40">
+              <div className="flex items-center gap-1.5 text-xs text-default-500">
+                <span className="h-2 w-2 rounded-full bg-orange-600" />
+                {t("上传流量")}
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-orange-700 dark:text-orange-400">
+                {formatTrafficCompact(totals.up)}
+              </div>
+            </div>
+            <div className="rounded-xl bg-default-100/80 px-3 py-2 dark:bg-default-100/40">
+              <div className="text-xs text-default-500">{t("合计")}</div>
+              <div className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-foreground">
+                {formatTrafficCompact(totals.total)}
+              </div>
+            </div>
+          </div>
+        )}
         {loading ? (
           <div className="flex justify-center py-8">
             <RefreshCw className="w-6 h-6 animate-spin" />
@@ -418,37 +460,61 @@ const TrafficChartCard = React.memo(function TrafficChartCard({
         ) : data.length > 0 ? (
           <div className="h-64">
             <ResponsiveContainer height="100%" width="100%">
-              <LineChart data={data}>
-                <CartesianGrid opacity={0.3} strokeDasharray="3 3" />
-                <XAxis dataKey="time" fontSize={11} tick={{ fill: "#888" }} />
+              <LineChart
+                data={data}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid
+                  stroke="currentColor"
+                  strokeDasharray="3 3"
+                  strokeOpacity={0.12}
+                  vertical={false}
+                />
+                <XAxis
+                  axisLine={false}
+                  dataKey="time"
+                  minTickGap={24}
+                  tick={{ fill: "currentColor", opacity: 0.55, fontSize: 11 }}
+                  tickLine={false}
+                />
                 <YAxis
-                  fontSize={11}
-                  tick={{ fill: "#888" }}
+                  axisLine={false}
+                  tick={{ fill: "currentColor", opacity: 0.55, fontSize: 11 }}
                   tickFormatter={yFormatter}
+                  tickLine={false}
+                  width={48}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "rgba(0,0,0,0.85)",
-                    border: "none",
-                    borderRadius: "8px",
+                    backgroundColor: "var(--content1)",
+                    border: "1px solid var(--divider)",
+                    borderRadius: "12px",
+                    color: "var(--foreground)",
                     fontSize: 12,
+                    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.25)",
                   }}
-                  formatter={yFormatter}
-                  labelStyle={{ color: "#fff" }}
+                  formatter={tooltipFormatter}
+                  labelStyle={{
+                    color: "var(--foreground)",
+                    fontWeight: 500,
+                    marginBottom: 4,
+                  }}
                 />
                 <Line
                   dataKey="bytesIn"
                   dot={false}
-                  name="上传流量"
-                  stroke="#10b981"
+                  isAnimationActive={false}
+                  name={t("下载流量")}
+                  stroke="#2563eb"
                   strokeWidth={2}
                   type="monotone"
                 />
                 <Line
                   dataKey="bytesOut"
                   dot={false}
-                  name="下载流量"
-                  stroke="#ef4444"
+                  isAnimationActive={false}
+                  name={t("上传流量")}
+                  stroke="#ea580c"
                   strokeWidth={2}
                   type="monotone"
                 />
@@ -456,7 +522,9 @@ const TrafficChartCard = React.memo(function TrafficChartCard({
             </ResponsiveContainer>
           </div>
         ) : (
-          <div className="text-center py-8 text-default-500">暂无流量数据</div>
+          <div className="text-center py-8 text-default-500">
+            {t("暂无流量数据")}
+          </div>
         )}
       </CardBody>
     </Card>

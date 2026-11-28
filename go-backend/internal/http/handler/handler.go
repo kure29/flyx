@@ -403,6 +403,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/federation/node/import", h.nodeImport)
 
 	mux.HandleFunc("/api/v1/node/traffic/month", h.nodeTrafficMonth)
+	mux.HandleFunc("/api/v1/node/traffic/history", h.nodeTrafficHistory)
 	mux.HandleFunc("/api/v1/node/billing", h.nodeBilling)
 	mux.HandleFunc("/api/v1/monitor/nodes/", h.monitorNodeMetricsHandler)
 	mux.HandleFunc("/api/v1/monitor/nodes", h.monitorNodeListHandler)

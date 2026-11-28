@@ -148,11 +148,64 @@ test_panel_install_dir_and_ports() (
   validate_panel_update_environment
 )
 
+test_panel_https_setup() (
+  load_script panel_install.sh
+  root=$(mktemp -d)
+  trap 'rm -rf "$root"' EXIT
+  cd "$root"
+
+  is_valid_https_domain panel.example.com
+  is_valid_https_domain sub-1.panel.example.co.uk
+  ! is_valid_https_domain ""
+  ! is_valid_https_domain localhost
+  ! is_valid_https_domain 1.2.3.4
+  ! is_valid_https_domain https://panel.example.com
+  ! is_valid_https_domain panel.example.com:443
+  ! is_valid_https_domain panel.example.com/path
+
+  [[ $(format_https_origin panel.example.com 443) == "https://panel.example.com" ]]
+  [[ $(format_https_origin panel.example.com 8443) == "https://panel.example.com:8443" ]]
+  [[ $(format_https_origin panel.example.com 127.0.0.1:8443) == "https://panel.example.com:8443" ]]
+  [[ $(format_https_origin panel.example.com '[::1]:9443') == "https://panel.example.com:9443" ]]
+
+  # Auto mode generates Caddyfile + docker-compose.override.yml and writes env vars.
+  printf 'JWT_SECRET=test\nBACKEND_PORT=6365\nFRONTEND_PORT=6366\n' > .env
+  write_panel_https_files auto panel.example.com admin@example.com 443 80 "" ""
+  [[ $(get_env_var PANEL_HTTPS_ENABLED) == true ]]
+  [[ $(get_env_var PANEL_HTTPS_MODE) == auto ]]
+  [[ $(get_env_var PANEL_HTTPS_DOMAIN) == panel.example.com ]]
+  [[ $(get_env_var PANEL_CADDY_CONTAINER) == flyx-panel-caddy ]]
+  grep -Fq 'email admin@example.com' Caddyfile
+  grep -Fq 'reverse_proxy frontend:80' Caddyfile
+  grep -Fq '"80:80"' docker-compose.override.yml
+  grep -Fq '"443:443"' docker-compose.override.yml
+  if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+    cp "$ROOT_DIR/docker-compose-v4.yml" docker-compose.yml
+    docker compose --env-file .env -f docker-compose.yml -f docker-compose.override.yml config -q
+  fi
+
+  # Custom cert mode generates auto_https off, cert bind mounts, and custom port.
+  write_panel_https_files custom panel.example.com "" 127.0.0.1:8443 "" /etc/ssl/cert.pem /etc/ssl/key.pem
+  [[ $(get_env_var PANEL_HTTPS_MODE) == custom ]]
+  [[ $(get_env_var PANEL_HTTPS_PORT) == 127.0.0.1:8443 ]]
+  grep -Fq 'auto_https off' Caddyfile
+  grep -Fq 'tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem' Caddyfile
+  grep -Fq '"/etc/ssl/cert.pem:/etc/caddy/certs/fullchain.pem:ro"' docker-compose.override.yml
+  grep -Fq '"127.0.0.1:8443:443"' docker-compose.override.yml
+  if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+    docker compose --env-file .env -f docker-compose.yml -f docker-compose.override.yml config -q
+  fi
+
+  remove_env_var .env PANEL_HTTPS_ENABLED
+  [[ -z $(get_env_var PANEL_HTTPS_ENABLED) ]]
+)
+
 test_agent_installation_identity
 test_version_precedence
 test_panel_new_install_defaults
 test_panel_legacy_detection
 test_panel_install_dir_and_ports
+test_panel_https_setup
 # Compose config renders locally; it does not contact Docker or start containers.
 if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
   python3 - "$ROOT_DIR" <<'PYCOMPOSE'

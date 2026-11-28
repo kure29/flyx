@@ -51,7 +51,10 @@ export function PageHeader({
           {title}
         </h1>
         {description && (
-          <p className="mt-1 hidden truncate text-xs text-default-400 sm:block">
+          <p
+            className="mt-1 hidden truncate text-xs text-default-400 sm:block"
+            title={typeof description === "string" ? description : undefined}
+          >
             {description}
           </p>
         )}
@@ -402,7 +405,7 @@ export function ListRow({
   return (
     <div
       aria-pressed={selectMode ? selected : undefined}
-      className={`list-row group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2.5 py-3 text-left transition-colors ${
+      className={`list-row group flex w-full cursor-pointer items-center gap-3 border-b border-divider px-2.5 py-3 text-left transition-colors last:border-b-0 ${
         selected
           ? "bg-default-100"
           : "hover:bg-default-100/60 dark:hover:bg-default-100/30"
@@ -855,7 +858,15 @@ export function WorkbenchLayout({
               {item.status && (
                 <span
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    active ? "bg-background" : STATUS_DOT[item.status]
+                    active
+                      ? item.status === "bad"
+                        ? "bg-background dark:bg-danger"
+                        : item.status === "warn"
+                          ? "bg-background dark:bg-warning"
+                          : item.status === "ok"
+                            ? "bg-background dark:bg-success"
+                            : "bg-background dark:bg-default-500"
+                      : STATUS_DOT[item.status]
                   }`}
                 />
               )}
@@ -879,7 +890,7 @@ export function WorkbenchLayout({
             </span>
           )}
         </div>
-        <div className="max-h-[calc(100vh-14rem)] space-y-0.5 overflow-y-auto pr-0.5">
+        <div className="desktop-scrollbar max-h-[calc(100dvh-14rem)] space-y-0.5 overflow-y-auto pr-0.5">
           <button
             aria-pressed={value === ""}
             className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
@@ -914,14 +925,14 @@ export function WorkbenchLayout({
                     <span
                       className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                         active
-                          ? "bg-background"
-                          : item.status === "bad"
-                            ? "bg-danger"
+                          ? item.status === "bad"
+                            ? "bg-background dark:bg-danger"
                             : item.status === "warn"
-                              ? "bg-warning"
+                              ? "bg-background dark:bg-warning"
                               : item.status === "ok"
-                                ? "bg-success"
-                                : "bg-default-300"
+                                ? "bg-background dark:bg-success"
+                                : "bg-background dark:bg-default-500"
+                          : STATUS_DOT[item.status]
                       }`}
                     />
                   )}

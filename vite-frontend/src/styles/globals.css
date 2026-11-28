@@ -12,6 +12,7 @@
 }
 
 :root {
+  color-scheme: light;
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 
@@ -103,6 +104,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #111214;
   --foreground: #d8dbe2;
   --border: #2a2d33;

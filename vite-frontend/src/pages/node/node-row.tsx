@@ -4,6 +4,7 @@ import { GripVertical } from "lucide-react";
 import { Chip } from "@/shadcn-bridge/heroui/chip";
 import { LatencyCell, probePoints } from "@/components/latency-cell";
 import { ListRow } from "@/components/page-kit";
+import { useI18n } from "@/i18n";
 import { getConnectionStatusMeta } from "@/pages/node/display";
 import { Node } from "@/pages/node/types";
 import { getNodeExpiryMeta, SortableItem } from "@/pages/node/helpers";
@@ -50,6 +51,7 @@ const NodeRowContent = memo(function NodeRowContent({
   actions,
   listeners,
 }: NodeRowProps & { listeners: any }) {
+  const { t } = useI18n();
   const {
     toggleSelect,
     probeNode,
@@ -63,14 +65,14 @@ const NodeRowContent = memo(function NodeRowContent({
       node.latencyTargets?.points.length === 0 ? (
         <button
           className="rounded-full bg-default-100 px-2 py-0.5 text-xs text-default-500 hover:text-default-700"
-          title="这台服务器没选测试点，点此设置"
+          title={t("这台服务器没选测试点，点此设置")}
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             setTargetNodes([node]);
           }}
         >
-          不测延迟
+          {t("不测延迟")}
         </button>
       ) : probePoints(node.latency).length === 0 ? null : (
         // Nothing until the first round (every 3 minutes) has a result;
@@ -102,12 +104,14 @@ const NodeRowContent = memo(function NodeRowContent({
   const address =
     node.serverIpV4?.trim() || node.serverIpV6?.trim() || node.serverIp.trim();
   const meta = isRemoteNode
-    ? [address, node.syncError ? "同步失败" : ""]
+    ? [address, node.syncError ? t("同步失败") : ""]
     : [
         address,
-        upgrading ? `升级中 ${progress.percent}%` : node.version || "未连接过",
+        upgrading
+          ? t("升级中 {pct}%", { pct: progress.percent })
+          : node.version || t("未连接过"),
         online && node.systemInfo
-          ? `已运行 ${formatUptime(node.systemInfo.uptime)}`
+          ? `${t("已运行")} ${formatUptime(node.systemInfo.uptime)}`
           : "",
       ];
 
@@ -132,7 +136,7 @@ const NodeRowContent = memo(function NodeRowContent({
         <>
           {isRemoteNode && (
             <Chip className="shrink-0" size="sm" variant="flat">
-              远程
+              {t("远程")}
             </Chip>
           )}
           {showExpiry && (
@@ -156,7 +160,10 @@ const NodeRowContent = memo(function NodeRowContent({
                     : "default"
               }
               size="sm"
-              title={`本期已用 ${quota.used} / 每月额度 ${quota.total}`}
+              title={t("本期已用 {used} / 每月额度 {total}", {
+                used: quota.used,
+                total: quota.total,
+              })}
               variant="flat"
             >
               {quota.used} / {quota.total}
@@ -174,6 +181,7 @@ const NodeRowContent = memo(function NodeRowContent({
           <NodeLiveStats
             info={online ? (node.systemInfo ?? null) : null}
             month={month}
+            resetDay={node.trafficResetDay}
             variant="footer"
           />
         ) : undefined
@@ -190,6 +198,7 @@ const NodeRowContent = memo(function NodeRowContent({
             <NodeLiveStats
               info={online ? (node.systemInfo ?? null) : null}
               month={month}
+              resetDay={node.trafficResetDay}
               variant="row"
             />
           )}

@@ -210,21 +210,52 @@ func (r *Repository) GetTunnelMetricsAggregated(tunnelID int64, startMs, endMs i
 		return nil, nil
 	}
 
+	const maxRawRangeMs = int64(6 * 60 * 60 * 1000) // 6 hours — keep 1-minute resolution
+	const targetPoints = 360
+	const minuteMs = int64(60 * 1000)
+
+	rangeMs := endMs - startMs
 	var metrics []model.TunnelMetric
-	err := r.db.Model(&model.TunnelMetric{}).
-		Select(
-			"tunnel_id, 0 AS node_id, timestamp, "+
-				"SUM(bytes_in) AS bytes_in, "+
-				"SUM(bytes_out) AS bytes_out, "+
-				"SUM(connections) AS connections, "+
-				"SUM(errors) AS errors, "+
-				"AVG(avg_latency_ms) AS avg_latency_ms",
-		).
-		Where("tunnel_id = ? AND timestamp >= ? AND timestamp <= ?", tunnelID, startMs, endMs).
-		Group("tunnel_id, timestamp").
-		Order("timestamp ASC").
-		Limit(5000).
-		Scan(&metrics).Error
+	var err error
+	if rangeMs <= maxRawRangeMs {
+		err = r.db.Model(&model.TunnelMetric{}).
+			Select(
+				"tunnel_id, 0 AS node_id, timestamp, "+
+					"SUM(bytes_in) AS bytes_in, "+
+					"SUM(bytes_out) AS bytes_out, "+
+					"SUM(connections) AS connections, "+
+					"SUM(errors) AS errors, "+
+					"AVG(avg_latency_ms) AS avg_latency_ms",
+			).
+			Where("tunnel_id = ? AND timestamp >= ? AND timestamp <= ?", tunnelID, startMs, endMs).
+			Group("tunnel_id, timestamp").
+			Order("timestamp ASC").
+			Limit(5000).
+			Scan(&metrics).Error
+	} else {
+		bucketMs := ((rangeMs/targetPoints + minuteMs - 1) / minuteMs) * minuteMs
+		if bucketMs < minuteMs {
+			bucketMs = minuteMs
+		}
+		bucketExpr := fmt.Sprintf("(timestamp / %d * %d)", bucketMs, bucketMs)
+		err = r.db.Model(&model.TunnelMetric{}).
+			Select(
+				fmt.Sprintf(
+					"tunnel_id, 0 AS node_id, CAST(%s AS BIGINT) AS timestamp, "+
+						"SUM(bytes_in) AS bytes_in, "+
+						"SUM(bytes_out) AS bytes_out, "+
+						"SUM(connections) AS connections, "+
+						"SUM(errors) AS errors, "+
+						"AVG(avg_latency_ms) AS avg_latency_ms",
+					bucketExpr,
+				),
+			).
+			Where("tunnel_id = ? AND timestamp >= ? AND timestamp <= ?", tunnelID, startMs, endMs).
+			Group("tunnel_id, " + bucketExpr).
+			Order("timestamp ASC").
+			Limit(targetPoints + 100).
+			Scan(&metrics).Error
+	}
 	if metrics == nil {
 		metrics = make([]model.TunnelMetric, 0)
 	}
@@ -421,6 +452,11 @@ func (r *Repository) AddNodeTraffic(rows []model.NodeTraffic) error {
 
 // NodeTrafficSince sums each node's traffic from fromMs on.
 func (r *Repository) NodeTrafficSince(fromMs int64) (map[int64][2]int64, error) {
+	return r.NodeTrafficSinceForNodes(fromMs, nil)
+}
+
+// NodeTrafficSinceForNodes sums traffic from fromMs on, optionally scoped to nodeIDs.
+func (r *Repository) NodeTrafficSinceForNodes(fromMs int64, nodeIDs []int64) (map[int64][2]int64, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("repository not initialized")
 	}
@@ -429,9 +465,13 @@ func (r *Repository) NodeTrafficSince(fromMs int64) (map[int64][2]int64, error) 
 		InBytes  int64
 		OutBytes int64
 	}
-	err := r.db.Model(&model.NodeTraffic{}).Select("node_id, SUM(in_bytes) AS in_bytes, SUM(out_bytes) AS out_bytes").
-		Where("hour >= ?", fromMs).Group("node_id").Scan(&rows).Error
-	if err != nil {
+	q := r.db.Model(&model.NodeTraffic{}).
+		Select("node_id, SUM(in_bytes) AS in_bytes, SUM(out_bytes) AS out_bytes").
+		Where("hour >= ?", fromMs)
+	if len(nodeIDs) > 0 {
+		q = q.Where("node_id IN ?", nodeIDs)
+	}
+	if err := q.Group("node_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[int64][2]int64, len(rows))
@@ -441,7 +481,11 @@ func (r *Repository) NodeTrafficSince(fromMs int64) (map[int64][2]int64, error) 
 	// Only buckets overlapping the lower boundary need reconstruction. Keep
 	// the full month's aggregation in SQL instead of loading every row.
 	var overlap []model.NodeTraffic
-	if err := r.db.Where("hour >= ? AND hour < ?", fromMs-int64(time.Hour/time.Millisecond), fromMs).Find(&overlap).Error; err != nil {
+	oq := r.db.Where("hour >= ? AND hour < ?", fromMs-int64(time.Hour/time.Millisecond), fromMs)
+	if len(nodeIDs) > 0 {
+		oq = oq.Where("node_id IN ?", nodeIDs)
+	}
+	if err := oq.Find(&overlap).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range overlap {
@@ -461,6 +505,28 @@ func (r *Repository) NodeTrafficSince(fromMs int64) (map[int64][2]int64, error) 
 		out[row.NodeID] = total
 	}
 	return out, nil
+}
+
+// ListNodeTrafficSince returns raw node_traffic buckets for a single node
+// (nodeID > 0), or time-grouped buckets across all nodes (nodeID == 0).
+func (r *Repository) ListNodeTrafficSince(nodeID int64, fromMs int64) ([]model.NodeTraffic, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository not initialized")
+	}
+	var rows []model.NodeTraffic
+	if nodeID > 0 {
+		err := r.db.Where("node_id = ? AND hour >= ?", nodeID, fromMs).
+			Order("hour ASC").
+			Find(&rows).Error
+		return rows, err
+	}
+	err := r.db.Model(&model.NodeTraffic{}).
+		Select("0 AS node_id, hour, bucket_minutes, SUM(in_bytes) AS in_bytes, SUM(out_bytes) AS out_bytes").
+		Where("hour >= ?", fromMs).
+		Group("hour, bucket_minutes").
+		Order("hour ASC").
+		Scan(&rows).Error
+	return rows, err
 }
 
 // PruneNodeTraffic drops the hours before beforeMs.

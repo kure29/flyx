@@ -410,14 +410,13 @@ export default function IndexPage() {
           </Card>
         </div>
 
-        {/* 版权信息 - 固定在底部，不占据布局空间 */}
-
+        {/* 版权信息 - 文档流底部，避免矮屏遮挡登录卡片 */}
         <VersionFooter
-          containerClassName="fixed inset-x-0 bottom-4 text-center py-4"
-          poweredClassName="text-xs text-gray-400 dark:text-gray-500"
+          containerClassName="relative z-10 w-full text-center py-4 safe-bottom"
+          poweredClassName="text-xs text-default-400"
           updateBadgeClassName="ml-1.5 text-foreground"
           version={isWebView ? siteConfig.app_version : siteConfig.version}
-          versionClassName="text-xs text-gray-400 dark:text-gray-500 mt-1"
+          versionClassName="text-xs text-default-400 mt-1"
         />
 
         {/* 验证码弹层 */}
@@ -439,8 +438,8 @@ export default function IndexPage() {
               }}
             />
             {/* 验证码容器 */}
-            <div className="mb-4 relative z-50 bg-white dark:bg-zinc-900 p-6 rounded-lg shadow-xl">
-              <div className="mb-4 text-center text-sm font-medium text-gray-700 dark:text-gray-200">
+            <div className="mb-4 relative z-50 rounded-xl border border-divider bg-content1 p-6 shadow-xl">
+              <div className="mb-4 text-center text-sm font-medium text-foreground">
                 {t("请完成安全验证")}
               </div>
               <div className="flex justify-center">

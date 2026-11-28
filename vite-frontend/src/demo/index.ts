@@ -251,6 +251,81 @@ async function answer(config: InternalAxiosRequestConfig) {
     };
   }
 
+  if (bare === "node/traffic/history") {
+    let nodeId = 0;
+    let range: "hour" | "day" | "month" = "hour";
+
+    try {
+      const parsed =
+        typeof config.data === "string"
+          ? JSON.parse(config.data)
+          : (config.data as { nodeId?: number; range?: string } | undefined);
+
+      if (parsed?.nodeId) nodeId = Number(parsed.nodeId);
+      if (parsed?.range === "day" || parsed?.range === "month") {
+        range = parsed.range;
+      }
+    } catch {
+      // default values
+    }
+
+    const now = new Date();
+    const scale = nodeId > 0 ? 0.35 + ((nodeId % 3) + 1) * 0.15 : 2.4;
+    const count = range === "hour" ? 24 : range === "day" ? 30 : 12;
+    const unitBytes =
+      range === "hour"
+        ? 450 * 1024 * 1024
+        : range === "day"
+          ? 8.5 * 1024 * 1024 * 1024
+          : 180 * 1024 * 1024 * 1024;
+    const points: Array<{ time: number; up: number; down: number }> = [];
+    let totalUp = 0;
+    let totalDown = 0;
+
+    for (let i = count - 1; i >= 0; i--) {
+      const d = new Date(now);
+
+      if (range === "hour") {
+        d.setMinutes(0, 0, 0);
+        d.setHours(d.getHours() - i);
+      } else if (range === "day") {
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - i);
+      } else {
+        d.setDate(1);
+        d.setHours(0, 0, 0, 0);
+        d.setMonth(d.getMonth() - i);
+      }
+      const wave = 0.55 + 0.45 * Math.sin((i + nodeId + 1) * 0.9);
+      const down = Math.round(unitBytes * scale * wave);
+      const up = Math.round(down * (0.28 + 0.12 * Math.cos((i + 2) * 0.7)));
+
+      totalDown += down;
+      totalUp += up;
+      points.push({ time: d.getTime(), up, down });
+    }
+
+    const periodStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
+    ).getTime();
+
+    return {
+      code: 0,
+      msg: "操作成功",
+      data: {
+        range,
+        estimated: false,
+        points,
+        up: totalUp,
+        down: totalDown,
+        since: nodeId > 0 ? periodStart : 0,
+      },
+      ts: Date.now(),
+    };
+  }
+
   if (PROBES[bare]) {
     const [list, field] = PROBES[bare];
     const ids: number[] = JSON.parse(String(config.data || "{}")).ids ?? [];
