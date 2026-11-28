@@ -428,7 +428,8 @@ func (h *Handler) federationRemoteUsageList(w http.ResponseWriter, r *http.Reque
 					"portRangeStart": info.PortRangeStart,
 					"portRangeEnd":   info.PortRangeEnd,
 				})
-				_ = h.repo.UpdateNodeRemoteConfig(nodeID, string(configData))
+				primaryIP, serverIPV4, serverIPV6 := resolveRemoteNodeAddresses(info.ServerIP, info.ServerIPV4, info.ServerIPV6)
+				_ = h.repo.UpdateNodeRemoteSync(nodeID, string(configData), primaryIP, serverIPV4, serverIPV6, strings.TrimSpace(info.ExtraIPs), info.Status)
 			}
 		}
 

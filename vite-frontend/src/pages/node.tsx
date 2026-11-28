@@ -2210,6 +2210,14 @@ export default function NodePage({
         const rows: Array<[string, React.ReactNode]> = node
           ? isRemoteNode
             ? [
+                [
+                  "IP",
+                  [node.serverIpV4?.trim(), node.serverIpV6?.trim()]
+                    .filter(Boolean)
+                    .join(" / ") ||
+                    node.serverIp.trim() ||
+                    "-",
+                ],
                 ["地址", usage?.remoteUrl || node.remoteUrl || "-"],
                 ...(usage
                   ? ([
@@ -2264,6 +2272,11 @@ export default function NodePage({
                 ? []
                 : isRemoteNode
                   ? [
+                      {
+                        key: "edit",
+                        label: "编辑",
+                        onPress: () => handleEdit(node),
+                      },
                       {
                         key: "delete",
                         label: "删除",
