@@ -126,6 +126,26 @@ test_panel_install_dir_and_ports() (
   [[ $(next_free_port 6366) == 6368 ]]
   [[ $(next_free_port 6365 6367) == 6369 ]]
   [[ $(read_panel_port 前端端口 6368 <<<$'6366\n' 2>/dev/null) == 6368 ]]
+  # Port bindings with host IP (e.g. 127.0.0.1:6366 behind reverse proxy) are accepted.
+  is_valid_port_binding 6366
+  is_valid_port_binding 127.0.0.1:6366
+  is_valid_port_binding 0.0.0.0:6365
+  is_valid_port_binding '[::1]:6366'
+  is_valid_port_binding '[2001:db8::1]:6365'
+  ! is_valid_port_binding 0
+  ! is_valid_port_binding 65536
+  ! is_valid_port_binding 127.0.0.1:0
+  ! is_valid_port_binding 127.0.0.1:65536
+  ! is_valid_port_binding 256.0.0.1:6366
+  ! is_valid_port_binding ::1:6366
+  ! is_valid_port_binding '[1234]:6366'
+  ! is_valid_port_binding 127.0.0.1:6366:80
+  ! is_valid_port_binding invalid
+  # validate_panel_update_environment accepts 127.0.0.1:6366 in .env.
+  printf 'JWT_SECRET=test\nBACKEND_PORT=127.0.0.1:6365\nFRONTEND_PORT=127.0.0.1:6366\n' > "$root/new/.env"
+  printf 'services: {}\n' > "$root/new/docker-compose.yml"
+  run_panel_compose() { return 0; }
+  validate_panel_update_environment
 )
 
 test_agent_installation_identity
