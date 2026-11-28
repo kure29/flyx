@@ -283,12 +283,12 @@ const CONFIG_ITEMS: ConfigItem[] = [
 ];
 
 const BACKUP_TYPE_OPTIONS = [
-  { value: "users", label: "管理员账号" },
-  { value: "nodes", label: "服务器" },
-  { value: "tunnels", label: "隧道" },
-  { value: "forwards", label: "规则" },
-  { value: "configs", label: "系统配置" },
-  { value: "inbounds", label: "内核与入站" },
+  { value: "users", label: "管理员账号", importedKey: "usersImported" },
+  { value: "nodes", label: "服务器", importedKey: "nodesImported" },
+  { value: "tunnels", label: "隧道", importedKey: "tunnelsImported" },
+  { value: "forwards", label: "规则", importedKey: "forwardsImported" },
+  { value: "configs", label: "系统配置", importedKey: "configsImported" },
+  { value: "inbounds", label: "内核与入站", importedKey: "inboundsImported" },
 ] as const;
 
 const BACKUP_TYPE_VALUES = BACKUP_TYPE_OPTIONS.map((option) => option.value);
@@ -1471,7 +1471,30 @@ export default function ConfigPage() {
       });
 
       if (response.code === 0) {
-        toast.success(`导入成功: ${JSON.stringify(response.data)}`);
+        const summary = BACKUP_TYPE_OPTIONS.filter((option) =>
+          importTypes.includes(option.value),
+        )
+          .flatMap((option) => {
+            const count = response.data?.[option.importedKey];
+
+            if (
+              typeof count !== "number" ||
+              !Number.isInteger(count) ||
+              count < 0
+            )
+              return [];
+
+            const label = tr(
+              option.value === "inbounds" ? "入站" : option.label,
+            );
+
+            return [tr("{label} {count}", { label, count })];
+          })
+          .join(tr("、"));
+
+        toast.success(
+          summary ? tr("导入成功：{summary}", { summary }) : tr("导入成功"),
+        );
         setImportTypes([]);
         setImportFileName("");
       } else {

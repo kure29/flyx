@@ -330,6 +330,21 @@ export interface BackupImportPayload {
   [key: string]: unknown;
 }
 
+export interface BackupImportResult {
+  usersImported?: number;
+  nodesImported?: number;
+  tunnelsImported?: number;
+  forwardsImported?: number;
+  userTunnelsImported?: number;
+  speedLimitsImported?: number;
+  tunnelGroupsImported?: number;
+  userGroupsImported?: number;
+  permissionsImported?: number;
+  configsImported?: number;
+  inboundsImported?: number;
+  autoBackup?: unknown;
+}
+
 export interface NodeMetricApiItem {
   id: number;
   nodeId: number;
